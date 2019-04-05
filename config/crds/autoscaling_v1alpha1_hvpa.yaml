@@ -1,0 +1,239 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  creationTimestamp: null
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: hvpas.autoscaling.k8s.io
+spec:
+  group: autoscaling.k8s.io
+  names:
+    kind: Hvpa
+    plural: hvpas
+  scope: Namespaced
+  validation:
+    openAPIV3Schema:
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          properties:
+            finalScaling:
+              type: string
+            horizontalStep:
+              format: int64
+              type: integer
+            hpaSpec:
+              type: object
+            initialScaling:
+              description: 'Important: Run "make" to regenerate code after modifying
+                this file'
+              type: string
+            ratioBasedScalingSpec:
+              properties:
+                finishReplicaCount:
+                  description: FinishReplicaCount is the number of replicas after
+                    which ratio based scaling stops
+                  format: int64
+                  type: integer
+                startReplicaCount:
+                  description: StartReplicaCount is the number of replicas after which
+                    ratio based scaling starts
+                  format: int64
+                  type: integer
+                vToHScalingRatio:
+                  description: VtoHScalingRatio defines the ratio in which VPA's and
+                    HPA's recommendations should be applied
+                  format: float
+                  type: number
+              type: object
+            verticalStep:
+              format: int64
+              type: integer
+            vpaSpec:
+              properties:
+                apiVersion:
+                  description: 'APIVersion defines the versioned schema of this representation
+                    of an object. Servers should convert recognized schemas to the
+                    latest internal value, and may reject unrecognized values. More
+                    info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+                  type: string
+                kind:
+                  description: 'Kind is a string value representing the REST resource
+                    this object represents. Servers may infer this from the endpoint
+                    the client submits requests to. Cannot be updated. In CamelCase.
+                    More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+                  type: string
+                metadata:
+                  description: 'Standard object metadata. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata'
+                  type: object
+                spec:
+                  description: 'Specification of the behavior of the autoscaler. More
+                    info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status.'
+                  properties:
+                    resourcePolicy:
+                      description: Controls how the autoscaler computes recommended
+                        resources. The resource policy may be used to set constraints
+                        on the recommendations for individual containers. If not specified,
+                        the autoscaler computes recommended resources for all containers
+                        in the pod, without additional constraints.
+                      properties:
+                        containerPolicies:
+                          description: Per-container resource policies. +patchMergeKey=containerName
+                            +patchStrategy=merge
+                          items:
+                            properties:
+                              containerName:
+                                description: Name of the container or DefaultContainerResourcePolicy,
+                                  in which case the policy is used by the containers
+                                  that don't have their own policy specified.
+                                type: string
+                              maxAllowed:
+                                description: Specifies the maximum amount of resources
+                                  that will be recommended for the container. The
+                                  default is no maximum.
+                                type: object
+                              minAllowed:
+                                description: Specifies the minimal amount of resources
+                                  that will be recommended for the container. The
+                                  default is no minimum.
+                                type: object
+                              mode:
+                                description: Whether autoscaler is enabled for the
+                                  container. The default is "Auto".
+                                type: string
+                            type: object
+                          type: array
+                      type: object
+                    targetRef:
+                      description: TargetRef points to the controller managing the
+                        set of pods for the autoscaler to control - e.g. Deployment,
+                        StatefulSet. VerticalPodAutoscaler can be targeted at controller
+                        implementing scale subresource (the pod set is retrieved from
+                        the controller's ScaleStatus) or some well known controllers
+                        (e.g. for DaemonSet the pod set is read from the controller's
+                        spec). If VerticalPodAutoscaler cannot use specified target
+                        it will report ConfigUnsupported condition. Note that VerticalPodAutoscaler
+                        does not require full implementation of scale subresource
+                        - it will not use it to modify the replica count. The only
+                        thing retrieved is a label selector matching pods grouped
+                        by the target resource.
+                      type: object
+                    updatePolicy:
+                      description: Describes the rules on how changes are applied
+                        to the pods. If not specified, all fields in the `PodUpdatePolicy`
+                        are set to their default values.
+                      properties:
+                        updateMode:
+                          description: Controls when autoscaler applies changes to
+                            the pod resources. The default is 'Auto'.
+                          type: string
+                      type: object
+                  required:
+                  - targetRef
+                  type: object
+                status:
+                  description: Current information about the autoscaler.
+                  properties:
+                    conditions:
+                      description: Conditions is the set of conditions required for
+                        this autoscaler to scale its target, and indicates whether
+                        or not those conditions are met. +patchMergeKey=type +patchStrategy=merge
+                      items:
+                        properties:
+                          lastTransitionTime:
+                            description: lastTransitionTime is the last time the condition
+                              transitioned from one status to another
+                            format: date-time
+                            type: string
+                          message:
+                            description: message is a human-readable explanation containing
+                              details about the transition
+                            type: string
+                          reason:
+                            description: reason is the reason for the condition's
+                              last transition.
+                            type: string
+                          status:
+                            description: status is the status of the condition (True,
+                              False, Unknown)
+                            type: string
+                          type:
+                            description: type describes the current condition
+                            type: string
+                        required:
+                        - type
+                        - status
+                        type: object
+                      type: array
+                    recommendation:
+                      description: The most recently computed amount of resources
+                        recommended by the autoscaler for the controlled pods.
+                      properties:
+                        containerRecommendations:
+                          description: Resources recommended by the autoscaler for
+                            each container.
+                          items:
+                            properties:
+                              containerName:
+                                description: Name of the container.
+                                type: string
+                              lowerBound:
+                                description: Minimum recommended amount of resources.
+                                  Observes ContainerResourcePolicy. This amount is
+                                  not guaranteed to be sufficient for the application
+                                  to operate in a stable way, however running with
+                                  less resources is likely to have significant impact
+                                  on performance/availability.
+                                type: object
+                              target:
+                                description: Recommended amount of resources. Observes
+                                  ContainerResourcePolicy.
+                                type: object
+                              uncappedTarget:
+                                description: The most recent recommended resources
+                                  target computed by the autoscaler for the controlled
+                                  pods, based only on actual resource usage, not taking
+                                  into account the ContainerResourcePolicy. May differ
+                                  from the Recommendation if the actual resource usage
+                                  causes the target to violate the ContainerResourcePolicy
+                                  (lower than MinAllowed or higher that MaxAllowed).
+                                  Used only as status indication, will not affect
+                                  actual resource assignment.
+                                type: object
+                              upperBound:
+                                description: Maximum recommended amount of resources.
+                                  Observes ContainerResourcePolicy. Any resources
+                                  allocated beyond this value are likely wasted. This
+                                  value may be larger than the maximum amount of application
+                                  is actually capable of consuming.
+                                type: object
+                            required:
+                            - target
+                            type: object
+                          type: array
+                      type: object
+                  type: object
+              required:
+              - spec
+              type: object
+          type: object
+        status:
+          type: object
+  version: v1alpha1
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
