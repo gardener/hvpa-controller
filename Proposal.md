@@ -119,6 +119,7 @@ vpaWeight
 
 #### Mitigation
 * `x1` and `x2` will be optional, If either or both of them are not provided, vertical scaling will be done until `minAllowed` and/or `maxAllowed` correspondingly.
+* Once replica count reaches `maxReplicas`, and VPA still recommends higher resource requirements, then vertical scaling will be done unconditionally
 
 #### Spec
 
@@ -162,6 +163,126 @@ const (
 	// HpaOnly - only horizontal scaling
 	HpaOnly VpaWeight = 0
 )
+```
+
+Example 1:
+
+```yaml
+apiVersion: autoscaling.k8s.io/v1alpha1
+kind: Hvpa
+metadata:
+  name: hvpa-sample
+spec:
+  stageTwoStartReplicaCount: 3
+  stageTwoStopReplicaCount: 7
+  firstStageVpaWeight: 0
+  secondStageVpaWeight: 0.4
+  thirdStageVpaWeight: 0
+  hpaSpec:
+    maxReplicas: 10
+    minReplicas: 1
+    scaleTargetRef:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: resource-consumer
+    targetCPUUtilizationPercentage: 60
+  vpaSpec:
+    resourcePolicy:
+      containerPolicies:
+      - MinAllowed:
+          memory: 400Mi
+        containerName: resource-consumer
+        maxAllowed:
+          memory: 3000Mi
+    updatePolicy:
+      updateMode: "Off"
+```
+```
+resource
+request
+^
+|
+|                  _________
+|                 /|
+|                /
+|               /  |
+|              /
+|  ___________/    |
+|
+|-------------|----|--------|----->
+   1          3    7        10     #Replicas
+```
+
+
+Example 2:
+```yaml
+apiVersion: autoscaling.k8s.io/v1alpha1
+kind: Hvpa
+metadata:
+  name: hvpa-sample
+spec:
+  stageTwoStartReplicaCount: 1
+  stageTwoStopReplicaCount: 4
+  firstStageVpaWeight: 1
+  secondStageVpaWeight: 0.4
+  thirdStageVpaWeight: 0
+  hpaSpec:
+    .
+    .
+    .
+```
+```
+resource
+request
+^
+| .     ______
+|      /
+|     /  
+|    /
+|   /  
+|  |
+|  |  
+|  |
+|
+|--|----|-----|------->
+   1   4       10     #Replicas
+```
+
+
+Example 3: `x2` is not provided. After maxReplicas, there is only vertical scaling
+```yaml
+apiVersion: autoscaling.k8s.io/v1alpha1
+kind: Hvpa
+metadata:
+  name: hvpa-sample
+spec:
+  stageTwoStartReplicaCount: 3
+  firstStageVpaWeight: 0
+  secondStageVpaWeight: 0.4
+  thirdStageVpaWeight: 0
+  hpaSpec:
+    minReplicas: 1
+    maxReplicas: 10
+    .
+    .
+    .
+```
+```
+resource
+request
+^
+|
+|           |
+|           |
+|           .     
+|          /
+|         /
+|        / 
+|       /
+|  ____/ 
+|
+|--|---|----|------>
+   1   3    10     #Replicas
 ```
 
 ## Currently preferred approach
