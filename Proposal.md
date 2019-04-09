@@ -65,9 +65,48 @@ In this mode, along with the preference for autoscaling (HPA or VPA), user will 
 * Relies on users' understanding of application, and its scaling
 * Will need both VPA and HPA to be deployed in a recommendation-only mode.
 
-### Ratio based scaling
-In this mode, user can provide an interval `x1` to `x2` and a ratio. When the number of replicas for a deployment is between `x1` and `x2`, HVPA controller will consider VPA's and HPA's recommendations in the ratio provided, and scale the deployment accordingly.
-User will also provide the choice of scaling when the number of replicas is less than `x1`, and greater than `x2`.
+### Weight based scaling
+In this mode, deployment's scaling is divided into 3 stages depending on number of replicas, and a user can provide an interval `x1` to `x2` and 3 `vpaWeight`s between and including `0` and `1`. Stage 1 will be from HPA's `minReplicas` to `x1`. Stage 2 will be from `x1` to `x2`. Stage 3 will be from `x2` to HPA's `maxReplicas`. HVPA controller will consider VPA's recommendations according to the weights provided, and scale the deployment accordingly. The weights given to the HPA's recommendation will be `1 - vpaWeight`.
+
+According to VPA, new `requests` will be `currentRequest + (targetRequest - currentRequest) * vpaWeight`
+
+According to HPA, new number of replicas will be ceil of `currentReplicas + (desiredReplicas - currentReplicas) * (1 - vpaWeight)`
+
+`vpaWeight` = 1 will result in pure vertical scaling
+`vpaWeight` = 0 will result in pure horizontal scaling
+
+```
+Resource request vs number of replicas curve could typically look like:
+Here FirstStageVpaWeight = 0, SecondStageVpaWeight is a fraction, ThirdStageVpaWeight = 0
+
+resource
+request
+^
+|
+|                  ____________
+|                 /|
+|                /
+|               /  |
+|              /
+|  ___________/    |
+|
+|-------------|----|-----------|----->
+   min        x1    x2        max     #Replicas
+```
+
+```
+Example of vpaWeight vs number of replicas.
+Here FirstStageVpaWeight = 0, SecondStageVpaWeight = 0.4, ThirdStageVpaWeight = 0
+
+vpaWeight
+   ^
+   |
+0.4|           |-------|
+   |           |       |
+  0|   ________|       |____________
+   |------------------------------------->
+               x1     x2               #Replicas
+```
 
 #### Pros
 * Works even if HPA and VPA act on different metrices
@@ -84,30 +123,28 @@ User will also provide the choice of scaling when the number of replicas is less
 #### Spec
 
 ```golang
-// RatioBasedScaling defines spec for ratio based scaling
-type RatioBasedScaling struct {
-	// VtoHScalingRatio defines the ratio in which VPA's and HPA's recommendations should be applied
-	VtoHScalingRatio float32 `json:"vToHScalingRatio,omitempty"`
-
-	// StartReplicaCount is the number of replicas after which ratio based scaling starts
-	// +optional
-	StartReplicaCount int `json:"startReplicaCount,omitempty"`
-
-	// FinishReplicaCount is the number of replicas after which ratio based scaling stops
-	// +optional
-	FinishReplicaCount int `json:"finishReplicaCount,omitempty"`
-}
-
 // HvpaSpec defines the desired state of Hvpa
 type HvpaSpec struct {
-	// InitialScaling defines the scaling preference before StartReplicaCount
-	InitialScaling ScalingType `json:"initialScaling,omitempty"`
+    // Scaling of a deployment is divided into 3 stages.
+	// Stage 1 starts at HPA's minReplicas
+	// Stage 3 ends at HPA's maxReplicas
+	// When in stage 2, weight given to VPA's recommendation will be SecondStageVpaWeigh
+	// StageTwoStartReplicaCount defines the number of replicas when stage 2 starts
+	// +optional
+	StageTwoStartReplicaCount int `json:"StageTwoStartReplicaCount,omitempty"`
 
-	// FinalScaling defines the scaling preference after FinishReplicaCount
-	FinalScaling ScalingType `json:"finalScaling,omitempty"`
+	// StageTwoStopReplicaCount defines the number of replicas when stage 2 stops
+	// +optional
+	StageTwoStopReplicaCount int `json:"StageTwoStopReplicaCount,omitempty"`
 
-	//RatioBasedScalingSpec defines the spec for weightage based horizontal and vertical scaling
-	RatioBasedScalingSpec RatioBasedScaling `json:"ratioBasedScalingSpec,omitempty"`
+	// FirstStageVpaWeight defines the weight to be given VPA recommendations in stage 1
+	FirstStageVpaWeight VpaWeight `json:"FirstStageVpaWeight,omitempty"`
+
+	// SecondStageVpaWeight defines the weight to be given VPA recommendations in stage 2
+	SecondStageVpaWeight VpaWeight `json:"SecondStageVpaWeight,omitempty"`
+
+	// ThirdStageVpaWeight defines the weight to be given VPA recommendations in stage 3
+	ThirdStageVpaWeight VpaWeight `json:"ThirdStageVpaWeight,omitempty"`
 
 	// HpaSpec defines the spec of HPA
 	HpaSpec scaling_v1.HorizontalPodAutoscaler `json:"hpaSpec,omitempty"`
@@ -116,16 +153,16 @@ type HvpaSpec struct {
 	VpaSpec vpa_api.VerticalPodAutoscaler `json:"vpaSpec,omitempty"`
 }
 
-// ScalingType - horizontal or vertical
-type ScalingType string
+// VpaWeight - weight to provide to VPA scaling
+type VpaWeight float32
 
 const (
-	// Vertical scaling
-	Vertical ScalingType = "vertical"
-	// Horizontal scaling
-	Horizontal ScalingType = "horizontal"
+	// VpaOnly - only vertical scaling
+	VpaOnly VpaWeight = 1.0
+	// HpaOnly - only horizontal scaling
+	HpaOnly VpaWeight = 0
 )
 ```
 
 ## Currently preferred approach
-### Ratio based scaling
+### Weight based scaling
