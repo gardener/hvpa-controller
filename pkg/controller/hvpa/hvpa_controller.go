@@ -18,15 +18,23 @@ package hvpa
 
 import (
 	"context"
+	"math"
 	"reflect"
+	"time"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
+	autoscaling "k8s.io/api/autoscaling/v2beta2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	autoscalingv1alpha1 "k8s.io/autoscaler/hvpa-controller/pkg/apis/autoscaling/v1alpha1"
+
+	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -38,11 +46,6 @@ import (
 )
 
 var log = logf.Log.WithName("controller")
-
-/**
-* USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
-* business logic.  Delete these comments after modifying this file.*
- */
 
 // Add creates a new Hvpa Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -69,9 +72,16 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create
-	// Uncomment watch a Deployment created by Hvpa - change this for objects you create
-	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
+	// watch a HPA and VPA created by Hvpa
+	err = c.Watch(&source.Kind{Type: &autoscaling.HorizontalPodAutoscaler{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &autoscalingv1alpha1.Hvpa{},
+	})
+	if err != nil {
+		return err
+	}
+
+	err = c.Watch(&source.Kind{Type: &vpa_api.VerticalPodAutoscaler{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &autoscalingv1alpha1.Hvpa{},
 	})
@@ -92,11 +102,11 @@ type ReconcileHvpa struct {
 
 // Reconcile reads that state of the cluster for a Hvpa object and makes changes based on the state read
 // and what is in the Hvpa.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  The scaffolding writes
-// a Deployment as an example
-// Automatically generate RBAC rules to allow the Controller to read and write Deployments
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
+// Automatically generate RBAC rules to allow the Controller to read and write HPAs and VPAs
+// +kubebuilder:rbac:groups=autoscaling,resources=hpas,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=autoscaling,resources=hpas/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=vpas,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=vpas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas/status,verbs=get;update;patch
 func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, error) {
@@ -113,55 +123,296 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 		return reconcile.Result{}, err
 	}
 
-	// TODO(user): Change this to be the object type created by your controller
-	// Define the desired Deployment object
-	deploy := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-deployment",
-			Namespace: instance.Namespace,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"deployment": instance.Name + "-deployment"},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"deployment": instance.Name + "-deployment"}},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "nginx",
-							Image: "nginx",
-						},
-					},
-				},
-			},
-		},
-	}
-	if err := controllerutil.SetControllerReference(instance, deploy, r.scheme); err != nil {
+	log.Info("Reconciling", "hvpa", instance.GetName())
+
+	hpaStatus, err := r.reconcileHpa(instance)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// TODO(user): Change this for the object type created by your controller
-	// Check if the Deployment already exists
-	found := &appsv1.Deployment{}
-	err = r.Get(context.TODO(), types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
-		err = r.Create(context.TODO(), deploy)
-		return reconcile.Result{}, err
-	} else if err != nil {
+	vpaStatus, err := r.reconcileVpa(instance)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// TODO(user): Change this for the object type created by your controller
-	// Update the found object and write the result back if there are any changes
-	if !reflect.DeepEqual(deploy.Spec, found.Spec) {
-		found.Spec = deploy.Spec
-		log.Info("Updating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
-		err = r.Update(context.TODO(), found)
-		if err != nil {
-			return reconcile.Result{}, err
+	var currentReplicas, desiredReplicas int32
+	if hpaStatus != nil {
+		currentReplicas = hpaStatus.CurrentReplicas
+		desiredReplicas = hpaStatus.DesiredReplicas
+	}
+
+	var recommendations *vpa_api.RecommendedPodResources
+	if vpaStatus != nil {
+		recommendations = vpaStatus.Recommendation
+	}
+
+	var vpaWeight autoscalingv1alpha1.VpaWeight
+
+	for _, interval := range instance.Spec.WeightBasedScalingIntervals {
+		if interval.StartReplicaCount == 0 {
+			interval.StartReplicaCount = *instance.Spec.HpaTemplate.MinReplicas
+		}
+		if interval.LastReplicaCount == 0 {
+			interval.LastReplicaCount = instance.Spec.HpaTemplate.MaxReplicas
+		}
+		if currentReplicas >= interval.StartReplicaCount && currentReplicas <= interval.LastReplicaCount {
+			vpaWeight = interval.VpaWeight
+			break
 		}
 	}
-	return reconcile.Result{}, nil
+	deploy := &appsv1.Deployment{}
+	err = r.Get(context.TODO(), types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, deploy)
+	if err != nil {
+		log.Info("Error getting", "kind", instance.Spec.TargetRef.Kind, "name", instance.Spec.TargetRef.Name, "namespace", instance.Namespace)
+		return reconcile.Result{}, err
+	}
+
+	// TODO: update last scaled time, and introduce delay in VPA
+	// TODO: combine ScaleHpaIfRequired and vpaScaleIfRequired, so that there is only one update to deployment
+	hpaScaled, err := r.hpaScaleIfRequired(desiredReplicas, currentReplicas, instance, deploy, 1-vpaWeight)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	vpaScaled, err := r.vpaScaleIfRequired(recommendations, instance, deploy, vpaWeight)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	hvpa := instance.DeepCopy()
+	if hpaStatus != nil {
+		hvpa.Status.HpaStatus.CurrentReplicas = hpaStatus.CurrentReplicas
+		hvpa.Status.HpaStatus.DesiredReplicas = hpaStatus.DesiredReplicas
+	}
+	if vpaStatus != nil {
+		hvpa.Status.VpaStatus.Recommendation = vpaStatus.Recommendation.DeepCopy()
+	}
+	if hpaScaled != 0 || vpaScaled {
+		now := metav1.NewTime(time.Now())
+		hvpa.Status.HvpaStatus.LastScaleTime = &now
+		hvpa.Status.HvpaStatus.HpaWeight = 1 - vpaWeight
+		hvpa.Status.HvpaStatus.VpaWeight = vpaWeight
+		if hpaScaled > 0 {
+			hvpa.Status.HvpaStatus.LastScaleType.Horizontal = autoscalingv1alpha1.Out
+		} else if hpaScaled < 0 {
+			hvpa.Status.HvpaStatus.LastScaleType.Horizontal = autoscalingv1alpha1.In
+		}
+		// As only scale up is implemented yet
+		if vpaScaled {
+			hvpa.Status.HvpaStatus.LastScaleType.Vertical = autoscalingv1alpha1.Up
+		}
+	}
+	return reconcile.Result{}, r.Update(context.TODO(), hvpa)
+
+	//return reconcile.Result{}, nil
+}
+
+func (r *ReconcileHvpa) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
+	vpa := &vpa_api.VerticalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hvpa.Name + "-vpa",
+			Namespace: hvpa.Namespace,
+		},
+		Spec: vpa_api.VerticalPodAutoscalerSpec{
+			TargetRef: &autoscalingv1.CrossVersionObjectReference{
+				Name:       hvpa.Spec.TargetRef.Name,
+				APIVersion: hvpa.Spec.TargetRef.APIVersion,
+				Kind:       hvpa.Spec.TargetRef.Kind,
+			},
+			ResourcePolicy: hvpa.Spec.VpaTemplate.ResourcePolicy.DeepCopy(),
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(hvpa, vpa, r.scheme); err != nil {
+		return nil, err
+	}
+
+	foundVpa := &vpa_api.VerticalPodAutoscaler{}
+	err := r.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, foundVpa)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating VPA", "namespace", vpa.Namespace, "name", vpa.Name)
+		err = r.Create(context.TODO(), vpa)
+		return nil, err
+	} else if err != nil {
+		return nil, err
+	}
+
+	// Update the found object and write the result back if there are any changes
+	if !reflect.DeepEqual(vpa.Spec, foundVpa.Spec) {
+		foundVpa.Spec = vpa.Spec
+		log.Info("Updating VPA", "namespace", vpa.Namespace, "name", vpa.Name)
+		err = r.Update(context.TODO(), foundVpa)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	status := foundVpa.Status.DeepCopy()
+
+	return status, nil
+}
+
+func (r *ReconcileHvpa) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
+	hpa := &autoscaling.HorizontalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hvpa.Name + "-hpa",
+			Namespace: hvpa.Namespace,
+		},
+		Spec: autoscaling.HorizontalPodAutoscalerSpec{
+			MaxReplicas:    hvpa.Spec.HpaTemplate.MaxReplicas,
+			MinReplicas:    hvpa.Spec.HpaTemplate.MinReplicas,
+			ScaleTargetRef: *hvpa.Spec.TargetRef.DeepCopy(),
+			Metrics:        hvpa.Spec.HpaTemplate.Metrics,
+		},
+	}
+
+	annotations := make(map[string]string)
+	annotations["mode"] = "Off"
+
+	hpa.SetAnnotations(annotations)
+
+	if err := controllerutil.SetControllerReference(hvpa, hpa, r.scheme); err != nil {
+		return nil, err
+	}
+
+	foundHpa := &autoscaling.HorizontalPodAutoscaler{}
+	err := r.Get(context.TODO(), types.NamespacedName{Name: hpa.Name, Namespace: hpa.Namespace}, foundHpa)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
+		err = r.Create(context.TODO(), hpa)
+		return nil, err
+	} else if err != nil {
+		return nil, err
+	}
+
+	// Update the found object and write the result back if there are any changes
+	if !reflect.DeepEqual(hpa.Spec, foundHpa.Spec) {
+		foundHpa.Spec = hpa.Spec
+		log.Info("Updating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
+		err = r.Update(context.TODO(), foundHpa)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	status := foundHpa.Status.DeepCopy()
+	return status, nil
+}
+
+func (r *ReconcileHvpa) hpaScaleIfRequired(desiredReplicas, currentReplicas int32, hvpa *autoscalingv1alpha1.Hvpa, deployment *appsv1.Deployment, hpaWeight autoscalingv1alpha1.VpaWeight) (int32, error) {
+	if desiredReplicas == 0 {
+		return 0, nil
+	}
+	log.Info("Checking if need to scale horizontally")
+
+	var err error
+	minReplicas := *hvpa.Spec.HpaTemplate.MinReplicas
+	maxReplicas := hvpa.Spec.HpaTemplate.MaxReplicas
+
+	weightedReplicas := int32(math.Ceil(float64(currentReplicas) + float64(desiredReplicas-currentReplicas)*float64(hpaWeight)))
+	if weightedReplicas < minReplicas {
+		weightedReplicas = minReplicas
+	}
+	if weightedReplicas > maxReplicas {
+		weightedReplicas = maxReplicas
+	}
+
+	if currentReplicas != weightedReplicas {
+		if hvpa.Status.HvpaStatus.LastScaleTime != nil {
+			var threshold time.Duration
+			timeLapsed := time.Now().Sub(hvpa.Status.HvpaStatus.LastScaleTime.Time)
+			if weightedReplicas > currentReplicas && hvpa.Status.HvpaStatus.LastScaleType.Horizontal == autoscalingv1alpha1.Out {
+				threshold, err = time.ParseDuration(hvpa.Spec.ScaleUpDelay)
+				if err != nil {
+					log.Error(err, "Error in parsing duration", "provided string", hvpa.Spec.ScaleUpDelay)
+					return 0, err
+				}
+			}
+			if weightedReplicas < currentReplicas && hvpa.Status.HvpaStatus.LastScaleType.Horizontal == autoscalingv1alpha1.In {
+				threshold, err = time.ParseDuration(hvpa.Spec.ScaleDownDelay)
+				if err != nil {
+					log.Error(err, "Error in parsing duration", "provided string", hvpa.Spec.ScaleDownDelay)
+					return 0, err
+				}
+			}
+			if timeLapsed < threshold {
+				log.Info("Not scaling out as it was done recently")
+				return 0, nil
+			}
+		}
+		log.Info("Scaling horizontally", "current Replicas", currentReplicas, "weighted desired Replicas", weightedReplicas)
+
+		newDeploy := deployment.DeepCopy()
+		if *newDeploy.Spec.Replicas != weightedReplicas {
+			replicas := *newDeploy.Spec.Replicas
+			newDeploy.Spec.Replicas = &weightedReplicas
+
+			log.Info("HPA", "Scaled horizontally to", weightedReplicas)
+			return weightedReplicas - replicas, r.Update(context.TODO(), newDeploy)
+		}
+	}
+	log.Info("No horizontal scaling done")
+	return 0, nil
+}
+
+func (r *ReconcileHvpa) vpaScaleIfRequired(recommendations *vpa_api.RecommendedPodResources, hvpa *autoscalingv1alpha1.Hvpa, deployment *appsv1.Deployment, vpaWeight autoscalingv1alpha1.VpaWeight) (bool, error) {
+	log.Info("Checking if need to scale vertically")
+	if recommendations == nil {
+		log.Info("No recommendations yet")
+		return false, nil
+	}
+	resourceChange := false
+	newDeploy := deployment.DeepCopy()
+	for _, rec := range recommendations.ContainerRecommendations {
+		for id, container := range newDeploy.Spec.Template.Spec.Containers {
+			// Currently only scale up is implemented, and vpaWeight is assumed to be 1
+			if rec.ContainerName == container.Name {
+				vpaMemTarget := rec.Target.Memory().DeepCopy()
+				vpaCPUTarget := rec.Target.Cpu().DeepCopy()
+				currMem := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Memory().DeepCopy()
+				currCPU := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Cpu().DeepCopy()
+
+				log.Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget)
+
+				factor := int64(100)
+				scale := int64(float64(vpaWeight) * float64(factor))
+
+				//origMem := currMem.DeepCopy()
+				vpaMemTarget.Sub(currMem)
+				diffMem := resource.NewQuantity(vpaMemTarget.Value()*scale/factor, vpaMemTarget.Format)
+				currMem.Add(*diffMem)
+				weightedMem := currMem
+				minDeltaMem, _ := resource.ParseQuantity("500M")
+
+				//origCPU := currCPU.DeepCopy()
+				vpaCPUTarget.Sub(currCPU)
+				diffCPU := resource.NewQuantity(vpaCPUTarget.ScaledValue(-3)*scale/factor, vpaCPUTarget.Format)
+				diffCPU.SetScaled(diffCPU.Value(), -3)
+				currCPU.Add(*diffCPU)
+				weightedCPU := currCPU
+				minDeltaCPU, _ := resource.ParseQuantity("300m")
+
+				log.Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU)
+				//if weightedMem.Cmp(origMem) > 0 {
+				if diffMem.Sign() > 0 && diffMem.Cmp(minDeltaMem) > 0 {
+					// If the difference is greater than minimum delta
+					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+					resourceChange = true
+				}
+				//if weightedCPU.Cmp(origCPU) > 0 {
+				if diffCPU.Sign() > 0 && diffCPU.Cmp(minDeltaCPU) > 0 {
+					// If the difference is greater than minimum delta
+					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+					resourceChange = true
+				}
+				// TODO: Add conditions for other resources also: ResourceStorage, ResourceEphemeralStorage,
+				break
+			}
+		}
+	}
+	log.Info("VPA", "vpa made changes?", resourceChange)
+	if resourceChange {
+		return true, r.Update(context.TODO(), newDeploy)
+	}
+	return false, nil
 }

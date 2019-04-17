@@ -5,5 +5,39 @@ metadata:
     controller-tools.k8s.io: "1.0"
   name: hvpa-sample
 spec:
-  # Add fields here
-  foo: bar
+  scaleUpDelay: "2m"
+  scaleDownDelay: "3m"
+  hpaTemplate:
+    maxReplicas: 3
+    minReplicas: 1
+    metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 50
+  vpaTemplate:
+    resourcePolicy:
+      containerPolicies:
+      - MinAllowed:
+          memory: 400Mi
+        containerName: resource-consumer
+        maxAllowed:
+          memory: 3000Mi
+  weightBasedScalingIntervals:
+    - vpaWeight: 0
+      startReplicaCount: 1
+      lastReplicaCount: 2
+    - vpaWeight: 0.6
+      startReplicaCount: 3
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: resource-consumer

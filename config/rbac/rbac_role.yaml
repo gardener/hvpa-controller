@@ -5,9 +5,9 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - apps
+  - autoscaling
   resources:
-  - deployments
+  - hpas
   verbs:
   - get
   - list
@@ -17,9 +17,29 @@ rules:
   - patch
   - delete
 - apiGroups:
-  - apps
+  - autoscaling
   resources:
-  - deployments/status
+  - hpas/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
+  - autoscaling.k8s.io
+  resources:
+  - vpas
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - autoscaling.k8s.io
+  resources:
+  - vpas/status
   verbs:
   - get
   - update
