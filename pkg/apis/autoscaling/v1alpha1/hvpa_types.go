@@ -92,6 +92,23 @@ type HvpaSpec struct {
 	// ScaleDownDelay defines the minimum delay in minutes between 2 consecutive scale down operations
 	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
 	ScaleDownDelay string `json:"scaleDownDelay,omitempty"`
+
+	// MinCpuChange is the minimum change in CPU on which HVPA acts
+	// HVPA uses minimum of the Value and Percentage value
+	MinCPUChange *ChangeThreshold `json:"minCpuChange,omitempty"`
+	// MinMemChange is the minimum change in memory on which HVPA acts
+	// HVPA uses minimum of the Value and Percentage value
+	MinMemChange *ChangeThreshold `json:"minMemChange,omitempty"`
+}
+
+// ChangeThreshold defines the thresholds for HVPA to apply VPA's recommendations
+type ChangeThreshold struct {
+	// Value is the absolute value of the threshold
+	// +optional
+	Value string `json:"value,omitempty"`
+	// Percentage is the percentage of currently allocated value to be used as threshold
+	// +optional
+	Percentage int32 `json:"percentage,omitempty"`
 }
 
 // VpaWeight - weight to provide to VPA scaling
@@ -107,7 +124,7 @@ const (
 // HvpaCurrentStatus defines the current status of HVPA
 type HvpaCurrentStatus struct {
 	HpaWeight VpaWeight `json:"hpaWeight,omitempty"`
-	VpaWeight VpaWeight `json:"vpaWeight,omitepmty"`
+	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
 	// last time the HVPA scaled the resource;
 	// used by the autoscaler to control how often the scaling is done.
 	// +optional

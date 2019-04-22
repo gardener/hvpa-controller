@@ -57,6 +57,32 @@ spec:
               required:
               - maxReplicas
               type: object
+            minCpuChange:
+              description: MinCpuChange is the minimum change in CPU on which HVPA
+                acts HVPA uses minimum of the Value and Percentage value
+              properties:
+                percentage:
+                  description: Percentage is the percentage of currently allocated
+                    value to be used as threshold
+                  format: int32
+                  type: integer
+                value:
+                  description: Value is the absolute value of the threshold
+                  type: string
+              type: object
+            minMemChange:
+              description: MinMemChange is the minimum change in memory on which HVPA
+                acts HVPA uses minimum of the Value and Percentage value
+              properties:
+                percentage:
+                  description: Percentage is the percentage of currently allocated
+                    value to be used as threshold
+                  format: int32
+                  type: integer
+                value:
+                  description: Value is the absolute value of the threshold
+                  type: string
+              type: object
             scaleDownDelay:
               description: ScaleDownDelay defines the minimum delay in minutes between
                 2 consecutive scale down operations Valid time units are "ns", "us"
@@ -174,8 +200,6 @@ spec:
                 vpaWeight:
                   format: float
                   type: number
-              required:
-              - vpaWeight
               type: object
             vpaStatus:
               description: Current information about the VPA.

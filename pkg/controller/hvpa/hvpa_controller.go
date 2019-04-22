@@ -135,31 +135,6 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 		return reconcile.Result{}, err
 	}
 
-	var currentReplicas, desiredReplicas int32
-	if hpaStatus != nil {
-		currentReplicas = hpaStatus.CurrentReplicas
-		desiredReplicas = hpaStatus.DesiredReplicas
-	}
-
-	var recommendations *vpa_api.RecommendedPodResources
-	if vpaStatus != nil {
-		recommendations = vpaStatus.Recommendation
-	}
-
-	var vpaWeight autoscalingv1alpha1.VpaWeight
-
-	for _, interval := range instance.Spec.WeightBasedScalingIntervals {
-		if interval.StartReplicaCount == 0 {
-			interval.StartReplicaCount = *instance.Spec.HpaTemplate.MinReplicas
-		}
-		if interval.LastReplicaCount == 0 {
-			interval.LastReplicaCount = instance.Spec.HpaTemplate.MaxReplicas
-		}
-		if currentReplicas >= interval.StartReplicaCount && currentReplicas <= interval.LastReplicaCount {
-			vpaWeight = interval.VpaWeight
-			break
-		}
-	}
 	deploy := &appsv1.Deployment{}
 	err = r.Get(context.TODO(), types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, deploy)
 	if err != nil {
@@ -167,14 +142,7 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 		return reconcile.Result{}, err
 	}
 
-	// TODO: update last scaled time, and introduce delay in VPA
-	// TODO: combine ScaleHpaIfRequired and vpaScaleIfRequired, so that there is only one update to deployment
-	hpaScaled, err := r.hpaScaleIfRequired(desiredReplicas, currentReplicas, instance, deploy, 1-vpaWeight)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
-	vpaScaled, err := r.vpaScaleIfRequired(recommendations, instance, deploy, vpaWeight)
+	hpaScaled, vpaScaled, vpaWeight, err := r.scaleIfRequired(hpaStatus, vpaStatus, instance, deploy)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -197,14 +165,16 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 		} else if hpaScaled < 0 {
 			hvpa.Status.HvpaStatus.LastScaleType.Horizontal = autoscalingv1alpha1.In
 		}
-		// As only scale up is implemented yet
+		/*// As only scale up is implemented yet
 		if vpaScaled {
 			hvpa.Status.HvpaStatus.LastScaleType.Vertical = autoscalingv1alpha1.Up
-		}
+		}*/
 	}
-	return reconcile.Result{}, r.Update(context.TODO(), hvpa)
+	if !reflect.DeepEqual(hvpa.Status, instance.Status) {
+		return reconcile.Result{}, r.Update(context.TODO(), hvpa)
+	}
 
-	//return reconcile.Result{}, nil
+	return reconcile.Result{}, nil
 }
 
 func (r *ReconcileHvpa) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
@@ -372,7 +342,7 @@ func (r *ReconcileHvpa) vpaScaleIfRequired(recommendations *vpa_api.RecommendedP
 				currMem := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Memory().DeepCopy()
 				currCPU := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Cpu().DeepCopy()
 
-				log.Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget)
+				log.Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget, "vpWeight", vpaWeight)
 
 				factor := int64(100)
 				scale := int64(float64(vpaWeight) * float64(factor))
@@ -415,4 +385,193 @@ func (r *ReconcileHvpa) vpaScaleIfRequired(recommendations *vpa_api.RecommendedP
 		return true, r.Update(context.TODO(), newDeploy)
 	}
 	return false, nil
+}
+
+func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, deployment *appsv1.Deployment) (int32, bool, autoscalingv1alpha1.VpaWeight, error) {
+
+	currentReplicas := *deployment.Spec.Replicas
+	//desiredReplicas := hpaStatus.DesiredReplicas
+
+	var vpaWeight autoscalingv1alpha1.VpaWeight
+
+	for _, interval := range hvpa.Spec.WeightBasedScalingIntervals {
+		// TODO: Following 2 if checks need to be done as part of verification process
+		if interval.StartReplicaCount == 0 {
+			interval.StartReplicaCount = *hvpa.Spec.HpaTemplate.MinReplicas
+		}
+		if interval.LastReplicaCount == 0 {
+			interval.LastReplicaCount = hvpa.Spec.HpaTemplate.MaxReplicas
+		}
+		if currentReplicas >= interval.StartReplicaCount && currentReplicas <= interval.LastReplicaCount {
+			vpaWeight = interval.VpaWeight
+			// TODO: If vpaWeight is 1, then use the bucket where desiredReplicas fall
+			break
+		}
+	}
+
+	// Memory for newDeploy is assigned in the function getWeightedRequests
+	newDeploy, resourceChanged, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, deployment)
+	if err != nil {
+		log.Error(err, "Error in getting weight based requests in new deployment")
+	}
+
+	weightedReplicas, err := getWeightedReplicas(hpaStatus, hvpa, 1-vpaWeight)
+	if err != nil {
+		log.Error(err, "Error in getting weight based replicas")
+	}
+
+	if weightedReplicas == 0 {
+		weightedReplicas = currentReplicas
+	}
+
+	if currentReplicas != weightedReplicas {
+		if newDeploy == nil {
+			newDeploy = deployment.DeepCopy()
+		}
+		newDeploy.Spec.Replicas = &weightedReplicas
+
+		log.Info("HPA", "Scale horizontally from", currentReplicas, "to", weightedReplicas)
+	}
+	if newDeploy == nil {
+		log.Info("Scaling not required")
+		return 0, false, vpaWeight, nil
+	}
+	log.Info("Scaling required")
+	return weightedReplicas - currentReplicas, resourceChanged, vpaWeight, r.Update(context.TODO(), newDeploy)
+}
+
+func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, hpaWeight autoscalingv1alpha1.VpaWeight) (int32, error) {
+	log.Info("Calculating weighted replicas")
+	if hpaWeight == 0 || hpaStatus == nil || hpaStatus.DesiredReplicas == 0 {
+		log.Info("Nothing to do")
+		return 0, nil
+	}
+
+	var err error
+	minReplicas := *hvpa.Spec.HpaTemplate.MinReplicas
+	maxReplicas := hvpa.Spec.HpaTemplate.MaxReplicas
+	currentReplicas := hpaStatus.CurrentReplicas
+	desiredReplicas := hpaStatus.DesiredReplicas
+
+	weightedReplicas := int32(math.Ceil(float64(currentReplicas) + float64(desiredReplicas-currentReplicas)*float64(hpaWeight)))
+	if weightedReplicas < minReplicas {
+		weightedReplicas = minReplicas
+	}
+	if weightedReplicas > maxReplicas {
+		weightedReplicas = maxReplicas
+	}
+
+	log.Info("HPA", "weighted replicas", weightedReplicas)
+	return weightedReplicas, err
+}
+
+func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, deployment *appsv1.Deployment) (*appsv1.Deployment, bool, error) {
+	log.Info("Checking if need to scale vertically")
+	if vpaWeight == 0 || vpaStatus == nil || vpaStatus.Recommendation == nil {
+		log.Info("Nothing to do")
+		return nil, false, nil
+	}
+	recommendations := vpaStatus.Recommendation
+
+	lastScaleTime := hvpa.Status.HvpaStatus.LastScaleTime
+	if lastScaleTime == nil {
+		lastScaleTime = &metav1.Time{}
+	}
+	lastScaleTimeDuration := time.Now().Sub(lastScaleTime.Time)
+	scaleUpDelay, _ := time.ParseDuration(hvpa.Spec.ScaleUpDelay)
+	scaleDownDelay, _ := time.ParseDuration(hvpa.Spec.ScaleDownDelay)
+
+	resourceChange := false
+	newDeploy := deployment.DeepCopy()
+	for _, rec := range recommendations.ContainerRecommendations {
+		for id, container := range newDeploy.Spec.Template.Spec.Containers {
+			// Currently only scale up is implemented, and vpaWeight is assumed to be 1
+			if rec.ContainerName == container.Name {
+				vpaMemTarget := rec.Target.Memory().DeepCopy()
+				vpaCPUTarget := rec.Target.Cpu().DeepCopy()
+				currMem := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Memory().DeepCopy()
+				currCPU := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Cpu().DeepCopy()
+
+				log.Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget, "vpWeight", vpaWeight)
+
+				factor := int64(100)
+				scale := int64(float64(vpaWeight) * float64(factor))
+
+				minDeltaMem, _ := getThreshold(hvpa.Spec.MinMemChange, corev1.ResourceMemory, currMem)
+				vpaMemTarget.Sub(currMem)
+				diffMem := resource.NewQuantity(vpaMemTarget.Value()*scale/factor, vpaMemTarget.Format)
+				negDiffMem := resource.NewQuantity(-vpaMemTarget.Value()*scale/factor, vpaMemTarget.Format)
+				currMem.Add(*diffMem)
+				weightedMem := currMem
+
+				minDeltaCPU, _ := getThreshold(hvpa.Spec.MinCPUChange, corev1.ResourceCPU, currCPU)
+				vpaCPUTarget.Sub(currCPU)
+				diffCPU := resource.NewQuantity(vpaCPUTarget.ScaledValue(-3)*scale/factor, vpaCPUTarget.Format)
+				negDiffCPU := resource.NewQuantity(-vpaCPUTarget.ScaledValue(-3)*scale/factor, vpaCPUTarget.Format)
+				diffCPU.SetScaled(diffCPU.Value(), -3)
+				currCPU.Add(*diffCPU)
+				weightedCPU := currCPU
+
+				log.Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU)
+				log.Info("VPA", "minimum CPU delta", minDeltaCPU.String(), "minimum memory delta", minDeltaMem)
+				if diffMem.Sign() > 0 && diffMem.Cmp(*minDeltaMem) > 0 && lastScaleTimeDuration > scaleUpDelay {
+					// If the difference is greater than minimum delta
+					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+					resourceChange = true
+				} else if diffMem.Sign() < 0 && negDiffMem.Cmp(*minDeltaMem) > 0 && lastScaleTimeDuration > scaleDownDelay {
+					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+					resourceChange = true
+				}
+				if diffCPU.Sign() > 0 && diffCPU.Cmp(*minDeltaCPU) > 0 && lastScaleTimeDuration > scaleUpDelay {
+					// If the difference is greater than minimum delta
+					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+					resourceChange = true
+				} else if diffCPU.Sign() < 0 && negDiffCPU.Cmp(*minDeltaCPU) > 0 && lastScaleTimeDuration > scaleDownDelay {
+					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+					resourceChange = true
+				}
+				// TODO: Add conditions for other resources also: ResourceStorage, ResourceEphemeralStorage,
+				break
+			}
+		}
+	}
+	log.Info("VPA", "vpa recommends changes?", resourceChange)
+	if resourceChange {
+		return newDeploy, resourceChange, nil
+	}
+	return nil, false, nil
+}
+
+func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeThreshold, resourceType corev1.ResourceName, currentVal resource.Quantity) (*resource.Quantity, error) {
+	var quantity resource.Quantity
+	if thresholdVals == nil {
+		if resourceType == corev1.ResourceMemory {
+			// Default to 200M
+			quantity, _ = resource.ParseQuantity("200M")
+		}
+		if resourceType == corev1.ResourceCPU {
+			// Default to 200m
+			quantity, _ = resource.ParseQuantity("200m")
+		}
+		return &quantity, nil
+	}
+
+	if thresholdVals.Percentage == 0 {
+		quantity = resource.MustParse(thresholdVals.Value)
+		return &quantity, nil
+	}
+
+	percentageValue := currentVal.ScaledValue(-3) * int64(thresholdVals.Percentage) / 100
+	percentageQuantity := resource.NewQuantity(percentageValue, currentVal.Format)
+	percentageQuantity.SetScaled(percentageQuantity.Value(), -3)
+
+	if thresholdVals.Value == "" {
+		return percentageQuantity, nil
+	}
+
+	absoluteQuantity := resource.MustParse(thresholdVals.Value)
+	if percentageQuantity.Cmp(absoluteQuantity) < 0 {
+		return percentageQuantity, nil
+	}
+	return &absoluteQuantity, nil
 }

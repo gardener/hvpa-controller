@@ -7,6 +7,12 @@ metadata:
 spec:
   scaleUpDelay: "2m"
   scaleDownDelay: "3m"
+  minCpuChange:
+    value: "20m"
+    percentage: 80
+  minMemChange:
+    value: "100M"
+    percentage: 80
   hpaTemplate:
     maxReplicas: 3
     minReplicas: 1
@@ -35,7 +41,7 @@ spec:
     - vpaWeight: 0
       startReplicaCount: 1
       lastReplicaCount: 2
-    - vpaWeight: 0.6
+    - vpaWeight: 1
       startReplicaCount: 3
   targetRef:
     apiVersion: apps/v1
