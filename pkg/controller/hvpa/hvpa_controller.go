@@ -235,10 +235,17 @@ func (r *ReconcileHvpa) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscali
 		},
 	}
 
-	annotations := make(map[string]string)
-	annotations["mode"] = "Off"
+	anno := hvpa.GetAnnotations()
+	if val, ok := anno["hpa-controller"]; ok {
+		// If the value of this annotation on hvpa is not kcm, then set hpa's mode off
+		// so that kube-controller-manager doesn't act on hpa recommendations
+		if val != "kcm" {
+			annotations := make(map[string]string)
+			annotations["mode"] = "Off"
 
-	hpa.SetAnnotations(annotations)
+			hpa.SetAnnotations(annotations)
+		}
+	}
 
 	if err := controllerutil.SetControllerReference(hvpa, hpa, r.scheme); err != nil {
 		return nil, err
@@ -445,7 +452,7 @@ func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAuto
 		log.Error(err, "Error in getting weight based requests in new deployment")
 	}
 
-	weightedReplicas, err := getWeightedReplicas(hpaStatus, hvpa, 1-vpaWeight)
+	weightedReplicas, err := getWeightedReplicas(hpaStatus, hvpa, deployment, 1-vpaWeight)
 	if err != nil {
 		log.Error(err, "Error in getting weight based replicas")
 	}
@@ -470,7 +477,16 @@ func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAuto
 	return weightedReplicas - currentReplicas, resourceChanged, vpaWeight, r.Update(context.TODO(), newDeploy)
 }
 
-func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, hpaWeight autoscalingv1alpha1.VpaWeight) (int32, error) {
+func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, deployment *appsv1.Deployment, hpaWeight autoscalingv1alpha1.VpaWeight) (int32, error) {
+	anno := hvpa.GetAnnotations()
+	if val, ok := anno["hpa-controller"]; ok {
+		if val == "kcm" {
+			// HPA is controlled by kube-controller-manager
+			log.Info("HVPA controller is not controlling HPA")
+			return 0, nil
+		}
+	}
+
 	log.Info("Calculating weighted replicas")
 	if hpaWeight == 0 || hpaStatus == nil || hpaStatus.DesiredReplicas == 0 {
 		log.Info("Nothing to do")
@@ -488,7 +504,7 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	var err error
 	minReplicas := *hvpa.Spec.HpaTemplate.MinReplicas
 	maxReplicas := hvpa.Spec.HpaTemplate.MaxReplicas
-	currentReplicas := hpaStatus.CurrentReplicas
+	currentReplicas := *deployment.Spec.Replicas
 	desiredReplicas := hpaStatus.DesiredReplicas
 
 	weightedReplicas := int32(math.Ceil(float64(currentReplicas) + float64(desiredReplicas-currentReplicas)*float64(hpaWeight)))
