@@ -1,0 +1,52 @@
+apiVersion: autoscaling.k8s.io/v1alpha1
+kind: Hvpa
+metadata:
+  # Uncomment below annotation if you want kube-controller-manager to act on HPA's recommendation instead of hvpa-controller
+  #annotations:
+  #  "hpa-controller": "kcm"
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: hvpa-sample
+spec:
+  scaleUpDelay: "2m"
+  scaleDownDelay: "3m"
+  minCpuChange:
+    value: "20m"
+    percentage: 80
+  minMemChange:
+    value: "100M"
+    percentage: 80
+  hpaTemplate:
+    maxReplicas: 3
+    minReplicas: 1
+    metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 50
+  vpaTemplate:
+    resourcePolicy:
+      containerPolicies:
+      - MinAllowed:
+          memory: 400Mi
+        containerName: resource-consumer
+        maxAllowed:
+          memory: 3000Mi
+  weightBasedScalingIntervals:
+    - vpaWeight: 0
+      startReplicaCount: 1
+      lastReplicaCount: 2
+    - vpaWeight: 1
+      startReplicaCount: 3
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: resource-consumer

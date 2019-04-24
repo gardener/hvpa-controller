@@ -103,10 +103,9 @@ type ReconcileHvpa struct {
 // Reconcile reads that state of the cluster for a Hvpa object and makes changes based on the state read
 // and what is in the Hvpa.Spec
 // Automatically generate RBAC rules to allow the Controller to read and write HPAs and VPAs
-// +kubebuilder:rbac:groups=autoscaling,resources=hpas,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=autoscaling,resources=hpas/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=vpas,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=vpas/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=verticalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas/status,verbs=get;update;patch
 func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, error) {
@@ -567,7 +566,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				currMem := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Memory().DeepCopy()
 				currCPU := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Cpu().DeepCopy()
 
-				log.Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget, "vpaWeight", vpaWeight)
+				log.Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget, "vpaWeight", vpaWeight, "minutes after last scaling", lastScaleTimeDuration.Minutes())
 
 				factor := int64(100)
 				scale := int64(float64(vpaWeight) * float64(factor))

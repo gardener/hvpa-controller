@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      controller: hvpa
+  template:
+    metadata:
+      labels:
+        controller: hvpa
+    spec:
+      containers:
+      - image: ggaurav10/hvpa-controller:latest
+        name: hvpa-manager
+
