@@ -236,15 +236,14 @@ func (r *ReconcileHvpa) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscali
 	}
 
 	anno := hvpa.GetAnnotations()
-	if val, ok := anno["hpa-controller"]; ok {
+	if val, ok := anno["hpa-controller"]; !ok || val != "kcm" {
+		// If this annotation is not set on hvpa, OR
 		// If the value of this annotation on hvpa is not kcm, then set hpa's mode off
 		// so that kube-controller-manager doesn't act on hpa recommendations
-		if val != "kcm" {
-			annotations := make(map[string]string)
-			annotations["mode"] = "Off"
+		annotations := make(map[string]string)
+		annotations["mode"] = "Off"
 
-			hpa.SetAnnotations(annotations)
-		}
+		hpa.SetAnnotations(annotations)
 	}
 
 	if err := controllerutil.SetControllerReference(hvpa, hpa, r.scheme); err != nil {
@@ -262,8 +261,9 @@ func (r *ReconcileHvpa) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscali
 	}
 
 	// Update the found object and write the result back if there are any changes
-	if !reflect.DeepEqual(hpa.Spec, foundHpa.Spec) {
+	if !reflect.DeepEqual(hpa.Spec, foundHpa.Spec) || !reflect.DeepEqual(hpa.GetAnnotations, foundHpa.GetAnnotations) {
 		foundHpa.Spec = hpa.Spec
+		foundHpa.SetAnnotations(hpa.GetAnnotations())
 		log.Info("Updating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
 		err = r.Update(context.TODO(), foundHpa)
 		if err != nil {
@@ -530,6 +530,21 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	if vpaWeight == 0 || vpaStatus == nil || vpaStatus.Recommendation == nil {
 		log.Info("Nothing to do")
 		return nil, false, nil
+	}
+	for k, v := range vpaStatus.Conditions {
+		if v.Type == vpa_api.RecommendationProvided {
+			if v.Status == "True" {
+				// VPA recommendations are provided, we can do further processing
+				break
+			} else {
+				log.Info("VPA recommendations not provided yet")
+				return nil, false, nil
+			}
+		}
+		if k == len(vpaStatus.Conditions)-1 {
+			log.Info("Reliable VPA recommendations not provided yet")
+			return nil, false, nil
+		}
 	}
 	recommendations := vpaStatus.Recommendation
 
