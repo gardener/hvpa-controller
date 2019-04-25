@@ -85,13 +85,13 @@ type HvpaSpec struct {
 	// TargetRef points to the controller managing the set of pods for the autoscaler to control
 	TargetRef *autoscaling.CrossVersionObjectReference `json:"targetRef"`
 
-	// ScaleUpDelay defines the minimum delay in minutes between 2 consecutive scale up operations
+	// ScaleUpStabilizationWindow defines the minimum delay in minutes between 2 consecutive scale up operations
 	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-	ScaleUpDelay string `json:"scaleUpDelay,omitempty"`
+	ScaleUpStabilizationWindow *string `json:"scaleUpStabilizationWindow,omitempty"`
 
-	// ScaleDownDelay defines the minimum delay in minutes between 2 consecutive scale down operations
+	// ScaleDownStabilizationWindow defines the minimum delay in minutes between 2 consecutive scale down operations
 	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-	ScaleDownDelay string `json:"scaleDownDelay,omitempty"`
+	ScaleDownStabilizationWindow *string `json:"scaleDownStabilizationWindow,omitempty"`
 
 	// MinCpuChange is the minimum change in CPU on which HVPA acts
 	// HVPA uses minimum of the Value and Percentage value
@@ -105,10 +105,10 @@ type HvpaSpec struct {
 type ChangeThreshold struct {
 	// Value is the absolute value of the threshold
 	// +optional
-	Value string `json:"value,omitempty"`
+	Value *string `json:"value,omitempty"`
 	// Percentage is the percentage of currently allocated value to be used as threshold
 	// +optional
-	Percentage int32 `json:"percentage,omitempty"`
+	Percentage *int32 `json:"percentage,omitempty"`
 }
 
 // VpaWeight - weight to provide to VPA scaling

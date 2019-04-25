@@ -1,22 +1,22 @@
 apiVersion: autoscaling.k8s.io/v1alpha1
 kind: Hvpa
 metadata:
-  #annotations:
-  #  "hpa-controller": "kcm"
+  annotations:
+    "hpa-controller": "hvpa"
   labels:
     controller-tools.k8s.io: "1.0"
   name: hvpa-sample
 spec:
-  scaleUpDelay: "2m"
-  scaleDownDelay: "3m"
+  scaleUpStabilizationWindow: "2m"
+  scaleDownStabilizationWindow: "3m"
   minCpuChange:
-    value: "20m"
+    value: 20m
     percentage: 80
   minMemChange:
-    value: "100M"
+    value: 100M
     percentage: 80
   hpaTemplate:
-    maxReplicas: 3
+    maxReplicas: 7
     minReplicas: 1
     metrics:
     - type: Resource
@@ -43,8 +43,12 @@ spec:
     - vpaWeight: 0
       startReplicaCount: 1
       lastReplicaCount: 2
-    - vpaWeight: 1
+    - vpaWeight: 0.5
       startReplicaCount: 3
+      lastReplicaCount: 5
+    - vpaWeight: 0
+      startReplicaCount: 6
+      lastReplicaCount: 7
   targetRef:
     apiVersion: apps/v1
     kind: Deployment
