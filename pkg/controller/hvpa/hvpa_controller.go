@@ -124,6 +124,12 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 
 	log.Info("Reconciling", "hvpa", instance.GetName())
 
+	// Default duration after which the object should be requeued
+	requeAfter, _ := time.ParseDuration("1m")
+	result := reconcile.Result{
+		RequeueAfter: requeAfter,
+	}
+
 	hpaStatus, err := r.reconcileHpa(instance)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -170,10 +176,10 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 		}*/
 	}
 	if !reflect.DeepEqual(hvpa.Status, instance.Status) {
-		return reconcile.Result{}, r.Update(context.TODO(), hvpa)
+		return result, r.Update(context.TODO(), hvpa)
 	}
 
-	return reconcile.Result{}, nil
+	return result, nil
 }
 
 func (r *ReconcileHvpa) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
@@ -220,6 +226,7 @@ func (r *ReconcileHvpa) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.V
 
 	return status, nil
 }
+
 func (r *ReconcileHvpa) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
 	hpa := &autoscaling.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
