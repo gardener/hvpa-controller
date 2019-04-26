@@ -364,17 +364,36 @@ func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAuto
 
 func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, deployment *appsv1.Deployment, hpaWeight autoscalingv1alpha1.VpaWeight) (int32, error) {
 	anno := hvpa.GetAnnotations()
-	if val, ok := anno["hpa-controller"]; ok && val == "hvpa" {
-		log.Info("HPA is controlled by HVPA")
-	} else {
+	if val, ok := anno["hpa-controller"]; !ok || val != "hvpa" {
 		log.Info("HPA is not controlled by HVPA")
 		return 0, nil
 	}
 
-	log.Info("Calculating weighted replicas")
+	log.Info("Calculating weighted replicas", "hpaWeight", hpaWeight)
 	if hpaWeight == 0 || hpaStatus == nil || hpaStatus.DesiredReplicas == 0 {
 		log.Info("Nothing to do")
 		return 0, nil
+	}
+
+	var err error
+	var weightedReplicas int32
+	currentReplicas := *deployment.Spec.Replicas
+	desiredReplicas := hpaStatus.DesiredReplicas
+
+	if desiredReplicas == currentReplicas {
+		log.Info("HPA", "no scaling required. Current replicas", currentReplicas)
+		return currentReplicas, err
+	}
+
+	if desiredReplicas > currentReplicas {
+		weightedReplicas = int32(math.Ceil(float64(currentReplicas) + float64(desiredReplicas-currentReplicas)*float64(hpaWeight)))
+	} else {
+		weightedReplicas = int32(math.Floor(float64(currentReplicas) + float64(desiredReplicas-currentReplicas)*float64(hpaWeight)))
+	}
+
+	if weightedReplicas == currentReplicas {
+		log.Info("HPA", "no scaling required. Weighted replicas", weightedReplicas)
+		return currentReplicas, err
 	}
 
 	lastScaleTime := hvpa.Status.HvpaStatus.LastScaleTime.DeepCopy()
@@ -385,40 +404,24 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	scaleUpStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleUpStabilizationWindow)
 	scaleDownStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleDownStabilizationWindow)
 
-	var err error
-	minReplicas := *hvpa.Spec.HpaTemplate.MinReplicas
-	maxReplicas := hvpa.Spec.HpaTemplate.MaxReplicas
-	currentReplicas := *deployment.Spec.Replicas
-	desiredReplicas := hpaStatus.DesiredReplicas
-
-	weightedReplicas := int32(math.Ceil(float64(currentReplicas) + float64(desiredReplicas-currentReplicas)*float64(hpaWeight)))
-	if weightedReplicas < minReplicas {
-		weightedReplicas = minReplicas
-	}
-	if weightedReplicas > maxReplicas {
-		weightedReplicas = maxReplicas
+	if weightedReplicas > currentReplicas && lastScaleTimeDuration > scaleUpStabilizationWindow {
+		log.Info("HPA scaling up", "weighted replicas", weightedReplicas)
+		return weightedReplicas, err
+	} else if weightedReplicas < currentReplicas && lastScaleTimeDuration > scaleDownStabilizationWindow {
+		log.Info("HPA scaling down", "weighted replicas", weightedReplicas)
+		return weightedReplicas, err
 	}
 
-	if weightedReplicas > currentReplicas {
-		if lastScaleTimeDuration > scaleUpStabilizationWindow {
-			log.Info("HPA scaling up", "weighted replicas", weightedReplicas)
-			return weightedReplicas, err
-		} else {
-			// TODO: Requeue after delta time
-			log.Info("Not scaling up as hvpa is in scale up stabilization window")
-		}
-	} else if weightedReplicas < currentReplicas {
-		if lastScaleTimeDuration > scaleDownStabilizationWindow {
-			log.Info("HPA scaling down", "weighted replicas", weightedReplicas)
-			return weightedReplicas, err
-		} else {
-			// TODO: Requeue after delta time
-			log.Info("Not scaling down as hvpa is in scale down stabilization window")
-		}
-	}
-
-	log.Info("HPA", "no scaling done. Current replicas", currentReplicas)
+	log.Info("HPA: Not scaling as hvpa is in stabilization window", "currentReplicas", currentReplicas, "weightedReplicas", weightedReplicas, "minutes after last scaling", lastScaleTimeDuration.Minutes())
 	return currentReplicas, err
+}
+
+func isScaleDownEnabled(hvpa *autoscalingv1alpha1.Hvpa) bool {
+	anno := hvpa.GetAnnotations()
+	if val, ok := anno["enable-vertical-scale-down"]; ok && val == "true" {
+		return true
+	}
+	return false
 }
 
 func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, deployment *appsv1.Deployment) (*appsv1.Deployment, bool, error) {
@@ -451,6 +454,8 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	lastScaleTimeDuration := time.Now().Sub(lastScaleTime.Time)
 	scaleUpStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleUpStabilizationWindow)
 	scaleDownStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleDownStabilizationWindow)
+
+	scaleDownEnaled := isScaleDownEnabled(hvpa)
 
 	resourceChange := false
 	newDeploy := deployment.DeepCopy()
@@ -485,12 +490,12 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				weightedCPU := currCPU
 
 				log.Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU)
-				log.Info("VPA", "minimum CPU delta", minDeltaCPU.String(), "minimum memory delta", minDeltaMem)
+				log.Info("VPA", "minimum CPU delta", minDeltaCPU.String(), "minimum memory delta", minDeltaMem, "scale down enabled", scaleDownEnaled)
 				if diffMem.Sign() > 0 && diffMem.Cmp(*minDeltaMem) > 0 && lastScaleTimeDuration > scaleUpStabilizationWindow {
 					// If the difference is greater than minimum delta
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
-				} else if diffMem.Sign() < 0 && negDiffMem.Cmp(*minDeltaMem) > 0 && lastScaleTimeDuration > scaleDownStabilizationWindow {
+				} else if scaleDownEnaled && diffMem.Sign() < 0 && negDiffMem.Cmp(*minDeltaMem) > 0 && lastScaleTimeDuration > scaleDownStabilizationWindow {
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
 				}
@@ -498,7 +503,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					// If the difference is greater than minimum delta
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 					resourceChange = true
-				} else if diffCPU.Sign() < 0 && negDiffCPU.Cmp(*minDeltaCPU) > 0 && lastScaleTimeDuration > scaleDownStabilizationWindow {
+				} else if scaleDownEnaled && diffCPU.Sign() < 0 && negDiffCPU.Cmp(*minDeltaCPU) > 0 && lastScaleTimeDuration > scaleDownStabilizationWindow {
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 					resourceChange = true
 				}
