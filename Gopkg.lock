@@ -807,8 +807,7 @@
   version = "kubernetes-1.13.1"
 
 [[projects]]
-  branch = "master"
-  digest = "1:40ca5e1ad5ae2c737955f8422f3131bb8f10f62dab5b5e5c3401e4260d48d503"
+  digest = "1:dc1ae99dcab96913d81ae970b1f7a7411a54199b14bfb17a7e86f9a56979c720"
   name = "k8s.io/code-generator"
   packages = [
     "cmd/client-gen",
@@ -821,11 +820,11 @@
     "cmd/client-gen/types",
     "cmd/deepcopy-gen",
     "cmd/deepcopy-gen/args",
-    "pkg/namer",
     "pkg/util",
   ]
   pruneopts = "T"
-  revision = "97cad0f8b2f3685eeb091954923b95709d91d52a"
+  revision = "c2090bec4d9b1fb25de3812f868accc2bc9ecbae"
+  version = "kubernetes-1.13.0"
 
 [[projects]]
   branch = "master"
