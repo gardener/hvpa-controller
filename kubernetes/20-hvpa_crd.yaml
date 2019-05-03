@@ -83,15 +83,15 @@ spec:
                   description: Value is the absolute value of the threshold
                   type: string
               type: object
-            scaleDownDelay:
-              description: ScaleDownDelay defines the minimum delay in minutes between
-                2 consecutive scale down operations Valid time units are "ns", "us"
-                (or "µs"), "ms", "s", "m", "h"
+            scaleDownStabilizationWindow:
+              description: ScaleDownStabilizationWindow defines the minimum delay
+                in minutes between 2 consecutive scale down operations Valid time
+                units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
               type: string
-            scaleUpDelay:
-              description: ScaleUpDelay defines the minimum delay in minutes between
-                2 consecutive scale up operations Valid time units are "ns", "us"
-                (or "µs"), "ms", "s", "m", "h"
+            scaleUpStabilizationWindow:
+              description: ScaleUpStabilizationWindow defines the minimum delay in
+                minutes between 2 consecutive scale up operations Valid time units
+                are "ns", "us" (or "µs"), "ms", "s", "m", "h"
               type: string
             targetRef:
               description: TargetRef points to the controller managing the set of
