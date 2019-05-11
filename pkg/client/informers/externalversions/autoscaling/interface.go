@@ -19,8 +19,8 @@ limitations under the License.
 package autoscaling
 
 import (
-	v1alpha1 "k8s.io/autoscaler/hvpa-controller/pkg/client/informers/externalversions/autoscaling/v1alpha1"
-	internalinterfaces "k8s.io/autoscaler/hvpa-controller/pkg/client/informers/externalversions/internalinterfaces"
+	v1alpha1 "github.com/gardener/hvpa-controller/pkg/client/informers/externalversions/autoscaling/v1alpha1"
+	internalinterfaces "github.com/gardener/hvpa-controller/pkg/client/informers/externalversions/internalinterfaces"
 )
 
 // Interface provides access to each of this group's versions.

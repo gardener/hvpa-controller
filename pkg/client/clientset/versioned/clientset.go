@@ -19,7 +19,7 @@ limitations under the License.
 package versioned
 
 import (
-	autoscalingv1alpha1 "k8s.io/autoscaler/hvpa-controller/pkg/client/clientset/versioned/typed/autoscaling/v1alpha1"
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/pkg/client/clientset/versioned/typed/autoscaling/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"

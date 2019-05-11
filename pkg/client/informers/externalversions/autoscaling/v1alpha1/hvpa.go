@@ -21,13 +21,13 @@ package v1alpha1
 import (
 	time "time"
 
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/pkg/apis/autoscaling/v1alpha1"
+	versioned "github.com/gardener/hvpa-controller/pkg/client/clientset/versioned"
+	internalinterfaces "github.com/gardener/hvpa-controller/pkg/client/informers/externalversions/internalinterfaces"
+	v1alpha1 "github.com/gardener/hvpa-controller/pkg/client/listers/autoscaling/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
-	autoscalingv1alpha1 "k8s.io/autoscaler/hvpa-controller/pkg/apis/autoscaling/v1alpha1"
-	versioned "k8s.io/autoscaler/hvpa-controller/pkg/client/clientset/versioned"
-	internalinterfaces "k8s.io/autoscaler/hvpa-controller/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "k8s.io/autoscaler/hvpa-controller/pkg/client/listers/autoscaling/v1alpha1"
 	cache "k8s.io/client-go/tools/cache"
 )
 

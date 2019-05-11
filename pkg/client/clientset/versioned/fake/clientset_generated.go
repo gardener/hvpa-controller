@@ -19,11 +19,11 @@ limitations under the License.
 package fake
 
 import (
+	clientset "github.com/gardener/hvpa-controller/pkg/client/clientset/versioned"
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/pkg/client/clientset/versioned/typed/autoscaling/v1alpha1"
+	fakeautoscalingv1alpha1 "github.com/gardener/hvpa-controller/pkg/client/clientset/versioned/typed/autoscaling/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
-	clientset "k8s.io/autoscaler/hvpa-controller/pkg/client/clientset/versioned"
-	autoscalingv1alpha1 "k8s.io/autoscaler/hvpa-controller/pkg/client/clientset/versioned/typed/autoscaling/v1alpha1"
-	fakeautoscalingv1alpha1 "k8s.io/autoscaler/hvpa-controller/pkg/client/clientset/versioned/typed/autoscaling/v1alpha1/fake"
 	"k8s.io/client-go/discovery"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"

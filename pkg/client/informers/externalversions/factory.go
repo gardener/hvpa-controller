@@ -23,12 +23,12 @@ import (
 	sync "sync"
 	time "time"
 
+	versioned "github.com/gardener/hvpa-controller/pkg/client/clientset/versioned"
+	autoscaling "github.com/gardener/hvpa-controller/pkg/client/informers/externalversions/autoscaling"
+	internalinterfaces "github.com/gardener/hvpa-controller/pkg/client/informers/externalversions/internalinterfaces"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
-	versioned "k8s.io/autoscaler/hvpa-controller/pkg/client/clientset/versioned"
-	autoscaling "k8s.io/autoscaler/hvpa-controller/pkg/client/informers/externalversions/autoscaling"
-	internalinterfaces "k8s.io/autoscaler/hvpa-controller/pkg/client/informers/externalversions/internalinterfaces"
 	cache "k8s.io/client-go/tools/cache"
 )
 

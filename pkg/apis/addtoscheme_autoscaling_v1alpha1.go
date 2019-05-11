@@ -17,7 +17,7 @@ limitations under the License.
 package apis
 
 import (
-	"k8s.io/autoscaler/hvpa-controller/pkg/apis/autoscaling/v1alpha1"
+	"github.com/gardener/hvpa-controller/pkg/apis/autoscaling/v1alpha1"
 )
 
 func init() {

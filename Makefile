@@ -30,7 +30,7 @@ test: generate fmt vet manifests
 
 # Build manager binary
 manager: generate fmt vet
-	go build -o bin/manager k8s.io/autoscaler/hvpa-controller/cmd/manager
+	go build -o bin/manager github.com/gardener/hvpa-controller/cmd/manager
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet

@@ -19,7 +19,7 @@ limitations under the License.
 package fake
 
 import (
-	v1alpha1 "k8s.io/autoscaler/hvpa-controller/pkg/client/clientset/versioned/typed/autoscaling/v1alpha1"
+	v1alpha1 "github.com/gardener/hvpa-controller/pkg/client/clientset/versioned/typed/autoscaling/v1alpha1"
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
 )
