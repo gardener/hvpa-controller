@@ -255,6 +255,11 @@ https://github.com/kubernetes-sigs/controller-tools
 Copyright 2018 The Kubernetes Authors.  
 Apache 2 license (https://github.com/kubernetes-sigs/controller-runtime/blob/master/LICENSE).
 
+Klog  
+https://github.com/kubernetes/klog  
+Copyright 2017 The Kubernetes Authors  
+Apache 2 license (https://github.com/kubernetes/klog/blob/master/LICENSE)
+
 Gomega.  
 https://github.com/onsi/gomega.  
 Copyright (c) 2013-2014 Onsi Fakhouri  
