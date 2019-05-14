@@ -344,8 +344,10 @@ func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAuto
 
 	vpaWeight := getVpaWeightFromIntervals(hvpa, desiredReplicas, currentReplicas)
 
+	hpaScaleOutLimited := isHpaScaleOutLimited(hpaStatus, hvpa.Spec.HpaTemplate.MaxReplicas)
+
 	// Memory for newDeploy is assigned in the function getWeightedRequests
-	newDeploy, resourceChanged, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, deployment)
+	newDeploy, resourceChanged, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, deployment, hpaScaleOutLimited)
 	if err != nil {
 		log.Error(err, "Error in getting weight based requests in new deployment")
 	}
@@ -429,6 +431,22 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	return currentReplicas, err
 }
 
+func isHpaScaleOutLimited(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, maxReplicas int32) bool {
+	if hpaStatus == nil || hpaStatus.Conditions == nil {
+		return false
+	}
+	if hpaStatus.DesiredReplicas < maxReplicas {
+		return false
+	}
+	for _, v := range hpaStatus.Conditions {
+		if v.Type == autoscaling.ScalingLimited && v.Status == corev1.ConditionTrue {
+			log.Info("HPA scale out is limited")
+			return true
+		}
+	}
+	return false
+}
+
 func isScaleDownEnabled(hvpa *autoscalingv1alpha1.Hvpa) bool {
 	anno := hvpa.GetAnnotations()
 	if val, ok := anno["enable-vertical-scale-down"]; ok && val == "true" {
@@ -437,7 +455,7 @@ func isScaleDownEnabled(hvpa *autoscalingv1alpha1.Hvpa) bool {
 	return false
 }
 
-func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, deployment *appsv1.Deployment) (*appsv1.Deployment, bool, error) {
+func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, deployment *appsv1.Deployment, hpaScaleOutLimited bool) (*appsv1.Deployment, bool, error) {
 	log.Info("Checking if need to scale vertically")
 	if vpaWeight == 0 || vpaStatus == nil || vpaStatus.Recommendation == nil {
 		log.Info("Nothing to do")
@@ -502,9 +520,9 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				currCPU.Add(*diffCPU)
 				weightedCPU := currCPU
 
-				log.Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU)
+				log.Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU, "HPA condition ScalingLimited", hpaScaleOutLimited)
 				log.Info("VPA", "minimum CPU delta", minDeltaCPU.String(), "minimum memory delta", minDeltaMem, "scale down enabled", scaleDownEnaled)
-				if diffMem.Sign() > 0 && diffMem.Cmp(*minDeltaMem) > 0 && lastScaleTimeDuration > scaleUpStabilizationWindow {
+				if hpaScaleOutLimited && diffMem.Sign() > 0 && diffMem.Cmp(*minDeltaMem) > 0 && lastScaleTimeDuration > scaleUpStabilizationWindow {
 					// If the difference is greater than minimum delta
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
@@ -512,7 +530,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
 				}
-				if diffCPU.Sign() > 0 && diffCPU.Cmp(*minDeltaCPU) > 0 && lastScaleTimeDuration > scaleUpStabilizationWindow {
+				if hpaScaleOutLimited && diffCPU.Sign() > 0 && diffCPU.Cmp(*minDeltaCPU) > 0 && lastScaleTimeDuration > scaleUpStabilizationWindow {
 					// If the difference is greater than minimum delta
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 					resourceChange = true
