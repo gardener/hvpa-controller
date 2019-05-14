@@ -20,9 +20,9 @@ import (
 	"flag"
 	"os"
 
-	"k8s.io/autoscaler/hvpa-controller/pkg/apis"
-	"k8s.io/autoscaler/hvpa-controller/pkg/controller"
-	"k8s.io/autoscaler/hvpa-controller/pkg/webhook"
+	"github.com/gardener/hvpa-controller/pkg/apis"
+	"github.com/gardener/hvpa-controller/pkg/controller"
+	"github.com/gardener/hvpa-controller/pkg/webhook"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"

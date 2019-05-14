@@ -21,11 +21,11 @@ package v1alpha1
 import (
 	"time"
 
+	v1alpha1 "github.com/gardener/hvpa-controller/pkg/apis/autoscaling/v1alpha1"
+	scheme "github.com/gardener/hvpa-controller/pkg/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
-	v1alpha1 "k8s.io/autoscaler/hvpa-controller/pkg/apis/autoscaling/v1alpha1"
-	scheme "k8s.io/autoscaler/hvpa-controller/pkg/client/clientset/versioned/scheme"
 	rest "k8s.io/client-go/rest"
 )
 

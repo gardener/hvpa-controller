@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	"k8s.io/autoscaler/hvpa-controller/pkg/controller/hvpa"
+	"github.com/gardener/hvpa-controller/pkg/controller/hvpa"
 )
 
 func init() {

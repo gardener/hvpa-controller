@@ -17,7 +17,7 @@ limitations under the License.
 // Package v1alpha1 contains API Schema definitions for the autoscaling v1alpha1 API group
 // +k8s:openapi-gen=true
 // +k8s:deepcopy-gen=package,register
-// +k8s:conversion-gen=k8s.io/autoscaler/hvpa-controller/pkg/apis/autoscaling
+// +k8s:conversion-gen=github.com/gardener/hvpa-controller/pkg/apis/autoscaling
 // +k8s:defaulter-gen=TypeMeta
 // +groupName=autoscaling.k8s.io
 package v1alpha1

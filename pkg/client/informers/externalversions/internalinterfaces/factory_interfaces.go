@@ -21,9 +21,9 @@ package internalinterfaces
 import (
 	time "time"
 
+	versioned "github.com/gardener/hvpa-controller/pkg/client/clientset/versioned"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
-	versioned "k8s.io/autoscaler/hvpa-controller/pkg/client/clientset/versioned"
 	cache "k8s.io/client-go/tools/cache"
 )
 
