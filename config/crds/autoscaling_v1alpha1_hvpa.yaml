@@ -197,6 +197,9 @@ spec:
                     vertical:
                       type: string
                   type: object
+                overrideLastScaleTime:
+                  description: Override last scale time
+                  type: boolean
                 vpaWeight:
                   format: float
                   type: number

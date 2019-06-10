@@ -16,4 +16,7 @@ spec:
       containers:
       - image: ggaurav10/hvpa-controller:latest
         name: hvpa-manager
+        command:
+          - ./manager
+          - --v=2
 

@@ -144,6 +144,8 @@ type HvpaCurrentStatus struct {
 	// the kind of scaling that was done last time
 	// +optional
 	LastScaleType LastScaleType `json:"lastScaleType,omitempty"`
+	// Override last scale time
+	OverrideLastScaleTime bool `json:"overrideLastScaleTime,omitempty"`
 }
 
 // LastScaleType is the type of scaling
