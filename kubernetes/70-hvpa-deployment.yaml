@@ -18,5 +18,6 @@ spec:
         name: hvpa-manager
         command:
           - ./manager
+          - --logtostderr=true 
           - --v=2
 
