@@ -197,8 +197,8 @@ spec:
                     vertical:
                       type: string
                   type: object
-                overrideLastScaleTime:
-                  description: Override last scale time
+                overrideScaleUpStabilization:
+                  description: Override scale up stabilization window
                   type: boolean
                 vpaWeight:
                   format: float

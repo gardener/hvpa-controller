@@ -26,6 +26,10 @@ required = [
   version = "kubernetes-1.13.0"
 
 [[constraint]]
+  name = "k8s.io/client-go"
+  version = "kubernetes-1.13.1"
+
+[[constraint]]
   name="k8s.io/autoscaler"
   version="vertical-pod-autoscaler-0.5.1"
 
