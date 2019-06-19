@@ -197,6 +197,9 @@ spec:
                     vertical:
                       type: string
                   type: object
+                overrideScaleUpStabilization:
+                  description: Override scale up stabilization window
+                  type: boolean
                 vpaWeight:
                   format: float
                   type: number

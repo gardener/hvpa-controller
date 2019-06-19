@@ -20,9 +20,8 @@ import (
 	"context"
 	"math"
 	"reflect"
+	"sync"
 	"time"
-
-	"k8s.io/apimachinery/pkg/api/resource"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/pkg/apis/autoscaling/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,16 +29,23 @@ import (
 	autoscaling "k8s.io/api/autoscaling/v2beta2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-
+	"k8s.io/apimachinery/pkg/util/sets"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target"
+	"k8s.io/client-go/informers"
+	kube_client "k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -55,13 +61,80 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileHvpa{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	config := mgr.GetConfig()
+	kubeClient := kube_client.NewForConfigOrDie(config)
+	factory := informers.NewSharedInformerFactory(kubeClient, 10*time.Minute)
+
+	targetSelectorFetcher := target.NewCompositeTargetSelectorFetcher(
+		target.NewVpaTargetSelectorFetcher(config, kubeClient, factory),
+		target.NewBeta1TargetSelectorFetcher(config),
+	)
+
+	return &ReconcileHvpa{Client: mgr.GetClient(), scheme: mgr.GetScheme(), selectorFetcher: targetSelectorFetcher}
+}
+
+func updateEventFunc(e event.UpdateEvent) bool {
+	oldPod, ok := e.ObjectOld.(*corev1.Pod)
+	if !ok {
+		return false
+	}
+
+	newPod, ok := e.ObjectNew.(*corev1.Pod)
+	if !ok {
+		return false
+	}
+
+	if isEvictionEvent(oldPod, newPod) || isOomKillEvent(oldPod, newPod) {
+		log.V(3).Info("Handle update event for", "pod", newPod.Name)
+		return true
+	}
+	log.V(3).Info("Ignoring update event for", "pod", newPod.Name)
+	return false
+}
+
+func isEvictionEvent(oldPod, newPod *corev1.Pod) bool {
+	if oldPod.Status.Reason == "Evicted" {
+		log.V(4).Info("Pod was already evicted")
+		return false
+	}
+
+	if newPod.Status.Reason == "Evicted" {
+		log.V(4).Info("Pod was evicted")
+		return true
+	}
+	return false
+}
+
+func isOomKillEvent(oldPod, newPod *corev1.Pod) bool {
+	for i := range newPod.Status.ContainerStatuses {
+		containerStatus := &newPod.Status.ContainerStatuses[i]
+		if containerStatus.RestartCount > 0 &&
+			containerStatus.LastTerminationState.Terminated != nil &&
+			containerStatus.LastTerminationState.Terminated.Reason == "OOMKilled" {
+
+			oldStatus := findStatus(containerStatus.Name, oldPod.Status.ContainerStatuses)
+			if oldStatus != nil && containerStatus.RestartCount > oldStatus.RestartCount {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func findStatus(name string, containerStatuses []corev1.ContainerStatus) *corev1.ContainerStatus {
+	for i := range containerStatuses {
+		containerStatus := &containerStatuses[i]
+		if containerStatus.Name == name {
+			return containerStatus
+		}
+	}
+	return nil
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New("hvpa-controller", mgr, controller.Options{Reconciler: r})
+	c, err := controller.New("hvpa-controller", mgr, controller.Options{MaxConcurrentReconciles: 1, Reconciler: r})
 	if err != nil {
 		return err
 	}
@@ -89,16 +162,144 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	eventHandler := &handler.EnqueueRequestsFromMapFunc{
+		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
+			/* This event handler function, sets the flag on hvpa to override the last scale time stabilization window if:
+			 * 1. The pod was oomkilled, OR
+			 * 2. The pod was evicted, and the node was under memory pressure
+			 */
+			pod := a.Object.(*corev1.Pod)
+			nodeName := pod.Spec.NodeName
+			if nodeName == "" {
+				return nil
+			}
+			client := mgr.GetClient()
+
+			// Get HVPA from the cache
+			name := ""
+			for _, obj := range cachedNames[pod.Namespace] {
+				if obj.Selector.Matches(labels.Set(pod.GetLabels())) {
+					name = obj.Name
+					break
+				}
+			}
+			if name == "" {
+				// HVPA object not found for the pod
+				return nil
+			}
+
+			log.V(4).Info("Checking if need to override last scale time.", "hvpa", name, "pod", pod.Name)
+			// Get latest HVPA object
+			hvpa := &autoscalingv1alpha1.Hvpa{}
+			err := client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: a.Meta.GetNamespace()}, hvpa)
+			if err != nil {
+				log.Error(err, "Error retreiving hvpa")
+				return nil
+			}
+			clone := hvpa.DeepCopy()
+
+			hvpaStatus := clone.Status.HvpaStatus
+			if hvpaStatus.LastScaleTime == nil || hvpaStatus.OverrideScaleUpStabilization == true {
+				log.V(4).Info("HVPA status already set to override last scale time.")
+				return nil
+			}
+
+			if pod.Status.Reason == "Evicted" {
+				// If pod was evicted beause of 'KubeletHasInsufficientMemory' node condition,
+				// only then we want to continue, otherwise exit
+				req := types.NamespacedName{
+					Name: nodeName,
+				}
+				node := corev1.Node{}
+				err := client.Get(context.TODO(), req, &node)
+				if err != nil {
+					log.Error(err, "Error fetching node")
+					return nil
+				}
+
+				hasMemPressure := false
+				for _, condition := range node.Status.Conditions {
+					if condition.Reason == "KubeletHasInsufficientMemory" && condition.Status == corev1.ConditionTrue {
+						hasMemPressure = true
+						break
+					}
+				}
+				if !hasMemPressure {
+					log.V(4).Info("Pod was evicted, but the node is not under memory pressure.")
+					return nil
+				}
+				log.V(4).Info("Pod might have been evited because node was under memory pressure")
+			} else {
+				// The pod was oomkilled
+				// Check if scaling already happened after this was oomkilled
+				recent := false
+				for i := range pod.Status.ContainerStatuses {
+					containerStatus := &pod.Status.ContainerStatuses[i]
+					if containerStatus.RestartCount > 0 &&
+						containerStatus.LastTerminationState.Terminated != nil &&
+						containerStatus.LastTerminationState.Terminated.Reason == "OOMKilled" &&
+						clone.Status.HvpaStatus.LastScaleTime != nil &&
+						containerStatus.LastTerminationState.Terminated.FinishedAt.After(clone.Status.HvpaStatus.LastScaleTime.Time) {
+
+						recent = true
+						break
+					}
+				}
+				if !recent {
+					log.V(4).Info("This is not  a recent oomkill. Return")
+					return nil
+				}
+			}
+
+			clone.Status.HvpaStatus.OverrideScaleUpStabilization = true
+
+			log.V(2).Info("Updating HVPA status to override last scale time", "HVPA", clone.Name)
+			err = client.Update(context.TODO(), clone)
+			if err != nil {
+				log.Error(err, "Error overrinding last scale time for", "HVPA", name)
+			}
+
+			return nil
+		}),
+	}
+
+	pred := OomkillPredicate{
+		Funcs: predicate.Funcs{
+			UpdateFunc: updateEventFunc,
+		},
+	}
+
+	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, eventHandler, pred)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
+
+// OomkillPredicate implements a oomkill predicate function
+type OomkillPredicate struct {
+	predicate.Funcs
+}
+
+type hvpaObj struct {
+	Name     string
+	Selector labels.Selector
+}
+
+var cachedNames map[string][]*hvpaObj
+var cacheMux sync.Mutex
 
 var _ reconcile.Reconciler = &ReconcileHvpa{}
 
 // ReconcileHvpa reconciles a Hvpa object
 type ReconcileHvpa struct {
 	client.Client
-	scheme *runtime.Scheme
+	scheme          *runtime.Scheme
+	selectorFetcher target.VpaTargetSelectorFetcher
 }
+
+const deleteFinalizerName = "autoscaling.k8s.io/hvpa-controller"
 
 // Reconcile reads that state of the cluster for a Hvpa object and makes changes based on the state read
 // and what is in the Hvpa.Spec
@@ -108,6 +309,7 @@ type ReconcileHvpa struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=events,verbs=get;watch;list
 func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	// Fetch the Hvpa instance
 	instance := &autoscalingv1alpha1.Hvpa{}
@@ -122,7 +324,19 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 		return reconcile.Result{}, err
 	}
 
-	log.Info("Reconciling", "hvpa", instance.GetName())
+	log.V(1).Info("Reconciling", "hvpa", instance.GetName())
+
+	r.manageCache(instance)
+
+	if instance.GetDeletionTimestamp() != nil {
+		if finalizers := sets.NewString(instance.Finalizers...); finalizers.Has(deleteFinalizerName) {
+			r.deleteHvpaFinalizers(instance)
+		}
+
+		return reconcile.Result{}, r.Delete(context.TODO(), instance)
+	}
+
+	r.addHvpaFinalizers(instance)
 
 	// Default duration after which the object should be requeued
 	requeAfter, _ := time.ParseDuration("1m")
@@ -143,7 +357,7 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 	deploy := &appsv1.Deployment{}
 	err = r.Get(context.TODO(), types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, deploy)
 	if err != nil {
-		log.Info("Error getting", "kind", instance.Spec.TargetRef.Kind, "name", instance.Spec.TargetRef.Name, "namespace", instance.Namespace)
+		log.Error(err, "Error getting", "kind", instance.Spec.TargetRef.Kind, "name", instance.Spec.TargetRef.Name, "namespace", instance.Namespace)
 		return reconcile.Result{}, err
 	}
 
@@ -170,6 +384,7 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 		} else if hpaScaled < 0 {
 			hvpa.Status.HvpaStatus.LastScaleType.Horizontal = autoscalingv1alpha1.In
 		}
+		hvpa.Status.HvpaStatus.OverrideScaleUpStabilization = false
 		/*// As only scale up is implemented yet
 		if vpaScaled {
 			hvpa.Status.HvpaStatus.LastScaleType.Vertical = autoscalingv1alpha1.Up
@@ -182,11 +397,89 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 	return result, nil
 }
 
-func (r *ReconcileHvpa) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
+// manageCache manages the global map of HVPAs
+func (r *ReconcileHvpa) manageCache(instance *autoscalingv1alpha1.Hvpa) {
+	selector, _ := r.selectorFetcher.Fetch(getVpaFromHvpa(instance))
+	obj := hvpaObj{
+		Name:     instance.Name,
+		Selector: selector,
+	}
+
+	cacheMux.Lock()
+	defer cacheMux.Unlock()
+
+	if _, ok := cachedNames[instance.Namespace]; !ok {
+		if cachedNames == nil {
+			cachedNames = make(map[string][]*hvpaObj)
+		}
+		cachedNames[instance.Namespace] = make([]*hvpaObj, 1)
+		cachedNames[instance.Namespace] = []*hvpaObj{&obj}
+	} else {
+		found := false
+		for i, cache := range cachedNames[instance.Namespace] {
+			if cache.Name == obj.Name {
+				found = true
+				if instance.DeletionTimestamp != nil {
+					// object is under deletion, remove it from the cache
+					len := len(cachedNames[instance.Namespace])
+					cachedNames[instance.Namespace][i] = cachedNames[instance.Namespace][len-1]
+					cachedNames[instance.Namespace][len-1] = nil
+					cachedNames[instance.Namespace] = cachedNames[instance.Namespace][:len-1]
+					log.V(3).Info("HVPA", instance.Name, "removed from cache")
+				}
+				break
+			}
+		}
+		if !found {
+			cachedNames[instance.Namespace] = append(cachedNames[instance.Namespace], &obj)
+		}
+	}
+	log.V(4).Info("HVPA", "number of hvpas in cache", len(cachedNames[instance.Namespace]), "for namespace", instance.Namespace)
+}
+
+func (r *ReconcileHvpa) addHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
+	clone := hvpa.DeepCopy()
+
+	if finalizers := sets.NewString(clone.Finalizers...); !finalizers.Has(deleteFinalizerName) {
+		finalizers.Insert(deleteFinalizerName)
+		r.updateFinalizers(clone, finalizers.List())
+	}
+}
+
+func (r *ReconcileHvpa) updateFinalizers(hvpa *autoscalingv1alpha1.Hvpa, finalizers []string) {
+	// Get the latest version of the machine so that we can avoid conflicts
+	instance := &autoscalingv1alpha1.Hvpa{}
+	err := r.Get(context.TODO(), types.NamespacedName{Name: hvpa.Name, Namespace: hvpa.Namespace}, instance)
+	if err != nil {
+		return
+	}
+
+	clone := instance.DeepCopy()
+	clone.Finalizers = finalizers
+	err = r.Update(context.TODO(), clone)
+	if err != nil {
+		// Free the memory for clone before retrying, so that we limit memory usage in case we keep failing
+		clone = nil
+		// Keep retrying until update goes through
+		log.V(2).Info("Warning: Update failed, retrying")
+		r.updateFinalizers(hvpa, finalizers)
+	}
+}
+
+func (r *ReconcileHvpa) deleteHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
+	clone := hvpa.DeepCopy()
+
+	if finalizers := sets.NewString(clone.Finalizers...); finalizers.Has(deleteFinalizerName) {
+		finalizers.Delete(deleteFinalizerName)
+		r.updateFinalizers(clone, finalizers.List())
+	}
+}
+
+func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) *vpa_api.VerticalPodAutoscaler {
 	// Updater policy set to "Off", as we don't want vpa-updater to act on recommendations
 	updatePolicy := vpa_api.UpdateModeOff
 
-	vpa := &vpa_api.VerticalPodAutoscaler{
+	return &vpa_api.VerticalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hvpa.Name + "-vpa",
 			Namespace: hvpa.Namespace,
@@ -203,6 +496,10 @@ func (r *ReconcileHvpa) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.V
 			},
 		},
 	}
+}
+
+func (r *ReconcileHvpa) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
+	vpa := getVpaFromHvpa(hvpa)
 
 	if err := controllerutil.SetControllerReference(hvpa, vpa, r.scheme); err != nil {
 		return nil, err
@@ -211,7 +508,7 @@ func (r *ReconcileHvpa) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.V
 	foundVpa := &vpa_api.VerticalPodAutoscaler{}
 	err := r.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, foundVpa)
 	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating VPA", "namespace", vpa.Namespace, "name", vpa.Name)
+		log.V(2).Info("Creating VPA", "namespace", vpa.Namespace, "name", vpa.Name)
 		err = r.Create(context.TODO(), vpa)
 		return nil, err
 	} else if err != nil {
@@ -221,7 +518,7 @@ func (r *ReconcileHvpa) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.V
 	// Update the found object and write the result back if there are any changes
 	if !reflect.DeepEqual(vpa.Spec, foundVpa.Spec) {
 		foundVpa.Spec = vpa.Spec
-		log.Info("Updating VPA", "namespace", vpa.Namespace, "name", vpa.Name)
+		log.V(2).Info("Updating VPA", "namespace", vpa.Namespace, "name", vpa.Name)
 		err = r.Update(context.TODO(), foundVpa)
 		if err != nil {
 			return nil, err
@@ -265,7 +562,7 @@ func (r *ReconcileHvpa) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscali
 	foundHpa := &autoscaling.HorizontalPodAutoscaler{}
 	err := r.Get(context.TODO(), types.NamespacedName{Name: hpa.Name, Namespace: hpa.Namespace}, foundHpa)
 	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
+		log.V(2).Info("Creating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
 		err = r.Create(context.TODO(), hpa)
 		return nil, err
 	} else if err != nil {
@@ -273,10 +570,10 @@ func (r *ReconcileHvpa) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscali
 	}
 
 	// Update the found object and write the result back if there are any changes
-	if !reflect.DeepEqual(hpa.Spec, foundHpa.Spec) || !reflect.DeepEqual(hpa.GetAnnotations, foundHpa.GetAnnotations) {
+	if !reflect.DeepEqual(hpa.Spec, foundHpa.Spec) || !reflect.DeepEqual(hpa.GetAnnotations(), foundHpa.GetAnnotations()) {
 		foundHpa.Spec = hpa.Spec
 		foundHpa.SetAnnotations(hpa.GetAnnotations())
-		log.Info("Updating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
+		log.V(2).Info("Updating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
 		err = r.Update(context.TODO(), foundHpa)
 		if err != nil {
 			return nil, err
@@ -366,27 +663,25 @@ func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAuto
 			newDeploy = deployment.DeepCopy()
 		}
 		newDeploy.Spec.Replicas = &weightedReplicas
-
-		log.Info("HPA", "Scale horizontally from", currentReplicas, "to", weightedReplicas)
 	}
 	if newDeploy == nil {
-		log.Info("Scaling not required")
+		log.V(3).Info("Scaling not required")
 		return 0, false, vpaWeight, nil
 	}
-	log.Info("Scaling required")
+	log.V(3).Info("Scaling required")
 	return weightedReplicas - currentReplicas, resourceChanged, vpaWeight, r.Update(context.TODO(), newDeploy)
 }
 
 func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, deployment *appsv1.Deployment, hpaWeight autoscalingv1alpha1.VpaWeight) (int32, error) {
 	anno := hvpa.GetAnnotations()
 	if val, ok := anno["hpa-controller"]; !ok || val != "hvpa" {
-		log.Info("HPA is not controlled by HVPA")
+		log.V(3).Info("HPA is not controlled by HVPA")
 		return 0, nil
 	}
 
-	log.Info("Calculating weighted replicas", "hpaWeight", hpaWeight)
+	log.V(2).Info("Calculating weighted replicas", "hpaWeight", hpaWeight)
 	if hpaWeight == 0 || hpaStatus == nil || hpaStatus.DesiredReplicas == 0 {
-		log.Info("Nothing to do")
+		log.V(2).Info("HPA: Nothing to do")
 		return 0, nil
 	}
 
@@ -396,7 +691,7 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	desiredReplicas := hpaStatus.DesiredReplicas
 
 	if desiredReplicas == currentReplicas {
-		log.Info("HPA", "no scaling required. Current replicas", currentReplicas)
+		log.V(2).Info("HPA", "no scaling required. Current replicas", currentReplicas)
 		return currentReplicas, err
 	}
 
@@ -407,11 +702,15 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	}
 
 	if weightedReplicas == currentReplicas {
-		log.Info("HPA", "no scaling required. Weighted replicas", weightedReplicas)
+		log.V(2).Info("HPA", "no scaling required. Weighted replicas", weightedReplicas)
 		return currentReplicas, err
 	}
 
 	lastScaleTime := hvpa.Status.HvpaStatus.LastScaleTime.DeepCopy()
+	overrideScaleUpStabilization := hvpa.Status.HvpaStatus.OverrideScaleUpStabilization
+	if overrideScaleUpStabilization {
+		log.V(2).Info("HPA", "will override last scale time in case of scale out", overrideScaleUpStabilization)
+	}
 	if lastScaleTime == nil {
 		lastScaleTime = &metav1.Time{}
 	}
@@ -419,15 +718,15 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	scaleUpStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleUpStabilizationWindow)
 	scaleDownStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleDownStabilizationWindow)
 
-	if weightedReplicas > currentReplicas && lastScaleTimeDuration > scaleUpStabilizationWindow {
-		log.Info("HPA scaling up", "weighted replicas", weightedReplicas)
+	if weightedReplicas > currentReplicas && (overrideScaleUpStabilization || lastScaleTimeDuration > scaleUpStabilizationWindow) {
+		log.V(2).Info("HPA scaling up", "weighted replicas", weightedReplicas)
 		return weightedReplicas, err
 	} else if weightedReplicas < currentReplicas && lastScaleTimeDuration > scaleDownStabilizationWindow {
-		log.Info("HPA scaling down", "weighted replicas", weightedReplicas)
+		log.V(2).Info("HPA scaling down", "weighted replicas", weightedReplicas)
 		return weightedReplicas, err
 	}
 
-	log.Info("HPA: Not scaling as hvpa is in stabilization window", "currentReplicas", currentReplicas, "weightedReplicas", weightedReplicas, "minutes after last scaling", lastScaleTimeDuration.Minutes())
+	log.V(2).Info("HPA: Not scaling as hvpa is in stabilization window", "currentReplicas", currentReplicas, "weightedReplicas", weightedReplicas, "minutes after last scaling", lastScaleTimeDuration.Minutes())
 	return currentReplicas, err
 }
 
@@ -440,7 +739,7 @@ func isHpaScaleOutLimited(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, 
 	}
 	for _, v := range hpaStatus.Conditions {
 		if v.Type == autoscaling.ScalingLimited && v.Status == corev1.ConditionTrue {
-			log.Info("HPA scale out is limited")
+			log.V(2).Info("HPA scale out is limited")
 			return true
 		}
 	}
@@ -456,9 +755,9 @@ func isScaleDownEnabled(hvpa *autoscalingv1alpha1.Hvpa) bool {
 }
 
 func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, deployment *appsv1.Deployment, hpaScaleOutLimited bool) (*appsv1.Deployment, bool, error) {
-	log.Info("Checking if need to scale vertically")
+	log.V(2).Info("Checking if need to scale vertically")
 	if vpaWeight == 0 || vpaStatus == nil || vpaStatus.Recommendation == nil {
-		log.Info("Nothing to do")
+		log.V(2).Info("VPA: Nothing to do")
 		return nil, false, nil
 	}
 	for k, v := range vpaStatus.Conditions {
@@ -467,18 +766,22 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				// VPA recommendations are provided, we can do further processing
 				break
 			} else {
-				log.Info("VPA recommendations not provided yet")
+				log.V(2).Info("VPA recommendations not provided yet")
 				return nil, false, nil
 			}
 		}
 		if k == len(vpaStatus.Conditions)-1 {
-			log.Info("Reliable VPA recommendations not provided yet")
+			log.V(2).Info("Reliable VPA recommendations not provided yet")
 			return nil, false, nil
 		}
 	}
 	recommendations := vpaStatus.Recommendation
 
 	lastScaleTime := hvpa.Status.HvpaStatus.LastScaleTime
+	overrideScaleUpStabilization := hvpa.Status.HvpaStatus.OverrideScaleUpStabilization
+	if overrideScaleUpStabilization {
+		log.V(2).Info("VPA", "will override last scale time in case of scale up", overrideScaleUpStabilization)
+	}
 	if lastScaleTime == nil {
 		lastScaleTime = &metav1.Time{}
 	}
@@ -498,7 +801,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				currMem := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Memory().DeepCopy()
 				currCPU := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Cpu().DeepCopy()
 
-				log.Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget, "vpaWeight", vpaWeight, "minutes after last scaling", lastScaleTimeDuration.Minutes())
+				log.V(2).Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget, "vpaWeight", vpaWeight, "minutes after last scaling", lastScaleTimeDuration.Minutes())
 
 				// Scale vpaWeight by a factor of 100, otherwise
 				// values such as 200m will become 0 as all calculations are done using int64
@@ -520,30 +823,39 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				currCPU.Add(*diffCPU)
 				weightedCPU := currCPU
 
-				log.Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU, "HPA condition ScalingLimited", hpaScaleOutLimited)
-				log.Info("VPA", "minimum CPU delta", minDeltaCPU.String(), "minimum memory delta", minDeltaMem, "scale down enabled", scaleDownEnaled)
-				if hpaScaleOutLimited && diffMem.Sign() > 0 && diffMem.Cmp(*minDeltaMem) > 0 && lastScaleTimeDuration > scaleUpStabilizationWindow {
-					// If the difference is greater than minimum delta
+				log.V(2).Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU, "HPA condition ScalingLimited", hpaScaleOutLimited)
+				log.V(2).Info("VPA", "minimum CPU delta", minDeltaCPU.String(), "minimum memory delta", minDeltaMem, "scale down enabled", scaleDownEnaled)
+
+				if hpaScaleOutLimited && diffMem.Sign() > 0 && diffMem.Cmp(*minDeltaMem) > 0 &&
+					(overrideScaleUpStabilization || lastScaleTimeDuration > scaleUpStabilizationWindow) {
+					// If the difference is greater than minimum delta, AND
+					// scale stabilization window is expired
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
-				} else if scaleDownEnaled && diffMem.Sign() < 0 && negDiffMem.Cmp(*minDeltaMem) > 0 && lastScaleTimeDuration > scaleDownStabilizationWindow {
+				} else if scaleDownEnaled && diffMem.Sign() < 0 && negDiffMem.Cmp(*minDeltaMem) > 0 &&
+					lastScaleTimeDuration > scaleDownStabilizationWindow {
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
 				}
-				if hpaScaleOutLimited && diffCPU.Sign() > 0 && diffCPU.Cmp(*minDeltaCPU) > 0 && lastScaleTimeDuration > scaleUpStabilizationWindow {
-					// If the difference is greater than minimum delta
+
+				if hpaScaleOutLimited && diffCPU.Sign() > 0 && diffCPU.Cmp(*minDeltaCPU) > 0 &&
+					(overrideScaleUpStabilization || lastScaleTimeDuration > scaleUpStabilizationWindow) {
+					// If the difference is greater than minimum delta, AND
+					// scale stabilization window is expired
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 					resourceChange = true
-				} else if scaleDownEnaled && diffCPU.Sign() < 0 && negDiffCPU.Cmp(*minDeltaCPU) > 0 && lastScaleTimeDuration > scaleDownStabilizationWindow {
+				} else if scaleDownEnaled && diffCPU.Sign() < 0 && negDiffCPU.Cmp(*minDeltaCPU) > 0 &&
+					lastScaleTimeDuration > scaleDownStabilizationWindow {
 					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 					resourceChange = true
 				}
+
 				// TODO: Add conditions for other resources also: ResourceStorage, ResourceEphemeralStorage,
 				break
 			}
 		}
 	}
-	log.Info("VPA", "vpa recommends changes?", resourceChange)
+	log.V(2).Info("VPA", "vpa recommends changes?", resourceChange)
 	if resourceChange {
 		return newDeploy, resourceChange, nil
 	}
