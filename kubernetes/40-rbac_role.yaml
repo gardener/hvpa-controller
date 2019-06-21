@@ -30,8 +30,16 @@ rules:
   - delete
 - apiGroups:
   - apps
+  - ""
+  - batch
   resources:
+  - pods
   - deployments
+  - jobs
+  - replicationcontrollers
+  - statefulsets
+  - replicasets
+  - daemonsets
   verbs:
   - get
   - list
