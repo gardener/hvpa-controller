@@ -18,6 +18,7 @@ package hvpa
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"reflect"
 	"sync"
@@ -307,8 +308,8 @@ const deleteFinalizerName = "autoscaling.k8s.io/hvpa-controller"
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=verticalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=apps,resources=daemonsets;replicasets;replicationcontrollers;statefulsets;deployments,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="",resources=pods;replicationcontrollers,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets;replicasets;statefulsets;deployments,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;watch;list
@@ -356,14 +357,32 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 		return reconcile.Result{}, err
 	}
 
-	deploy := &appsv1.Deployment{}
-	err = r.Get(context.TODO(), types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, deploy)
+	var obj runtime.Object
+	switch instance.Spec.TargetRef.Kind {
+	case "Deployment":
+		obj = &appsv1.Deployment{}
+	case "StatefulSet":
+		obj = &appsv1.StatefulSet{}
+	case "DaemonSet":
+		obj = &appsv1.DaemonSet{}
+	case "ReplicaSet":
+		obj = &appsv1.ReplicaSet{}
+	case "ReplicationController":
+		obj = &corev1.ReplicationController{}
+	default:
+		err := fmt.Errorf("TargetRef kind not supported %v", instance.Spec.TargetRef.Kind)
+		log.Error(err, "Error")
+		// Don't return error, and requeue, so that reconciliation is tried after default sync period only
+		return reconcile.Result{}, nil
+	}
+
+	err = r.Get(context.TODO(), types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, obj)
 	if err != nil {
 		log.Error(err, "Error getting", "kind", instance.Spec.TargetRef.Kind, "name", instance.Spec.TargetRef.Name, "namespace", instance.Namespace)
 		return reconcile.Result{}, err
 	}
 
-	hpaScaled, vpaScaled, vpaWeight, err := r.scaleIfRequired(hpaStatus, vpaStatus, instance, deploy)
+	hpaScaled, vpaScaled, vpaWeight, err := r.scaleIfRequired(hpaStatus, vpaStatus, instance, obj)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -631,9 +650,47 @@ func getVpaWeightFromIntervals(hvpa *autoscalingv1alpha1.Hvpa, desiredReplicas, 
 	return vpaWeight
 }
 
-func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, deployment *appsv1.Deployment) (int32, bool, autoscalingv1alpha1.VpaWeight, error) {
+func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, target runtime.Object) (int32, bool, autoscalingv1alpha1.VpaWeight, error) {
 
-	currentReplicas := *deployment.Spec.Replicas
+	var newObj runtime.Object
+	var deploy *appsv1.Deployment
+	var ss *appsv1.StatefulSet
+	var ds *appsv1.DaemonSet
+	var rs *appsv1.ReplicaSet
+	var rc *corev1.ReplicationController
+	var currentReplicas int32
+	var podSpec *corev1.PodSpec
+
+	kind := target.GetObjectKind().GroupVersionKind().Kind
+	targetCopy := target.DeepCopyObject()
+
+	switch kind {
+	case "Deployment":
+		deploy = targetCopy.(*appsv1.Deployment).DeepCopy()
+		currentReplicas = *deploy.Spec.Replicas
+		podSpec = &deploy.Spec.Template.Spec
+	case "Statefulset":
+		ss = targetCopy.(*appsv1.StatefulSet).DeepCopy()
+		currentReplicas = *ss.Spec.Replicas
+		podSpec = &ss.Spec.Template.Spec
+	case "DaemonSet":
+		ds = targetCopy.(*appsv1.DaemonSet).DeepCopy()
+		currentReplicas = *deploy.Spec.Replicas
+		podSpec = &deploy.Spec.Template.Spec
+	case "ReplicaSet":
+		rs = targetCopy.(*appsv1.ReplicaSet).DeepCopy()
+		currentReplicas = *deploy.Spec.Replicas
+		podSpec = &deploy.Spec.Template.Spec
+	case "ReplicationController":
+		rc = targetCopy.(*corev1.ReplicationController).DeepCopy()
+		currentReplicas = *deploy.Spec.Replicas
+		podSpec = &deploy.Spec.Template.Spec
+	default:
+		err := fmt.Errorf("TargetRef kind not supported %v", kind)
+		log.Error(err, "Error")
+		return 0, false, 0, err
+	}
+
 	var desiredReplicas int32
 	if hpaStatus == nil {
 		desiredReplicas = currentReplicas
@@ -646,35 +703,67 @@ func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAuto
 	hpaScaleOutLimited := isHpaScaleOutLimited(hpaStatus, hvpa.Spec.HpaTemplate.MaxReplicas)
 
 	// Memory for newDeploy is assigned in the function getWeightedRequests
-	newDeploy, resourceChanged, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, deployment, hpaScaleOutLimited)
+	newPodSpec, resourceChanged, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, podSpec, hpaScaleOutLimited)
 	if err != nil {
 		log.Error(err, "Error in getting weight based requests in new deployment")
 	}
 
-	weightedReplicas, err := getWeightedReplicas(hpaStatus, hvpa, deployment, 1-vpaWeight)
+	weightedReplicas, err := getWeightedReplicas(hpaStatus, hvpa, currentReplicas, 1-vpaWeight)
 	if err != nil {
 		log.Error(err, "Error in getting weight based replicas")
+	}
+
+	if (weightedReplicas == 0 || currentReplicas == weightedReplicas) &&
+		(newPodSpec == nil || reflect.DeepEqual(podSpec, newPodSpec)) {
+		log.V(3).Info("Scaling not required")
+		return 0, false, vpaWeight, nil
 	}
 
 	if weightedReplicas == 0 {
 		weightedReplicas = currentReplicas
 	}
 
-	if currentReplicas != weightedReplicas {
-		if newDeploy == nil {
-			newDeploy = deployment.DeepCopy()
+	switch kind {
+	case "Deployment":
+		deploy.Spec.Replicas = &weightedReplicas
+		if newPodSpec != nil {
+			newPodSpec.DeepCopyInto(&deploy.Spec.Template.Spec)
 		}
-		newDeploy.Spec.Replicas = &weightedReplicas
+		newObj = deploy
+	case "Statefulset":
+		ss.Spec.Replicas = &weightedReplicas
+		if newPodSpec != nil {
+			newPodSpec.DeepCopyInto(&ss.Spec.Template.Spec)
+		}
+		newObj = ss
+	case "DaemonSet":
+		if newPodSpec != nil {
+			newPodSpec.DeepCopyInto(&ds.Spec.Template.Spec)
+		}
+		newObj = ds
+	case "ReplicaSet":
+		rs.Spec.Replicas = &weightedReplicas
+		if newPodSpec != nil {
+			newPodSpec.DeepCopyInto(&rs.Spec.Template.Spec)
+		}
+		newObj = rs
+	case "ReplicationController":
+		rc.Spec.Replicas = &weightedReplicas
+		if newPodSpec != nil {
+			newPodSpec.DeepCopyInto(&rc.Spec.Template.Spec)
+		}
+		newObj = rc
+	default:
+		err := fmt.Errorf("TargetRef kind not supported %v", kind)
+		log.Error(err, "Error")
+		return 0, false, vpaWeight, err
 	}
-	if newDeploy == nil {
-		log.V(3).Info("Scaling not required")
-		return 0, false, vpaWeight, nil
-	}
+
 	log.V(3).Info("Scaling required")
-	return weightedReplicas - currentReplicas, resourceChanged, vpaWeight, r.Update(context.TODO(), newDeploy)
+	return weightedReplicas - currentReplicas, resourceChanged, vpaWeight, r.Update(context.TODO(), newObj)
 }
 
-func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, deployment *appsv1.Deployment, hpaWeight autoscalingv1alpha1.VpaWeight) (int32, error) {
+func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, currentReplicas int32, hpaWeight autoscalingv1alpha1.VpaWeight) (int32, error) {
 	anno := hvpa.GetAnnotations()
 	if val, ok := anno["hpa-controller"]; !ok || val != "hvpa" {
 		log.V(3).Info("HPA is not controlled by HVPA")
@@ -689,7 +778,6 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 
 	var err error
 	var weightedReplicas int32
-	currentReplicas := *deployment.Spec.Replicas
 	desiredReplicas := hpaStatus.DesiredReplicas
 
 	if desiredReplicas == currentReplicas {
@@ -756,7 +844,9 @@ func isScaleDownEnabled(hvpa *autoscalingv1alpha1.Hvpa) bool {
 	return false
 }
 
-func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, deployment *appsv1.Deployment, hpaScaleOutLimited bool) (*appsv1.Deployment, bool, error) {
+// getWeightedRequests returns updated copy of podSpec if there is any change in podSpec,
+// otherwise it returns nil
+func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, podSpec *corev1.PodSpec, hpaScaleOutLimited bool) (*corev1.PodSpec, bool, error) {
 	log.V(2).Info("Checking if need to scale vertically")
 	if vpaWeight == 0 || vpaStatus == nil || vpaStatus.Recommendation == nil {
 		log.V(2).Info("VPA: Nothing to do")
@@ -794,14 +884,15 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	scaleDownEnaled := isScaleDownEnabled(hvpa)
 
 	resourceChange := false
-	newDeploy := deployment.DeepCopy()
+	newPodSpec := podSpec.DeepCopy()
+
 	for _, rec := range recommendations.ContainerRecommendations {
-		for id, container := range newDeploy.Spec.Template.Spec.Containers {
+		for id, container := range newPodSpec.Containers {
 			if rec.ContainerName == container.Name {
 				vpaMemTarget := rec.Target.Memory().DeepCopy()
 				vpaCPUTarget := rec.Target.Cpu().DeepCopy()
-				currMem := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Memory().DeepCopy()
-				currCPU := newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests.Cpu().DeepCopy()
+				currMem := newPodSpec.Containers[id].Resources.Requests.Memory().DeepCopy()
+				currCPU := newPodSpec.Containers[id].Resources.Requests.Cpu().DeepCopy()
 
 				log.V(2).Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget, "vpaWeight", vpaWeight, "minutes after last scaling", lastScaleTimeDuration.Minutes())
 
@@ -832,11 +923,11 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					(overrideScaleUpStabilization || lastScaleTimeDuration > scaleUpStabilizationWindow) {
 					// If the difference is greater than minimum delta, AND
 					// scale stabilization window is expired
-					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+					newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
 				} else if scaleDownEnaled && diffMem.Sign() < 0 && negDiffMem.Cmp(*minDeltaMem) > 0 &&
 					lastScaleTimeDuration > scaleDownStabilizationWindow {
-					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+					newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
 				}
 
@@ -844,11 +935,11 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					(overrideScaleUpStabilization || lastScaleTimeDuration > scaleUpStabilizationWindow) {
 					// If the difference is greater than minimum delta, AND
 					// scale stabilization window is expired
-					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+					newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 					resourceChange = true
 				} else if scaleDownEnaled && diffCPU.Sign() < 0 && negDiffCPU.Cmp(*minDeltaCPU) > 0 &&
 					lastScaleTimeDuration > scaleDownStabilizationWindow {
-					newDeploy.Spec.Template.Spec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+					newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 					resourceChange = true
 				}
 
@@ -859,7 +950,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	}
 	log.V(2).Info("VPA", "vpa recommends changes?", resourceChange)
 	if resourceChange {
-		return newDeploy, resourceChange, nil
+		return newPodSpec, resourceChange, nil
 	}
 	return nil, false, nil
 }
