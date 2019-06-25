@@ -666,23 +666,23 @@ func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAuto
 
 	switch kind {
 	case "Deployment":
-		deploy = targetCopy.(*appsv1.Deployment).DeepCopy()
+		deploy = targetCopy.(*appsv1.Deployment)
 		currentReplicas = *deploy.Spec.Replicas
 		podSpec = &deploy.Spec.Template.Spec
 	case "Statefulset":
-		ss = targetCopy.(*appsv1.StatefulSet).DeepCopy()
+		ss = targetCopy.(*appsv1.StatefulSet)
 		currentReplicas = *ss.Spec.Replicas
 		podSpec = &ss.Spec.Template.Spec
 	case "DaemonSet":
-		ds = targetCopy.(*appsv1.DaemonSet).DeepCopy()
+		ds = targetCopy.(*appsv1.DaemonSet)
 		currentReplicas = *deploy.Spec.Replicas
 		podSpec = &deploy.Spec.Template.Spec
 	case "ReplicaSet":
-		rs = targetCopy.(*appsv1.ReplicaSet).DeepCopy()
+		rs = targetCopy.(*appsv1.ReplicaSet)
 		currentReplicas = *deploy.Spec.Replicas
 		podSpec = &deploy.Spec.Template.Spec
 	case "ReplicationController":
-		rc = targetCopy.(*corev1.ReplicationController).DeepCopy()
+		rc = targetCopy.(*corev1.ReplicationController)
 		currentReplicas = *deploy.Spec.Replicas
 		podSpec = &deploy.Spec.Template.Spec
 	default:
