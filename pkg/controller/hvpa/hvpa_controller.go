@@ -669,22 +669,21 @@ func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAuto
 		deploy = targetCopy.(*appsv1.Deployment)
 		currentReplicas = *deploy.Spec.Replicas
 		podSpec = &deploy.Spec.Template.Spec
-	case "Statefulset":
+	case "StatefulSet":
 		ss = targetCopy.(*appsv1.StatefulSet)
 		currentReplicas = *ss.Spec.Replicas
 		podSpec = &ss.Spec.Template.Spec
 	case "DaemonSet":
 		ds = targetCopy.(*appsv1.DaemonSet)
-		currentReplicas = *deploy.Spec.Replicas
-		podSpec = &deploy.Spec.Template.Spec
+		podSpec = &ds.Spec.Template.Spec
 	case "ReplicaSet":
 		rs = targetCopy.(*appsv1.ReplicaSet)
-		currentReplicas = *deploy.Spec.Replicas
-		podSpec = &deploy.Spec.Template.Spec
+		currentReplicas = *rs.Spec.Replicas
+		podSpec = &rs.Spec.Template.Spec
 	case "ReplicationController":
 		rc = targetCopy.(*corev1.ReplicationController)
-		currentReplicas = *deploy.Spec.Replicas
-		podSpec = &deploy.Spec.Template.Spec
+		currentReplicas = *rc.Spec.Replicas
+		podSpec = &rc.Spec.Template.Spec
 	default:
 		err := fmt.Errorf("TargetRef kind not supported %v", kind)
 		log.Error(err, "Error")
@@ -730,7 +729,7 @@ func (r *ReconcileHvpa) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAuto
 			newPodSpec.DeepCopyInto(&deploy.Spec.Template.Spec)
 		}
 		newObj = deploy
-	case "Statefulset":
+	case "StatefulSet":
 		ss.Spec.Replicas = &weightedReplicas
 		if newPodSpec != nil {
 			newPodSpec.DeepCopyInto(&ss.Spec.Template.Spec)
