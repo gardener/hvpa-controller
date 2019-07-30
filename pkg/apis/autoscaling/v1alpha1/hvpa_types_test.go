@@ -19,6 +19,8 @@ package v1alpha1
 import (
 	"testing"
 
+	autoscaling "k8s.io/api/autoscaling/v2beta2"
+
 	"github.com/onsi/gomega"
 	"golang.org/x/net/context"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +36,11 @@ func TestStorageHvpa(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo",
 			Namespace: "default",
-		}}
+		},
+		Spec: HvpaSpec{
+			TargetRef: &autoscaling.CrossVersionObjectReference{},
+		},
+	}
 	g := gomega.NewGomegaWithT(t)
 
 	// Test Create

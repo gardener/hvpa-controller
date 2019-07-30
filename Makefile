@@ -24,6 +24,14 @@ IMG ?= $(IMAGE_REPOSITORY):$(IMAGE_TAG)
 
 all: test manager
 
+.PHONY: build
+build:
+	@.ci/build
+
+.PHONY: build-local
+build-local:
+	@env LOCAL_BUILD=1 .ci/build
+
 # Run tests
 test: generate fmt vet manifests
 	go test ./pkg/... ./cmd/... -coverprofile cover.out

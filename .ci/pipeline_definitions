@@ -1,0 +1,49 @@
+hvpa-controller:
+  template: 'default'
+  base_definition:
+    repo: ~
+    traits:
+      version:
+        preprocess:
+          'inject-commit-hash'
+        inject_effective_version: true
+      publish:
+        dockerimages:
+          hvpa-controller:
+            registry: 'gcr-readwrite'
+            image: 'eu.gcr.io/gardener-project/gardener/hvpa-controller'
+            dockerfile: 'Dockerfile'
+            inputs:
+              repos:
+                source: ~
+              steps:
+                build: ~
+    steps:
+      check:
+        image: 'golang:1.12.7'
+      integration_test:
+        image: 'eu.gcr.io/gardener-project/cc/job-image-golang:0.8.0'
+      build:
+        image: 'golang:1.12.7'
+        output_dir: 'binary'
+
+  jobs:
+    head-update:
+      traits:
+        draft_release: ~
+    pull-request:
+      traits:
+        pull-request: ~
+    release:
+      traits:
+        version:
+          preprocess: 'finalize'
+        release:
+          nextversion: 'bump_minor'
+        slack:
+          default_channel: 'internal_scp_workspace'
+          channel_cfgs:
+            internal_scp_workspace:
+              channel_name: 'k8s-cpe'
+              slack_cfg_name: 'scp_workspace'
+        component_descriptor: ~
