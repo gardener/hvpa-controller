@@ -82,6 +82,19 @@ type WeightBasedScalingInterval struct {
 	LastReplicaCount int32 `json:"lastReplicaCount,omitempty"`
 }
 
+// ScaleStabilization defines stabilization parameters after last scaling
+type ScaleStabilization struct {
+	// Duration defines the minimum delay in minutes between 2 consecutive scale operations
+	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
+	Duration *string `json:"duration,omitempty"`
+	// MinCpuChange is the minimum change in CPU on which HVPA acts
+	// HVPA uses minimum of the Value and Percentage value
+	MinCPUChange *ChangeThreshold `json:"minCpuChange,omitempty"`
+	// MinMemChange is the minimum change in memory on which HVPA acts
+	// HVPA uses minimum of the Value and Percentage value
+	MinMemChange *ChangeThreshold `json:"minMemChange,omitempty"`
+}
+
 // HvpaSpec defines the desired state of Hvpa
 type HvpaSpec struct {
 	// HpaTemplate defines the spec of HPA
@@ -97,20 +110,11 @@ type HvpaSpec struct {
 	// TargetRef points to the controller managing the set of pods for the autoscaler to control
 	TargetRef *autoscaling.CrossVersionObjectReference `json:"targetRef"`
 
-	// ScaleUpStabilizationWindow defines the minimum delay in minutes between 2 consecutive scale up operations
-	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-	ScaleUpStabilizationWindow *string `json:"scaleUpStabilizationWindow,omitempty"`
+	// ScaleUpStabilization defines stabilization parameters after last scaling
+	ScaleUpStabilization *ScaleStabilization `json:"scaleUpStabilization,omitempty"`
 
-	// ScaleDownStabilizationWindow defines the minimum delay in minutes between 2 consecutive scale down operations
-	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-	ScaleDownStabilizationWindow *string `json:"scaleDownStabilizationWindow,omitempty"`
-
-	// MinCpuChange is the minimum change in CPU on which HVPA acts
-	// HVPA uses minimum of the Value and Percentage value
-	MinCPUChange *ChangeThreshold `json:"minCpuChange,omitempty"`
-	// MinMemChange is the minimum change in memory on which HVPA acts
-	// HVPA uses minimum of the Value and Percentage value
-	MinMemChange *ChangeThreshold `json:"minMemChange,omitempty"`
+	// ScaleDownStabilization defines stabilization parameters after last scaling
+	ScaleDownStabilization *ScaleStabilization `json:"scaleDownStabilization,omitempty"`
 }
 
 // ChangeThreshold defines the thresholds for HVPA to apply VPA's recommendations
