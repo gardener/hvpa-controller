@@ -804,8 +804,8 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 		lastScaleTime = &metav1.Time{}
 	}
 	lastScaleTimeDuration := metav1.Now().Sub(lastScaleTime.Time)
-	scaleUpStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleUpStabilizationWindow)
-	scaleDownStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleDownStabilizationWindow)
+	scaleUpStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleUpStabilization.Duration)
+	scaleDownStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleDownStabilization.Duration)
 
 	if weightedReplicas > currentReplicas && (overrideScaleUpStabilization || lastScaleTimeDuration > scaleUpStabilizationWindow) {
 		log.V(2).Info("HPA scaling up", "weighted replicas", weightedReplicas)
@@ -877,8 +877,8 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 		lastScaleTime = &metav1.Time{}
 	}
 	lastScaleTimeDuration := time.Now().Sub(lastScaleTime.Time)
-	scaleUpStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleUpStabilizationWindow)
-	scaleDownStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleDownStabilizationWindow)
+	scaleUpStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleUpStabilization.Duration)
+	scaleDownStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.ScaleDownStabilization.Duration)
 
 	scaleDownEnaled := isScaleDownEnabled(hvpa)
 
@@ -900,14 +900,16 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				factor := int64(100)
 				scale := int64(float64(vpaWeight) * float64(factor))
 
-				minDeltaMem, _ := getThreshold(hvpa.Spec.MinMemChange, corev1.ResourceMemory, currMem)
+				scaleUpMinDeltaMem, _ := getThreshold(hvpa.Spec.ScaleUpStabilization.MinMemChange, corev1.ResourceMemory, currMem)
+				scaleDownMinDeltaMem, _ := getThreshold(hvpa.Spec.ScaleDownStabilization.MinMemChange, corev1.ResourceMemory, currMem)
 				vpaMemTarget.Sub(currMem)
 				diffMem := resource.NewQuantity(vpaMemTarget.Value()*scale/factor, vpaMemTarget.Format)
 				negDiffMem := resource.NewQuantity(-vpaMemTarget.Value()*scale/factor, vpaMemTarget.Format)
 				currMem.Add(*diffMem)
 				weightedMem := currMem
 
-				minDeltaCPU, _ := getThreshold(hvpa.Spec.MinCPUChange, corev1.ResourceCPU, currCPU)
+				scaleUpMinDeltaCPU, _ := getThreshold(hvpa.Spec.ScaleUpStabilization.MinCPUChange, corev1.ResourceCPU, currCPU)
+				scaleDownMinDeltaCPU, _ := getThreshold(hvpa.Spec.ScaleDownStabilization.MinCPUChange, corev1.ResourceCPU, currCPU)
 				vpaCPUTarget.Sub(currCPU)
 				diffCPU := resource.NewQuantity(vpaCPUTarget.ScaledValue(-3)*scale/factor, vpaCPUTarget.Format)
 				negDiffCPU := resource.NewQuantity(-vpaCPUTarget.ScaledValue(-3)*scale/factor, vpaCPUTarget.Format)
@@ -915,29 +917,34 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				currCPU.Add(*diffCPU)
 				weightedCPU := currCPU
 
-				log.V(2).Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU, "HPA condition ScalingLimited", hpaScaleOutLimited)
-				log.V(2).Info("VPA", "minimum CPU delta", minDeltaCPU.String(), "minimum memory delta", minDeltaMem, "scale down enabled", scaleDownEnaled)
+				log.V(3).Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU)
+				log.V(3).Info("VPA sclae down", "minimum CPU delta", scaleDownMinDeltaCPU.String(), "minimum memory delta", scaleDownMinDeltaMem, "scale down enabled", scaleDownEnaled)
+				log.V(3).Info("VPA scale up", "minimum CPU delta", scaleUpMinDeltaCPU.String(), "minimum memory delta", scaleUpMinDeltaMem, "HPA condition ScalingLimited", hpaScaleOutLimited)
 
-				if hpaScaleOutLimited && diffMem.Sign() > 0 && diffMem.Cmp(*minDeltaMem) > 0 &&
+				if hpaScaleOutLimited && diffMem.Sign() > 0 && diffMem.Cmp(*scaleUpMinDeltaMem) > 0 &&
 					(overrideScaleUpStabilization || lastScaleTimeDuration > scaleUpStabilizationWindow) {
 					// If the difference is greater than minimum delta, AND
 					// scale stabilization window is expired
+					log.V(2).Info("VPA", "Scaling up", "memory", "Container", container.Name)
 					newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
-				} else if scaleDownEnaled && diffMem.Sign() < 0 && negDiffMem.Cmp(*minDeltaMem) > 0 &&
+				} else if scaleDownEnaled && diffMem.Sign() < 0 && negDiffMem.Cmp(*scaleDownMinDeltaMem) > 0 &&
 					lastScaleTimeDuration > scaleDownStabilizationWindow {
+					log.V(2).Info("VPA", "Scaling down", "memory", "Container", container.Name)
 					newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
 					resourceChange = true
 				}
 
-				if hpaScaleOutLimited && diffCPU.Sign() > 0 && diffCPU.Cmp(*minDeltaCPU) > 0 &&
+				if hpaScaleOutLimited && diffCPU.Sign() > 0 && diffCPU.Cmp(*scaleUpMinDeltaCPU) > 0 &&
 					(overrideScaleUpStabilization || lastScaleTimeDuration > scaleUpStabilizationWindow) {
 					// If the difference is greater than minimum delta, AND
 					// scale stabilization window is expired
+					log.V(2).Info("VPA", "Scaling up", "CPU", "Container", container.Name)
 					newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 					resourceChange = true
-				} else if scaleDownEnaled && diffCPU.Sign() < 0 && negDiffCPU.Cmp(*minDeltaCPU) > 0 &&
+				} else if scaleDownEnaled && diffCPU.Sign() < 0 && negDiffCPU.Cmp(*scaleDownMinDeltaCPU) > 0 &&
 					lastScaleTimeDuration > scaleDownStabilizationWindow {
+					log.V(2).Info("VPA", "Scaling down", "CPU", "Container", container.Name)
 					newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 					resourceChange = true
 				}

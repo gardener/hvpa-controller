@@ -8,14 +8,22 @@ metadata:
     controller-tools.k8s.io: "1.0"
   name: hvpa-sample
 spec:
-  scaleUpStabilizationWindow: "2m"
-  scaleDownStabilizationWindow: "3m"
-  minCpuChange:
-    value: 20m
-    percentage: 80
-  minMemChange:
-    value: 100M
-    percentage: 80
+  scaleUpStabilization:
+    duration: "2m"
+    minCpuChange:
+      value: 20m
+      percentage: 80
+    minMemChange:
+      value: 100M
+      percentage: 80
+  scaleDownStabilization:
+    duration: "2m"
+    minCpuChange:
+      value: 20m
+      percentage: 80
+    minMemChange:
+      value: 100M
+      percentage: 80
   hpaTemplate:
     maxReplicas: 7
     minReplicas: 1

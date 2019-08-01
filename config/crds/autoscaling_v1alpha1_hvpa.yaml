@@ -57,42 +57,78 @@ spec:
               required:
               - maxReplicas
               type: object
-            minCpuChange:
-              description: MinCpuChange is the minimum change in CPU on which HVPA
-                acts HVPA uses minimum of the Value and Percentage value
+            scaleDownStabilization:
+              description: ScaleDownStabilization defines stabilization parameters
+                after last scaling
               properties:
-                percentage:
-                  description: Percentage is the percentage of currently allocated
-                    value to be used as threshold
-                  format: int32
-                  type: integer
-                value:
-                  description: Value is the absolute value of the threshold
+                duration:
+                  description: Duration defines the minimum delay in minutes between
+                    2 consecutive scale operations Valid time units are "ns", "us"
+                    (or "µs"), "ms", "s", "m", "h"
                   type: string
+                minCpuChange:
+                  description: MinCpuChange is the minimum change in CPU on which
+                    HVPA acts HVPA uses minimum of the Value and Percentage value
+                  properties:
+                    percentage:
+                      description: Percentage is the percentage of currently allocated
+                        value to be used as threshold
+                      format: int32
+                      type: integer
+                    value:
+                      description: Value is the absolute value of the threshold
+                      type: string
+                  type: object
+                minMemChange:
+                  description: MinMemChange is the minimum change in memory on which
+                    HVPA acts HVPA uses minimum of the Value and Percentage value
+                  properties:
+                    percentage:
+                      description: Percentage is the percentage of currently allocated
+                        value to be used as threshold
+                      format: int32
+                      type: integer
+                    value:
+                      description: Value is the absolute value of the threshold
+                      type: string
+                  type: object
               type: object
-            minMemChange:
-              description: MinMemChange is the minimum change in memory on which HVPA
-                acts HVPA uses minimum of the Value and Percentage value
+            scaleUpStabilization:
+              description: ScaleUpStabilization defines stabilization parameters after
+                last scaling
               properties:
-                percentage:
-                  description: Percentage is the percentage of currently allocated
-                    value to be used as threshold
-                  format: int32
-                  type: integer
-                value:
-                  description: Value is the absolute value of the threshold
+                duration:
+                  description: Duration defines the minimum delay in minutes between
+                    2 consecutive scale operations Valid time units are "ns", "us"
+                    (or "µs"), "ms", "s", "m", "h"
                   type: string
+                minCpuChange:
+                  description: MinCpuChange is the minimum change in CPU on which
+                    HVPA acts HVPA uses minimum of the Value and Percentage value
+                  properties:
+                    percentage:
+                      description: Percentage is the percentage of currently allocated
+                        value to be used as threshold
+                      format: int32
+                      type: integer
+                    value:
+                      description: Value is the absolute value of the threshold
+                      type: string
+                  type: object
+                minMemChange:
+                  description: MinMemChange is the minimum change in memory on which
+                    HVPA acts HVPA uses minimum of the Value and Percentage value
+                  properties:
+                    percentage:
+                      description: Percentage is the percentage of currently allocated
+                        value to be used as threshold
+                      format: int32
+                      type: integer
+                    value:
+                      description: Value is the absolute value of the threshold
+                      type: string
+                  type: object
               type: object
-            scaleDownStabilizationWindow:
-              description: ScaleDownStabilizationWindow defines the minimum delay
-                in minutes between 2 consecutive scale down operations Valid time
-                units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-              type: string
-            scaleUpStabilizationWindow:
-              description: ScaleUpStabilizationWindow defines the minimum delay in
-                minutes between 2 consecutive scale up operations Valid time units
-                are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-              type: string
             targetRef:
               description: TargetRef points to the controller managing the set of
                 pods for the autoscaler to control
