@@ -260,6 +260,11 @@ https://github.com/kubernetes/klog
 Copyright 2017 The Kubernetes Authors  
 Apache 2 license (https://github.com/kubernetes/klog/blob/master/LICENSE)
 
+Ginkgo.
+https://github.com/onsi/ginkgo.
+Copyright (c) 2013-2014 Onsi Fakhouri
+MIT license (https://github.com/onsi/ginkgo/blob/master/LICENSE)
+
 Gomega.  
 https://github.com/onsi/gomega.  
 Copyright (c) 2013-2014 Onsi Fakhouri  

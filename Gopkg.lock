@@ -262,11 +262,12 @@
   version = "1.0.1"
 
 [[projects]]
-  digest = "1:3c46171ee5eee66086897e1efca67b84bf552b1f80039d421068c90684868194"
+  digest = "1:2eb15c4c677756acdf6c7b0062168b6275b3cc8785f345904619c4037a90a4ac"
   name = "github.com/onsi/ginkgo"
   packages = [
     ".",
     "config",
+    "extensions/table",
     "internal/codelocation",
     "internal/containernode",
     "internal/failer",
@@ -1065,6 +1066,7 @@
   input-imports = [
     "github.com/emicklei/go-restful",
     "github.com/onsi/ginkgo",
+    "github.com/onsi/ginkgo/extensions/table",
     "github.com/onsi/gomega",
     "golang.org/x/net/context",
     "k8s.io/api/apps/v1",
