@@ -18,6 +18,7 @@ package hvpa
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"reflect"
@@ -32,14 +33,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target"
-	"k8s.io/client-go/informers"
-	kube_client "k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -62,16 +61,7 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	config := mgr.GetConfig()
-	kubeClient := kube_client.NewForConfigOrDie(config)
-	factory := informers.NewSharedInformerFactory(kubeClient, 10*time.Minute)
-
-	targetSelectorFetcher := target.NewCompositeTargetSelectorFetcher(
-		target.NewVpaTargetSelectorFetcher(config, kubeClient, factory),
-		target.NewBeta1TargetSelectorFetcher(config),
-	)
-
-	return &ReconcileHvpa{Client: mgr.GetClient(), scheme: mgr.GetScheme(), selectorFetcher: targetSelectorFetcher}
+	return &ReconcileHvpa{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
 }
 
 func updateEventFunc(e event.UpdateEvent) bool {
@@ -296,8 +286,7 @@ var _ reconcile.Reconciler = &ReconcileHvpa{}
 // ReconcileHvpa reconciles a Hvpa object
 type ReconcileHvpa struct {
 	client.Client
-	scheme          *runtime.Scheme
-	selectorFetcher target.VpaTargetSelectorFetcher
+	scheme *runtime.Scheme
 }
 
 const deleteFinalizerName = "autoscaling.k8s.io/hvpa-controller"
@@ -420,7 +409,41 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 
 // manageCache manages the global map of HVPAs
 func (r *ReconcileHvpa) manageCache(instance *autoscalingv1alpha1.Hvpa) {
-	selector, _ := r.selectorFetcher.Fetch(getVpaFromHvpa(instance))
+	targetRef := instance.Spec.TargetRef
+
+	target := &unstructured.Unstructured{}
+	target.SetAPIVersion(targetRef.APIVersion)
+	target.SetKind(targetRef.Kind)
+
+	err := r.Get(context.TODO(), types.NamespacedName{Name: targetRef.Name, Namespace: instance.Namespace}, target)
+	if err != nil {
+		log.Error(err, "Error getting target using targetRef.", "Will skip", instance.Name)
+		return
+	}
+
+	selectorMap, found, err := unstructured.NestedMap(target.Object, "spec", "selector")
+	if err != nil {
+		log.Error(err, "Not able to get the selectorMap from target.", "Will skip", instance.Name)
+		return
+	}
+	if !found {
+		log.V(2).Info("Target doesn't have selector", "will skip HVPA", instance.Name)
+		return
+	}
+
+	labelSelector := &metav1.LabelSelector{}
+	selectorStr, err := json.Marshal(selectorMap)
+	err = json.Unmarshal(selectorStr, &labelSelector)
+	if err != nil {
+		log.Error(err, "Error in reading selector string.", "will skip", instance.Name)
+		return
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
+	if err != nil {
+		log.Error(err, "Error in getting label selector", "will skip", instance.Name)
+	}
+
 	obj := hvpaObj{
 		Name:     instance.Name,
 		Selector: selector,

@@ -20,12 +20,11 @@ import (
 	"flag"
 	"os"
 
-	"k8s.io/klog"
-
 	"github.com/gardener/hvpa-controller/pkg/apis"
 	"github.com/gardener/hvpa-controller/pkg/controller"
 	"github.com/gardener/hvpa-controller/pkg/webhook"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/klog"
 	"k8s.io/klog/klogr"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -34,22 +33,11 @@ import (
 )
 
 func main() {
+	klog.InitFlags(nil)
+
 	var metricsAddr string
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.Parse()
-
-	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
-	klog.InitFlags(klogFlags)
-
-	// Sync the glog and klog flags.
-	flag.CommandLine.VisitAll(func(f1 *flag.Flag) {
-		f2 := klogFlags.Lookup(f1.Name)
-		if f2 != nil {
-			value := f1.Value.String()
-			f2.Value.Set(value)
-		}
-	})
-
 	logf.SetLogger(klogr.New())
 	log := logf.Log.WithName("entrypoint")
 
