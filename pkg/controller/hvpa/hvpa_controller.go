@@ -407,8 +407,7 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 	return result, nil
 }
 
-// manageCache manages the global map of HVPAs
-func (r *ReconcileHvpa) manageCache(instance *autoscalingv1alpha1.Hvpa) {
+func (r *ReconcileHvpa) getSelectorFromHvpa(instance *autoscalingv1alpha1.Hvpa) (labels.Selector, error) {
 	targetRef := instance.Spec.TargetRef
 
 	target := &unstructured.Unstructured{}
@@ -418,17 +417,17 @@ func (r *ReconcileHvpa) manageCache(instance *autoscalingv1alpha1.Hvpa) {
 	err := r.Get(context.TODO(), types.NamespacedName{Name: targetRef.Name, Namespace: instance.Namespace}, target)
 	if err != nil {
 		log.Error(err, "Error getting target using targetRef.", "Will skip", instance.Name)
-		return
+		return nil, err
 	}
 
 	selectorMap, found, err := unstructured.NestedMap(target.Object, "spec", "selector")
 	if err != nil {
 		log.Error(err, "Not able to get the selectorMap from target.", "Will skip", instance.Name)
-		return
+		return nil, err
 	}
 	if !found {
 		log.V(2).Info("Target doesn't have selector", "will skip HVPA", instance.Name)
-		return
+		return nil, err
 	}
 
 	labelSelector := &metav1.LabelSelector{}
@@ -436,12 +435,23 @@ func (r *ReconcileHvpa) manageCache(instance *autoscalingv1alpha1.Hvpa) {
 	err = json.Unmarshal(selectorStr, &labelSelector)
 	if err != nil {
 		log.Error(err, "Error in reading selector string.", "will skip", instance.Name)
-		return
+		return nil, err
 	}
 
 	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
 	if err != nil {
 		log.Error(err, "Error in getting label selector", "will skip", instance.Name)
+		return nil, err
+	}
+	return selector, nil
+}
+
+// manageCache manages the global map of HVPAs
+func (r *ReconcileHvpa) manageCache(instance *autoscalingv1alpha1.Hvpa) {
+	selector, err := r.getSelectorFromHvpa(instance)
+	if err != nil {
+		log.Error(err, "Error in getting label selector", "will skip", instance.Name)
+		return
 	}
 
 	obj := hvpaObj{
