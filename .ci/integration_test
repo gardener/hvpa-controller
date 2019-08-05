@@ -109,7 +109,7 @@ setup_test_cluster
 echo "Starting integration tests..."
 
 set +e
-ginkgo -r
+ginkgo -r cmd pkg
 TEST_RESULT=$?
 set -e
 
