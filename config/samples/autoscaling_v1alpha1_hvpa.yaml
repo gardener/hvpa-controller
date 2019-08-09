@@ -27,6 +27,8 @@ spec:
   hpaTemplate:
     maxReplicas: 7
     minReplicas: 1
+    updatePolicy:
+      updateMode: "On"
     metrics:
     - type: Resource
       resource:
@@ -48,6 +50,8 @@ spec:
         containerName: resource-consumer
         maxAllowed:
           memory: 3000Mi
+    updatePolicy:
+      updateMode: "On"
   weightBasedScalingIntervals:
     - vpaWeight: 0
       startReplicaCount: 1

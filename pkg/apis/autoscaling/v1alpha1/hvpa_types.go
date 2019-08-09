@@ -27,13 +27,40 @@ import (
 
 // VpaTemplateSpec defines the spec for VPA
 type VpaTemplateSpec struct {
+	// Describes the rules on how changes are applied.
+	// If not specified, all fields in the `UpdatePolicy` are set to their
+	// default values.
+	// +optional
+	UpdatePolicy *UpdatePolicy `json:"updatePolicy,omitempty" protobuf:"bytes,1,opt,name=updatePolicy"`
 	// Controls how the autoscaler computes recommended resources.
 	// The resource policy may be used to set constraints on the recommendations
 	// for individual containers. If not specified, the autoscaler computes recommended
 	// resources for all containers in the pod, without additional constraints.
 	// +optional
-	ResourcePolicy *vpa_api.PodResourcePolicy `json:"resourcePolicy,omitempty" protobuf:"bytes,3,opt,name=resourcePolicy"`
+	ResourcePolicy *vpa_api.PodResourcePolicy `json:"resourcePolicy,omitempty" protobuf:"bytes,2,opt,name=resourcePolicy"`
 }
+
+// UpdatePolicy describes the rules on how changes are applied.
+type UpdatePolicy struct {
+	// Controls when autoscaler applies changes to the resources.
+	// The default is 'On'.
+	// +optional
+	UpdateMode *UpdateMode `json:"updateMode,omitempty" protobuf:"bytes,1,opt,name=updateMode"`
+}
+
+// UpdateMode controls when autoscaler applies changes to the resoures.
+type UpdateMode string
+
+const (
+	// UpdateModeOff means that autoscaler never changes resources.
+	UpdateModeOff UpdateMode = "Off"
+	// UpdateModeOn means that autoscaler can update resources during the lifetime of the resource.
+	UpdateModeOn UpdateMode = "On"
+	// UpdateModeScaleUp means that autoscaler will never scale down resources vertically.
+	UpdateModeScaleUp UpdateMode = "ScaleUp"
+	// UpdateModeScaleOut means that autoscaler will never scale down resources horizontally.
+	UpdateModeScaleOut UpdateMode = "ScaleOut"
+)
 
 // HpaTemplateSpec defines the spec for HPA
 type HpaTemplateSpec struct {
@@ -41,9 +68,11 @@ type HpaTemplateSpec struct {
 	// It defaults to 1 pod.
 	// +optional
 	MinReplicas *int32 `json:"minReplicas,omitempty" protobuf:"varint,1,opt,name=minReplicas"`
+
 	// maxReplicas is the upper limit for the number of replicas to which the autoscaler can scale up.
 	// It cannot be less that minReplicas.
 	MaxReplicas int32 `json:"maxReplicas" protobuf:"varint,2,opt,name=maxReplicas"`
+
 	// metrics contains the specifications for which to use to calculate the
 	// desired replica count (the maximum replica count across all metrics will
 	// be used).  The desired replica count is calculated multiplying the
@@ -55,17 +84,11 @@ type HpaTemplateSpec struct {
 	// +optional
 	Metrics []autoscaling.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,rep,name=metrics"`
 
-	/*
-		// lower limit for the number of pods that can be set by the autoscaler, default 1.
-		// +optional
-		MinReplicas *int32 `json:"minReplicas,omitempty" protobuf:"varint,1,opt,name=minReplicas"`
-		// upper limit for the number of pods that can be set by the autoscaler; cannot be smaller than MinReplicas.
-		MaxReplicas int32 `json:"maxReplicas" protobuf:"varint,2,opt,name=maxReplicas"`
-		// target average CPU utilization (represented as a percentage of requested CPU) over all the pods;
-		// if not specified the default autoscaling policy will be used.
-		// +optional
-		TargetCPUUtilizationPercentage *int32 `json:"targetCPUUtilizationPercentage,omitempty" protobuf:"varint,3,opt,name=targetCPUUtilizationPercentage"`
-	*/
+	// Describes the rules on how changes are applied.
+	// If not specified, all fields in the `UpdatePolicy` are set to their
+	// default values.
+	// +optional
+	UpdatePolicy *UpdatePolicy `json:"updatePolicy,omitempty" protobuf:"bytes,4,opt,name=updatePolicy"`
 }
 
 // WeightBasedScalingInterval defines the interval of replica counts in which VpaWeight is applied to VPA scaling
@@ -137,21 +160,6 @@ const (
 	HpaOnly VpaWeight = 0
 )
 
-// HvpaCurrentStatus defines the current status of HVPA
-type HvpaCurrentStatus struct {
-	HpaWeight VpaWeight `json:"hpaWeight,omitempty"`
-	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
-	// last time the HVPA scaled the resource;
-	// used by the autoscaler to control how often the scaling is done.
-	// +optional
-	LastScaleTime *metav1.Time `json:"lastScaleTime,omitempty"`
-	// the kind of scaling that was done last time
-	// +optional
-	LastScaleType LastScaleType `json:"lastScaleType,omitempty"`
-	// Override scale up stabilization window
-	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
-}
-
 // LastScaleType is the type of scaling
 type LastScaleType struct {
 	Horizontal Scaling `json:"horizontal,omitempty"`
@@ -172,21 +180,50 @@ const (
 	In Scaling = "in"
 )
 
+// LastError has detailed information of the error
+type LastError struct {
+	// Description of the error
+	Description string `json:"description,omitempty"`
+
+	// Time at which the error occurred
+	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
+
+	// LastOperation is the type of operation for which error occurred
+	LastOperation string `json:"lastOperation,omitempty"`
+}
+
 // HvpaStatus defines the observed state of Hvpa
 type HvpaStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// current information about the HPA.
+	// Current recommendations from HVPA for horizontal scaling.
 	// +optional
-	HpaStatus HpaStatus `json:"hpaStatus,omitempty" protobuf:"bytes,1,opt,name=hpaStatus"`
+	HpaStatus HpaStatus `json:"hpaStatus,omitempty"`
 
-	// Current information about the VPA.
+	// Current recommendations from HVPA for vertical scaling.
 	// +optional
-	VpaStatus vpa_api.VerticalPodAutoscalerStatus `json:"vpaStatus,omitempty" protobuf:"bytes,2,opt,name=vpaStatus"`
+	VpaStatus vpa_api.VerticalPodAutoscalerStatus `json:"vpaStatus,omitempty"`
 
-	// Current information about HVPA.
+	// Current HPA UpdatePolicy set in the spec
+	HpaUpdatePolicy *UpdatePolicy `json:"hpaUpdatePolicy,omitempty"`
+	// Current VPA UpdatePolicy set in the spec
+	VpaUpdatePolicy *UpdatePolicy `json:"vpaUpdatePolicy,omitempty"`
+
+	HpaWeight VpaWeight `json:"hpaWeight,omitempty"`
+	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
+
+	// last time the HVPA scaled the resource;
+	// used by the autoscaler to control how often the scaling is done.
 	// +optional
-	HvpaStatus HvpaCurrentStatus `json:"hvpaCurrentStatus,omitempty" protobuf:"bytes,3,opt,name=hvpaCurrentStatus"`
+	LastScaleTime *metav1.Time `json:"lastScaleTime,omitempty"`
+
+	// the kind of scaling that was done last time
+	// +optional
+	LastScaleType LastScaleType `json:"lastScaleType,omitempty"`
+
+	// Override scale up stabilization window
+	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
+
+	// LastError has details of any errors that occured
+	LastError *LastError `json:"lastError,omitempty"`
 }
 
 // HpaStatus defines the status of HPA
