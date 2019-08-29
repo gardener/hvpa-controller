@@ -11,6 +11,12 @@ spec:
     kind: Hvpa
     plural: hvpas
   scope: Namespaced
+  subresources:
+    scale:
+      labelSelectorPath: .status.selector
+      specReplicasPath: .spec.replicas
+      statusReplicasPath: .status.replicas
+    status: {}
   validation:
     openAPIV3Schema:
       properties:
@@ -28,32 +34,51 @@ spec:
           type: object
         spec:
           properties:
-            hpaTemplate:
+            hpa:
               description: HpaTemplate defines the spec of HPA
               properties:
-                maxReplicas:
-                  description: maxReplicas is the upper limit for the number of replicas
-                    to which the autoscaler can scale up. It cannot be less that minReplicas.
-                  format: int32
-                  type: integer
-                metrics:
-                  description: metrics contains the specifications for which to use
-                    to calculate the desired replica count (the maximum replica count
-                    across all metrics will be used).  The desired replica count is
-                    calculated multiplying the ratio between the target value and
-                    the current value by the current number of pods.  Ergo, metrics
-                    used must decrease as the pod count is increased, and vice-versa.  See
-                    the individual metric source types for more information about
-                    how each type of metric must respond. If not set, the default
-                    metric will be set to 80% average CPU utilization.
-                  items:
-                    type: object
-                  type: array
-                minReplicas:
-                  description: minReplicas is the lower limit for the number of replicas
-                    to which the autoscaler can scale down. It defaults to 1 pod.
-                  format: int32
-                  type: integer
+                selector:
+                  description: 'Selector is a label query that should match HPA. Must
+                    match in order to be controlled. If empty, defaulted to labels
+                    on HPA template. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors'
+                  type: object
+                template:
+                  description: Template is the object that describes the HPA that
+                    will be created.
+                  properties:
+                    spec:
+                      description: Spec defines the behavior of a HPA.
+                      properties:
+                        maxReplicas:
+                          description: maxReplicas is the upper limit for the number
+                            of replicas to which the autoscaler can scale up. It cannot
+                            be less that minReplicas.
+                          format: int32
+                          type: integer
+                        metrics:
+                          description: metrics contains the specifications for which
+                            to use to calculate the desired replica count (the maximum
+                            replica count across all metrics will be used).  The desired
+                            replica count is calculated multiplying the ratio between
+                            the target value and the current value by the current
+                            number of pods.  Ergo, metrics used must decrease as the
+                            pod count is increased, and vice-versa.  See the individual
+                            metric source types for more information about how each
+                            type of metric must respond. If not set, the default metric
+                            will be set to 80% average CPU utilization.
+                          items:
+                            type: object
+                          type: array
+                        minReplicas:
+                          description: minReplicas is the lower limit for the number
+                            of replicas to which the autoscaler can scale down. It
+                            defaults to 1 pod.
+                          format: int32
+                          type: integer
+                      required:
+                      - maxReplicas
+                      type: object
+                  type: object
                 updatePolicy:
                   description: Describes the rules on how changes are applied. If
                     not specified, all fields in the `UpdatePolicy` are set to their
@@ -64,9 +89,11 @@ spec:
                         resources. The default is 'On'.
                       type: string
                   type: object
-              required:
-              - maxReplicas
               type: object
+            replicas:
+              description: Replicas is the number of replicas of target resource
+              format: int32
+              type: integer
             scaleDownStabilization:
               description: ScaleDownStabilization defines stabilization parameters
                 after last scaling
@@ -143,42 +170,56 @@ spec:
               description: TargetRef points to the controller managing the set of
                 pods for the autoscaler to control
               type: object
-            vpaTemplate:
-              description: VpaTemplate defines the spec of VPA
+            vpa:
+              description: Vpa defines the spec of VPA
               properties:
-                resourcePolicy:
-                  description: Controls how the autoscaler computes recommended resources.
-                    The resource policy may be used to set constraints on the recommendations
-                    for individual containers. If not specified, the autoscaler computes
-                    recommended resources for all containers in the pod, without additional
-                    constraints.
+                selector:
+                  description: 'Selector is a label query that should match VPA. Must
+                    match in order to be controlled. If empty, defaulted to labels
+                    on VPA template. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors'
+                  type: object
+                template:
+                  description: Template is the object that describes the VPA that
+                    will be created.
                   properties:
-                    containerPolicies:
-                      description: Per-container resource policies. +patchMergeKey=containerName
-                        +patchStrategy=merge
-                      items:
-                        properties:
-                          containerName:
-                            description: Name of the container or DefaultContainerResourcePolicy,
-                              in which case the policy is used by the containers that
-                              don't have their own policy specified.
-                            type: string
-                          maxAllowed:
-                            description: Specifies the maximum amount of resources
-                              that will be recommended for the container. The default
-                              is no maximum.
-                            type: object
-                          minAllowed:
-                            description: Specifies the minimal amount of resources
-                              that will be recommended for the container. The default
-                              is no minimum.
-                            type: object
-                          mode:
-                            description: Whether autoscaler is enabled for the container.
-                              The default is "Auto".
-                            type: string
-                        type: object
-                      type: array
+                    spec:
+                      description: Spec defines the behavior of a VPA.
+                      properties:
+                        resourcePolicy:
+                          description: Controls how the autoscaler computes recommended
+                            resources. The resource policy may be used to set constraints
+                            on the recommendations for individual containers. If not
+                            specified, the autoscaler computes recommended resources
+                            for all containers in the pod, without additional constraints.
+                          properties:
+                            containerPolicies:
+                              description: Per-container resource policies. +patchMergeKey=containerName
+                                +patchStrategy=merge
+                              items:
+                                properties:
+                                  containerName:
+                                    description: Name of the container or DefaultContainerResourcePolicy,
+                                      in which case the policy is used by the containers
+                                      that don't have their own policy specified.
+                                    type: string
+                                  maxAllowed:
+                                    description: Specifies the maximum amount of resources
+                                      that will be recommended for the container.
+                                      The default is no maximum.
+                                    type: object
+                                  minAllowed:
+                                    description: Specifies the minimal amount of resources
+                                      that will be recommended for the container.
+                                      The default is no minimum.
+                                    type: object
+                                  mode:
+                                    description: Whether autoscaler is enabled for
+                                      the container. The default is "Auto".
+                                    type: string
+                                type: object
+                              type: array
+                          type: object
+                      type: object
                   type: object
                 updatePolicy:
                   description: Describes the rules on how changes are applied. If
@@ -213,8 +254,10 @@ spec:
                   vpaWeight:
                     description: VpaWeight defines the weight to be given to VPA's
                       recommendationd for the interval of number of replicas provided
-                    format: float
-                    type: number
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
                 type: object
               type: array
           required:
@@ -222,16 +265,10 @@ spec:
           type: object
         status:
           properties:
-            hpaStatus:
-              description: Current recommendations from HVPA for horizontal scaling.
-              properties:
-                currentReplicas:
-                  format: int32
-                  type: integer
-                desiredReplicas:
-                  format: int32
-                  type: integer
-              type: object
+            hpaSelector:
+              description: HpaSelector is the string form of the label selector of
+                HPA. This is required for HPA to work with scale subresource.
+              type: string
             hpaUpdatePolicy:
               description: Current HPA UpdatePolicy set in the spec
               properties:
@@ -241,8 +278,8 @@ spec:
                   type: string
               type: object
             hpaWeight:
-              format: float
-              type: number
+              format: int32
+              type: integer
             lastError:
               description: LastError has details of any errors that occured
               properties:
@@ -258,103 +295,116 @@ spec:
                   format: date-time
                   type: string
               type: object
-            lastScaleTime:
-              description: last time the HVPA scaled the resource; used by the autoscaler
-                to control how often the scaling is done.
-              format: date-time
-              type: string
-            lastScaleType:
-              description: the kind of scaling that was done last time
+            lastScaling:
               properties:
-                horizontal:
+                hpaStatus:
+                  properties:
+                    currentReplicas:
+                      format: int32
+                      type: integer
+                    desiredReplicas:
+                      format: int32
+                      type: integer
+                  type: object
+                lastScaleTime:
+                  format: date-time
                   type: string
-                vertical:
-                  type: string
+                lastScaleType:
+                  properties:
+                    horizontal:
+                      type: string
+                    vertical:
+                      type: string
+                  type: object
+                vpaStatus:
+                  properties:
+                    conditions:
+                      description: Conditions is the set of conditions required for
+                        this autoscaler to scale its target, and indicates whether
+                        or not those conditions are met. +patchMergeKey=type +patchStrategy=merge
+                      items:
+                        properties:
+                          lastTransitionTime:
+                            description: lastTransitionTime is the last time the condition
+                              transitioned from one status to another
+                            format: date-time
+                            type: string
+                          message:
+                            description: message is a human-readable explanation containing
+                              details about the transition
+                            type: string
+                          reason:
+                            description: reason is the reason for the condition's
+                              last transition.
+                            type: string
+                          status:
+                            description: status is the status of the condition (True,
+                              False, Unknown)
+                            type: string
+                          type:
+                            description: type describes the current condition
+                            type: string
+                        required:
+                        - type
+                        - status
+                        type: object
+                      type: array
+                    recommendation:
+                      description: The most recently computed amount of resources
+                        recommended by the autoscaler for the controlled pods.
+                      properties:
+                        containerRecommendations:
+                          description: Resources recommended by the autoscaler for
+                            each container.
+                          items:
+                            properties:
+                              containerName:
+                                description: Name of the container.
+                                type: string
+                              lowerBound:
+                                description: Minimum recommended amount of resources.
+                                  Observes ContainerResourcePolicy. This amount is
+                                  not guaranteed to be sufficient for the application
+                                  to operate in a stable way, however running with
+                                  less resources is likely to have significant impact
+                                  on performance/availability.
+                                type: object
+                              target:
+                                description: Recommended amount of resources. Observes
+                                  ContainerResourcePolicy.
+                                type: object
+                              uncappedTarget:
+                                description: The most recent recommended resources
+                                  target computed by the autoscaler for the controlled
+                                  pods, based only on actual resource usage, not taking
+                                  into account the ContainerResourcePolicy. May differ
+                                  from the Recommendation if the actual resource usage
+                                  causes the target to violate the ContainerResourcePolicy
+                                  (lower than MinAllowed or higher that MaxAllowed).
+                                  Used only as status indication, will not affect
+                                  actual resource assignment.
+                                type: object
+                              upperBound:
+                                description: Maximum recommended amount of resources.
+                                  Observes ContainerResourcePolicy. Any resources
+                                  allocated beyond this value are likely wasted. This
+                                  value may be larger than the maximum amount of application
+                                  is actually capable of consuming.
+                                type: object
+                            required:
+                            - target
+                            type: object
+                          type: array
+                      type: object
+                  type: object
               type: object
             overrideScaleUpStabilization:
               description: Override scale up stabilization window
               type: boolean
-            vpaStatus:
-              description: Current recommendations from HVPA for vertical scaling.
-              properties:
-                conditions:
-                  description: Conditions is the set of conditions required for this
-                    autoscaler to scale its target, and indicates whether or not those
-                    conditions are met. +patchMergeKey=type +patchStrategy=merge
-                  items:
-                    properties:
-                      lastTransitionTime:
-                        description: lastTransitionTime is the last time the condition
-                          transitioned from one status to another
-                        format: date-time
-                        type: string
-                      message:
-                        description: message is a human-readable explanation containing
-                          details about the transition
-                        type: string
-                      reason:
-                        description: reason is the reason for the condition's last
-                          transition.
-                        type: string
-                      status:
-                        description: status is the status of the condition (True,
-                          False, Unknown)
-                        type: string
-                      type:
-                        description: type describes the current condition
-                        type: string
-                    required:
-                    - type
-                    - status
-                    type: object
-                  type: array
-                recommendation:
-                  description: The most recently computed amount of resources recommended
-                    by the autoscaler for the controlled pods.
-                  properties:
-                    containerRecommendations:
-                      description: Resources recommended by the autoscaler for each
-                        container.
-                      items:
-                        properties:
-                          containerName:
-                            description: Name of the container.
-                            type: string
-                          lowerBound:
-                            description: Minimum recommended amount of resources.
-                              Observes ContainerResourcePolicy. This amount is not
-                              guaranteed to be sufficient for the application to operate
-                              in a stable way, however running with less resources
-                              is likely to have significant impact on performance/availability.
-                            type: object
-                          target:
-                            description: Recommended amount of resources. Observes
-                              ContainerResourcePolicy.
-                            type: object
-                          uncappedTarget:
-                            description: The most recent recommended resources target
-                              computed by the autoscaler for the controlled pods,
-                              based only on actual resource usage, not taking into
-                              account the ContainerResourcePolicy. May differ from
-                              the Recommendation if the actual resource usage causes
-                              the target to violate the ContainerResourcePolicy (lower
-                              than MinAllowed or higher that MaxAllowed). Used only
-                              as status indication, will not affect actual resource
-                              assignment.
-                            type: object
-                          upperBound:
-                            description: Maximum recommended amount of resources.
-                              Observes ContainerResourcePolicy. Any resources allocated
-                              beyond this value are likely wasted. This value may
-                              be larger than the maximum amount of application is
-                              actually capable of consuming.
-                            type: object
-                        required:
-                        - target
-                        type: object
-                      type: array
-                  type: object
-              type: object
+            replicas:
+              description: Replicas is the number of replicas of the target resource.
+              format: int32
+              type: integer
             vpaUpdatePolicy:
               description: Current VPA UpdatePolicy set in the spec
               properties:
@@ -364,8 +414,8 @@ spec:
                   type: string
               type: object
             vpaWeight:
-              format: float
-              type: number
+              format: int32
+              type: integer
           type: object
   version: v1alpha1
 status:

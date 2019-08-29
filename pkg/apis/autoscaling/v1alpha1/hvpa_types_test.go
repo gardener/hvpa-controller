@@ -41,12 +41,12 @@ func TestStorageHvpa(t *testing.T) {
 		},
 		Spec: HvpaSpec{
 			TargetRef: &autoscaling.CrossVersionObjectReference{},
-			HpaTemplate: HpaTemplateSpec{
+			Hpa: HpaSpec{
 				UpdatePolicy: &UpdatePolicy{
 					UpdateMode: &updateMode,
 				},
 			},
-			VpaTemplate: VpaTemplateSpec{
+			Vpa: VpaSpec{
 				UpdatePolicy: &UpdatePolicy{
 					UpdateMode: &updateMode,
 				},
