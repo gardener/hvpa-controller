@@ -13,7 +13,7 @@ spec:
   scope: Namespaced
   subresources:
     scale:
-      labelSelectorPath: .status.hpaSelector
+      labelSelectorPath: .status.targetSelector
       specReplicasPath: .spec.replicas
       statusReplicasPath: .status.replicas
     status: {}
@@ -266,10 +266,6 @@ spec:
           type: object
         status:
           properties:
-            hpaSelector:
-              description: HpaSelector is the string form of the label selector of
-                HPA. This is required for HPA to work with scale subresource.
-              type: string
             hpaUpdatePolicy:
               description: Current HPA UpdatePolicy set in the spec
               properties:
@@ -406,6 +402,10 @@ spec:
               description: Replicas is the number of replicas of the target resource.
               format: int32
               type: integer
+            targetSelector:
+              description: TargetSelector is the string form of the label selector
+                of HPA. This is required for HPA to work with scale subresource.
+              type: string
             vpaUpdatePolicy:
               description: Current VPA UpdatePolicy set in the spec
               properties:

@@ -386,7 +386,7 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 	for _, obj := range cachedNames[hvpa.Namespace] {
 		if obj.Name == hvpa.Name {
 			selectorStr := obj.Selector.String()
-			hvpa.Status.HpaSelector = &selectorStr
+			hvpa.Status.TargetSelector = &selectorStr
 			break
 		}
 	}

@@ -229,8 +229,8 @@ type LastError struct {
 type HvpaStatus struct {
 	// Replicas is the number of replicas of the target resource.
 	Replicas *int32 `json:"replicas,omitempty"`
-	// HpaSelector is the string form of the label selector of HPA. This is required for HPA to work with scale subresource.
-	HpaSelector *string `json:"hpaSelector,omitempty"`
+	// TargetSelector is the string form of the label selector of HPA. This is required for HPA to work with scale subresource.
+	TargetSelector *string `json:"targetSelector,omitempty"`
 	// Current HPA UpdatePolicy set in the spec
 	HpaUpdatePolicy *UpdatePolicy `json:"hpaUpdatePolicy,omitempty"`
 	// Current VPA UpdatePolicy set in the spec
@@ -304,7 +304,7 @@ type HpaStatus struct {
 // Hvpa is the Schema for the hvpas API
 // +k8s:openapi-gen=true
 // +kubebuilder:subresource:status
-// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.hpaSelector
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.targetSelector
 type Hvpa struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -270,8 +270,8 @@ func (in *HvpaStatus) DeepCopyInto(out *HvpaStatus) {
 		*out = new(int32)
 		**out = **in
 	}
-	if in.HpaSelector != nil {
-		in, out := &in.HpaSelector, &out.HpaSelector
+	if in.TargetSelector != nil {
+		in, out := &in.TargetSelector, &out.TargetSelector
 		*out = new(string)
 		**out = **in
 	}
