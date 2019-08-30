@@ -28,7 +28,7 @@ import (
 )
 
 func TestStorageHvpa(t *testing.T) {
-	updateMode := UpdateModeOn
+	updateMode := UpdateModeAuto
 
 	key := types.NamespacedName{
 		Name:      "foo",

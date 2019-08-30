@@ -379,7 +379,16 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 	hvpa := instance.DeepCopy()
 
 	if len(*blockedScaling) != 0 {
-		hvpa.Status.LastBlockedScaling = blockedScaling
+		hvpa.Status.LastBlockedScaling = *blockedScaling
+	}
+
+	// lookup cache for selector
+	for _, obj := range cachedNames[hvpa.Namespace] {
+		if obj.Name == hvpa.Name {
+			selectorStr := obj.Selector.String()
+			hvpa.Status.HpaSelector = &selectorStr
+			break
+		}
 	}
 
 	hvpa.Status.HpaUpdatePolicy = hvpa.Spec.Hpa.UpdatePolicy.DeepCopy()
@@ -394,11 +403,6 @@ func (r *ReconcileHvpa) Reconcile(request reconcile.Request) (reconcile.Result, 
 		if hpaScaled {
 			hvpa.Status.LastScaling.HpaStatus.DesiredReplicas = weightedHpaStatus.DesiredReplicas
 			hvpa.Status.LastScaling.HpaStatus.CurrentReplicas = weightedHpaStatus.CurrentReplicas
-			if weightedHpaStatus.DesiredReplicas > weightedHpaStatus.CurrentReplicas {
-				hvpa.Status.LastScaling.LastScaleType.Horizontal = autoscalingv1alpha1.Out
-			} else if weightedHpaStatus.DesiredReplicas < weightedHpaStatus.CurrentReplicas {
-				hvpa.Status.LastScaling.LastScaleType.Horizontal = autoscalingv1alpha1.In
-			}
 		}
 
 		if vpaScaled {
@@ -910,7 +914,7 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 		}
 
 	} else if weightedReplicas < currentReplicas {
-		if updateMode == autoscalingv1alpha1.HpaUpdateModeScaleOut {
+		if updateMode == autoscalingv1alpha1.UpdateModeScaleUp {
 			blockReason = autoscalingv1alpha1.BlockingReasonUpdatePolicy
 		} else if overrideScaleUpStabilization == false && lastScaleTimeDuration < scaleDownStabilizationWindow {
 			blockReason = autoscalingv1alpha1.BlockingReasonStabilizationWindow
@@ -1118,7 +1122,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					}
 				} else if diffMem.Sign() < 0 {
 					if *hvpa.Spec.Vpa.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeOff ||
-						*hvpa.Spec.Vpa.UpdatePolicy.UpdateMode == autoscalingv1alpha1.VpaUpdateModeScaleUp {
+						*hvpa.Spec.Vpa.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeScaleUp {
 						outTargetUpdatePolicy[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByUpdatePolicy = true
 
@@ -1165,7 +1169,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					}
 				} else if diffCPU.Sign() < 0 {
 					if *hvpa.Spec.Vpa.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeOff ||
-						*hvpa.Spec.Vpa.UpdatePolicy.UpdateMode == autoscalingv1alpha1.VpaUpdateModeScaleUp {
+						*hvpa.Spec.Vpa.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeScaleUp {
 						outTargetUpdatePolicy[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByUpdatePolicy = true
 

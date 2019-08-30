@@ -13,7 +13,7 @@ spec:
   scope: Namespaced
   subresources:
     scale:
-      labelSelectorPath: .status.selector
+      labelSelectorPath: .status.hpaSelector
       specReplicasPath: .spec.replicas
       statusReplicasPath: .status.replicas
     status: {}
@@ -252,8 +252,9 @@ spec:
                     format: int32
                     type: integer
                   vpaWeight:
-                    description: VpaWeight defines the weight to be given to VPA's
-                      recommendationd for the interval of number of replicas provided
+                    description: VpaWeight defines the weight (in percentage) to be
+                      given to VPA's recommendationd for the interval of number of
+                      replicas provided
                     format: int32
                     maximum: 100
                     minimum: 0
@@ -280,6 +281,13 @@ spec:
             hpaWeight:
               format: int32
               type: integer
+            lastBlockedScaling:
+              items:
+                properties:
+                  reason:
+                    type: string
+                type: object
+              type: array
             lastError:
               description: LastError has details of any errors that occured
               properties:
@@ -309,13 +317,6 @@ spec:
                 lastScaleTime:
                   format: date-time
                   type: string
-                lastScaleType:
-                  properties:
-                    horizontal:
-                      type: string
-                    vertical:
-                      type: string
-                  type: object
                 vpaStatus:
                   properties:
                     conditions:

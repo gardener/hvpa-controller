@@ -48,14 +48,10 @@ const (
 	UpdateModePurge string = "Purge"
 	// UpdateModeOff means that autoscaler never changes resources.
 	UpdateModeOff string = "Off"
-	// UpdateModeOn means that autoscaler can update resources during the lifetime of the resource.
-	UpdateModeOn string = "On"
-
-	// VpaUpdateModeScaleUp means that VPA will never scale down resources vertically.
-	VpaUpdateModeScaleUp string = "ScaleUp"
-
-	// HpaUpdateModeScaleOut means that HPA will never scale down resources horizontally.
-	HpaUpdateModeScaleOut string = "ScaleOut"
+	// UpdateModeAuto means that autoscaler can update resources during the lifetime of the resource.
+	UpdateModeAuto string = "Auto"
+	// UpdateModeScaleUp means that HPA/VPA will never scale down resources vertically.
+	UpdateModeScaleUp string = "ScaleUp"
 )
 
 // HpaTemplateSpec defines the spec for HPA
@@ -83,7 +79,7 @@ type HpaTemplateSpec struct {
 
 // WeightBasedScalingInterval defines the interval of replica counts in which VpaWeight is applied to VPA scaling
 type WeightBasedScalingInterval struct {
-	// VpaWeight defines the weight to be given to VPA's recommendationd for the interval of number of replicas provided
+	// VpaWeight defines the weight (in percentage) to be given to VPA's recommendationd for the interval of number of replicas provided
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
 	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
@@ -217,26 +213,6 @@ const (
 	HpaOnly VpaWeight = 0
 )
 
-// LastScaleType is the type of scaling
-type LastScaleType struct {
-	Horizontal Scaling `json:"horizontal,omitempty"`
-	Vertical   Scaling `json:"vertical,omitempty"`
-}
-
-// Scaling defines the type of scaling
-type Scaling string
-
-const (
-	// Down is scaling down vertically
-	Down Scaling = "down"
-	// Up is scaling up vertically
-	Up Scaling = "up"
-	// Out is scaling out horizontally
-	Out Scaling = "out"
-	// In is scaling in horizontally
-	In Scaling = "in"
-)
-
 // LastError has detailed information of the error
 type LastError struct {
 	// Description of the error
@@ -266,8 +242,8 @@ type HvpaStatus struct {
 	// Override scale up stabilization window
 	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
 
-	LastBlockedScaling *[]*BlockedScaling
-	LastScaling        ScalingStatus `json:"lastScaling,omitempty"`
+	LastBlockedScaling []*BlockedScaling `json:"lastBlockedScaling,omitempty"`
+	LastScaling        ScalingStatus     `json:"lastScaling,omitempty"`
 
 	// LastError has details of any errors that occured
 	LastError *LastError `json:"lastError,omitempty"`
@@ -312,7 +288,6 @@ const (
 // ScalingStatus defines the staus of scaling
 type ScalingStatus struct {
 	LastScaleTime *metav1.Time                        `json:"lastScaleTime,omitempty"`
-	LastScaleType LastScaleType                       `json:"lastScaleType,omitempty"`
 	HpaStatus     HpaStatus                           `json:"hpaStatus,omitempty" protobuf:"bytes,1,opt,name=hpaStatus"`
 	VpaStatus     vpa_api.VerticalPodAutoscalerStatus `json:"vpaStatus,omitempty" protobuf:"bytes,2,opt,name=vpaStatus"`
 }
@@ -329,7 +304,7 @@ type HpaStatus struct {
 // Hvpa is the Schema for the hvpas API
 // +k8s:openapi-gen=true
 // +kubebuilder:subresource:status
-// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.selector
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.hpaSelector
 type Hvpa struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

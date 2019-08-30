@@ -81,7 +81,7 @@ func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync
 func newHvpa() *autoscalingv1alpha1.Hvpa {
 	replica := int32(1)
 	util := int32(70)
-	updateMode := autoscalingv1alpha1.UpdateModeOn
+	updateMode := autoscalingv1alpha1.UpdateModeAuto
 
 	instance := &autoscalingv1alpha1.Hvpa{
 		ObjectMeta: metav1.ObjectMeta{
