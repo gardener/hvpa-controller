@@ -28,6 +28,8 @@ import (
 )
 
 func TestStorageHvpa(t *testing.T) {
+	updateMode := UpdateModeAuto
+
 	key := types.NamespacedName{
 		Name:      "foo",
 		Namespace: "default",
@@ -39,6 +41,16 @@ func TestStorageHvpa(t *testing.T) {
 		},
 		Spec: HvpaSpec{
 			TargetRef: &autoscaling.CrossVersionObjectReference{},
+			Hpa: HpaSpec{
+				UpdatePolicy: &UpdatePolicy{
+					UpdateMode: &updateMode,
+				},
+			},
+			Vpa: VpaSpec{
+				UpdatePolicy: &UpdatePolicy{
+					UpdateMode: &updateMode,
+				},
+			},
 		},
 	}
 	g := gomega.NewGomegaWithT(t)

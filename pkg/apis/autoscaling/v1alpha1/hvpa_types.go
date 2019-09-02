@@ -32,8 +32,27 @@ type VpaTemplateSpec struct {
 	// for individual containers. If not specified, the autoscaler computes recommended
 	// resources for all containers in the pod, without additional constraints.
 	// +optional
-	ResourcePolicy *vpa_api.PodResourcePolicy `json:"resourcePolicy,omitempty" protobuf:"bytes,3,opt,name=resourcePolicy"`
+	ResourcePolicy *vpa_api.PodResourcePolicy `json:"resourcePolicy,omitempty" protobuf:"bytes,2,opt,name=resourcePolicy"`
 }
+
+// UpdatePolicy describes the rules on how changes are applied.
+type UpdatePolicy struct {
+	// Controls when autoscaler applies changes to the resources.
+	// The default is 'On'.
+	// +optional
+	UpdateMode *string `json:"updateMode,omitempty" protobuf:"bytes,1,opt,name=updateMode"`
+}
+
+const (
+	// UpdateModePurge means that HPA/VPA will not be created.
+	UpdateModePurge string = "Purge"
+	// UpdateModeOff means that autoscaler never changes resources.
+	UpdateModeOff string = "Off"
+	// UpdateModeAuto means that autoscaler can update resources during the lifetime of the resource.
+	UpdateModeAuto string = "Auto"
+	// UpdateModeScaleUp means that HPA/VPA will never scale down resources vertically.
+	UpdateModeScaleUp string = "ScaleUp"
+)
 
 // HpaTemplateSpec defines the spec for HPA
 type HpaTemplateSpec struct {
@@ -41,9 +60,11 @@ type HpaTemplateSpec struct {
 	// It defaults to 1 pod.
 	// +optional
 	MinReplicas *int32 `json:"minReplicas,omitempty" protobuf:"varint,1,opt,name=minReplicas"`
+
 	// maxReplicas is the upper limit for the number of replicas to which the autoscaler can scale up.
 	// It cannot be less that minReplicas.
 	MaxReplicas int32 `json:"maxReplicas" protobuf:"varint,2,opt,name=maxReplicas"`
+
 	// metrics contains the specifications for which to use to calculate the
 	// desired replica count (the maximum replica count across all metrics will
 	// be used).  The desired replica count is calculated multiplying the
@@ -54,23 +75,13 @@ type HpaTemplateSpec struct {
 	// If not set, the default metric will be set to 80% average CPU utilization.
 	// +optional
 	Metrics []autoscaling.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,rep,name=metrics"`
-
-	/*
-		// lower limit for the number of pods that can be set by the autoscaler, default 1.
-		// +optional
-		MinReplicas *int32 `json:"minReplicas,omitempty" protobuf:"varint,1,opt,name=minReplicas"`
-		// upper limit for the number of pods that can be set by the autoscaler; cannot be smaller than MinReplicas.
-		MaxReplicas int32 `json:"maxReplicas" protobuf:"varint,2,opt,name=maxReplicas"`
-		// target average CPU utilization (represented as a percentage of requested CPU) over all the pods;
-		// if not specified the default autoscaling policy will be used.
-		// +optional
-		TargetCPUUtilizationPercentage *int32 `json:"targetCPUUtilizationPercentage,omitempty" protobuf:"varint,3,opt,name=targetCPUUtilizationPercentage"`
-	*/
 }
 
 // WeightBasedScalingInterval defines the interval of replica counts in which VpaWeight is applied to VPA scaling
 type WeightBasedScalingInterval struct {
-	// VpaWeight defines the weight to be given to VPA's recommendationd for the interval of number of replicas provided
+	// VpaWeight defines the weight (in percentage) to be given to VPA's recommendationd for the interval of number of replicas provided
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
 	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
 	// StartReplicaCount is the number of replicas from which VpaWeight is applied to VPA scaling
 	// If this field is not provided, it will default to minReplicas of HPA
@@ -95,13 +106,78 @@ type ScaleStabilization struct {
 	MinMemChange *ChangeThreshold `json:"minMemChange,omitempty"`
 }
 
+// VpaSpec defines spec for VPA
+type VpaSpec struct {
+	// Selector is a label query that should match VPA.
+	// Must match in order to be controlled.
+	// If empty, defaulted to labels on VPA template.
+	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors
+	// +optional
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+
+	// Describes the rules on how changes are applied.
+	// If not specified, all fields in the `UpdatePolicy` are set to their
+	// default values.
+	// +optional
+	UpdatePolicy *UpdatePolicy `json:"updatePolicy,omitempty"`
+
+	// Template is the object that describes the VPA that will be created.
+	// +optional
+	Template VpaTemplate `json:"template,omitempty"`
+}
+
+// VpaTemplate defines the template for VPA
+type VpaTemplate struct {
+	// Metadata of the pods created from this template.
+	// +optional
+	metav1.ObjectMeta
+
+	// Spec defines the behavior of a VPA.
+	// +optional
+	Spec VpaTemplateSpec `json:"spec,omitempty"`
+}
+
+// HpaTemplate defines the template for HPA
+type HpaTemplate struct {
+	// Metadata of the pods created from this template.
+	// +optional
+	metav1.ObjectMeta
+
+	// Spec defines the behavior of a HPA.
+	// +optional
+	Spec HpaTemplateSpec `json:"spec,omitempty"`
+}
+
+// HpaSpec defines spec for HPA
+type HpaSpec struct {
+	// Selector is a label query that should match HPA.
+	// Must match in order to be controlled.
+	// If empty, defaulted to labels on HPA template.
+	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors
+	// +optional
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+
+	// Describes the rules on how changes are applied.
+	// If not specified, all fields in the `UpdatePolicy` are set to their
+	// default values.
+	// +optional
+	UpdatePolicy *UpdatePolicy `json:"updatePolicy,omitempty"`
+
+	// Template is the object that describes the HPA that will be created.
+	// +optional
+	Template HpaTemplate `json:"template,omitempty"`
+}
+
 // HvpaSpec defines the desired state of Hvpa
 type HvpaSpec struct {
-	// HpaTemplate defines the spec of HPA
-	HpaTemplate HpaTemplateSpec `json:"hpaTemplate,omitempty"`
+	// Replicas is the number of replicas of target resource
+	Replicas *int32 `json:"replicas,omitempty"`
 
-	// VpaTemplate defines the spec of VPA
-	VpaTemplate VpaTemplateSpec `json:"vpaTemplate,omitempty"`
+	// HpaTemplate defines the spec of HPA
+	Hpa HpaSpec `json:"hpa,omitempty"`
+
+	// Vpa defines the spec of VPA
+	Vpa VpaSpec `json:"vpa,omitempty"`
 
 	// WeightBasedScalingIntervals defines the intervals of replica counts, and the weights for scaling a deployment vertically
 	// If there are overlapping intervals, then the vpaWeight will be taken from the first matching interval
@@ -128,65 +204,92 @@ type ChangeThreshold struct {
 }
 
 // VpaWeight - weight to provide to VPA scaling
-type VpaWeight float32
+type VpaWeight int32
 
 const (
 	// VpaOnly - only vertical scaling
-	VpaOnly VpaWeight = 1.0
+	VpaOnly VpaWeight = 100
 	// HpaOnly - only horizontal scaling
 	HpaOnly VpaWeight = 0
 )
 
-// HvpaCurrentStatus defines the current status of HVPA
-type HvpaCurrentStatus struct {
-	HpaWeight VpaWeight `json:"hpaWeight,omitempty"`
-	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
-	// last time the HVPA scaled the resource;
-	// used by the autoscaler to control how often the scaling is done.
-	// +optional
-	LastScaleTime *metav1.Time `json:"lastScaleTime,omitempty"`
-	// the kind of scaling that was done last time
-	// +optional
-	LastScaleType LastScaleType `json:"lastScaleType,omitempty"`
-	// Override scale up stabilization window
-	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
+// LastError has detailed information of the error
+type LastError struct {
+	// Description of the error
+	Description string `json:"description,omitempty"`
+
+	// Time at which the error occurred
+	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
+
+	// LastOperation is the type of operation for which error occurred
+	LastOperation string `json:"lastOperation,omitempty"`
 }
-
-// LastScaleType is the type of scaling
-type LastScaleType struct {
-	Horizontal Scaling `json:"horizontal,omitempty"`
-	Vertical   Scaling `json:"vertical,omitempty"`
-}
-
-// Scaling defines the type of scaling
-type Scaling string
-
-const (
-	// Down is scaling down vertically
-	Down Scaling = "down"
-	// Up is scaling up vertically
-	Up Scaling = "up"
-	// Out is scaling out horizontally
-	Out Scaling = "out"
-	// In is scaling in horizontally
-	In Scaling = "in"
-)
 
 // HvpaStatus defines the observed state of Hvpa
 type HvpaStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// current information about the HPA.
-	// +optional
-	HpaStatus HpaStatus `json:"hpaStatus,omitempty" protobuf:"bytes,1,opt,name=hpaStatus"`
+	// Replicas is the number of replicas of the target resource.
+	Replicas *int32 `json:"replicas,omitempty"`
+	// TargetSelector is the string form of the label selector of HPA. This is required for HPA to work with scale subresource.
+	TargetSelector *string `json:"targetSelector,omitempty"`
+	// Current HPA UpdatePolicy set in the spec
+	HpaUpdatePolicy *UpdatePolicy `json:"hpaUpdatePolicy,omitempty"`
+	// Current VPA UpdatePolicy set in the spec
+	VpaUpdatePolicy *UpdatePolicy `json:"vpaUpdatePolicy,omitempty"`
 
-	// Current information about the VPA.
-	// +optional
-	VpaStatus vpa_api.VerticalPodAutoscalerStatus `json:"vpaStatus,omitempty" protobuf:"bytes,2,opt,name=vpaStatus"`
+	HpaWeight VpaWeight `json:"hpaWeight,omitempty"`
+	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
 
-	// Current information about HVPA.
-	// +optional
-	HvpaStatus HvpaCurrentStatus `json:"hvpaCurrentStatus,omitempty" protobuf:"bytes,3,opt,name=hvpaCurrentStatus"`
+	// Override scale up stabilization window
+	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
+
+	LastBlockedScaling []*BlockedScaling `json:"lastBlockedScaling,omitempty"`
+	LastScaling        ScalingStatus     `json:"lastScaling,omitempty"`
+
+	// LastError has details of any errors that occured
+	LastError *LastError `json:"lastError,omitempty"`
+}
+
+// BlockingReason defines the reason for blocking.
+type BlockingReason string
+
+const (
+	// BlockingReasonStabilizationWindow - HVPA is in stabilization window
+	BlockingReasonStabilizationWindow BlockingReason = "StabilizationWindow"
+	// BlockingReasonMaintenanceWindow - Resource is in maintenance window
+	BlockingReasonMaintenanceWindow BlockingReason = "MaintenanceWindow"
+	// BlockingReasonUpdatePolicy - Update policy doesn't support scaling
+	BlockingReasonUpdatePolicy BlockingReason = "UpdatePolicy"
+	// BlockingReasonWeight  - VpaWeight doesn't support scaling
+	BlockingReasonWeight BlockingReason = "Weight"
+	// BlockingReasonMinChange - Min change doesn't support scaling
+	BlockingReasonMinChange BlockingReason = "MinChange"
+)
+
+// BlockedScaling defines the details for blocked scaling
+type BlockedScaling struct {
+	Reason BlockingReason `json:"reason,omitempty"`
+	ScalingStatus
+}
+
+// ScalingCategory defines if the scaling was applied or not
+type ScalingCategory string
+
+const (
+	// ScalingCategoryApplied - Scaling is applied
+	ScalingCategoryApplied ScalingCategory = "Applied"
+
+	// ScalingCategoryBlockedByUpdatePolicy - Scaling is blocked by policy
+	ScalingCategoryBlockedByUpdatePolicy ScalingCategory = "BlockedByUpdatePolicy"
+
+	// ScalingCategoryBlockedBySpec - Scaling is blocked by spec
+	ScalingCategoryBlockedBySpec ScalingCategory = "BlockedBySpec"
+)
+
+// ScalingStatus defines the staus of scaling
+type ScalingStatus struct {
+	LastScaleTime *metav1.Time                        `json:"lastScaleTime,omitempty"`
+	HpaStatus     HpaStatus                           `json:"hpaStatus,omitempty" protobuf:"bytes,1,opt,name=hpaStatus"`
+	VpaStatus     vpa_api.VerticalPodAutoscalerStatus `json:"vpaStatus,omitempty" protobuf:"bytes,2,opt,name=vpaStatus"`
 }
 
 // HpaStatus defines the status of HPA
@@ -200,6 +303,8 @@ type HpaStatus struct {
 
 // Hvpa is the Schema for the hvpas API
 // +k8s:openapi-gen=true
+// +kubebuilder:subresource:status
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.targetSelector
 type Hvpa struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

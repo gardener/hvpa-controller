@@ -3,11 +3,11 @@ kind: Hvpa
 metadata:
   annotations:
     "hpa-controller": "hvpa"
-    #"enable-vertical-scale-down": "true"
   labels:
     controller-tools.k8s.io: "1.0"
   name: hvpa-sample
 spec:
+  replicas: 1
   scaleUpStabilization:
     duration: "2m"
     minCpuChange:
@@ -24,30 +24,40 @@ spec:
     minMemChange:
       value: 100M
       percentage: 80
-  hpaTemplate:
-    maxReplicas: 7
-    minReplicas: 1
-    metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 50
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 50
-  vpaTemplate:
-    resourcePolicy:
-      containerPolicies:
-      - MinAllowed:
-          memory: 400Mi
-        containerName: resource-consumer
-        maxAllowed:
-          memory: 3000Mi
+  hpa:
+    template:
+      creationTimestamp: null
+      spec:
+        maxReplicas: 3
+        minReplicas: 1
+        metrics:
+        - resource:
+            name: memory
+            target:
+              averageUtilization: 70
+              type: Utilization
+          type: Resource
+        - resource:
+            name: cpu
+            target:
+              averageUtilization: 60
+              type: Utilization
+          type: Resource
+    updatePolicy:
+      updateMode: ScaleUp
+  vpa:
+    template:
+      creationTimestamp: null
+      spec:
+        resourcePolicy:
+          containerPolicies:
+          - containerName: resource-consumer
+            maxAllowed:
+              memory: 3000Mi
+            minAllowed:
+              memory: 400Mi
+    updatePolicy:
+      updateMode: "On"
   weightBasedScalingIntervals:
     - vpaWeight: 0
       startReplicaCount: 1
