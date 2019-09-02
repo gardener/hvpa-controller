@@ -271,20 +271,6 @@ type BlockedScaling struct {
 	ScalingStatus
 }
 
-// ScalingCategory defines if the scaling was applied or not
-type ScalingCategory string
-
-const (
-	// ScalingCategoryApplied - Scaling is applied
-	ScalingCategoryApplied ScalingCategory = "Applied"
-
-	// ScalingCategoryBlockedByUpdatePolicy - Scaling is blocked by policy
-	ScalingCategoryBlockedByUpdatePolicy ScalingCategory = "BlockedByUpdatePolicy"
-
-	// ScalingCategoryBlockedBySpec - Scaling is blocked by spec
-	ScalingCategoryBlockedBySpec ScalingCategory = "BlockedBySpec"
-)
-
 // ScalingStatus defines the staus of scaling
 type ScalingStatus struct {
 	LastScaleTime *metav1.Time                        `json:"lastScaleTime,omitempty"`
