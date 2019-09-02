@@ -943,7 +943,8 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 		blocked.HpaStatus.DesiredReplicas = weightedReplicas
 		blocked.HpaStatus.CurrentReplicas = currentReplicas
 		if blockedScaling == nil {
-			blockedScaling = &[]*autoscalingv1alpha1.BlockedScaling{blocked}
+			err = fmt.Errorf("blockedScaling needs to be already populated")
+			log.Error(err, "Error")
 		} else {
 			*blockedScaling = append(*blockedScaling, blocked)
 		}
@@ -1093,7 +1094,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				weightedCPU := currCPU
 
 				log.V(3).Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU)
-				log.V(3).Info("VPA sclae down", "minimum CPU delta", scaleDownMinDeltaCPU.String(), "minimum memory delta", scaleDownMinDeltaMem)
+				log.V(3).Info("VPA scale down", "minimum CPU delta", scaleDownMinDeltaCPU.String(), "minimum memory delta", scaleDownMinDeltaMem)
 				log.V(3).Info("VPA scale up", "minimum CPU delta", scaleUpMinDeltaCPU.String(), "minimum memory delta", scaleUpMinDeltaMem, "HPA condition ScalingLimited", hpaScaleOutLimited)
 
 				if vpaWeight == 0 {
