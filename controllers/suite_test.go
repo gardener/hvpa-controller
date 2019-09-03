@@ -113,6 +113,7 @@ func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync
 func newHvpa() *autoscalingv1alpha1.Hvpa {
 	replica := int32(1)
 	util := int32(70)
+	updateMode := autoscalingv1alpha1.UpdateModeAuto
 
 	instance := &autoscalingv1alpha1.Hvpa{
 		ObjectMeta: metav1.ObjectMeta{
@@ -124,20 +125,32 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 				Kind: "Deployment",
 				Name: "deploy-test",
 			},
-			HpaTemplate: autoscalingv1alpha1.HpaTemplateSpec{
-				MinReplicas: &replica,
-				MaxReplicas: 2,
-				Metrics: []autoscaling.MetricSpec{
-					autoscaling.MetricSpec{
-						Type: autoscaling.ResourceMetricSourceType,
-						Resource: &autoscaling.ResourceMetricSource{
-							Name: v1.ResourceCPU,
-							Target: autoscaling.MetricTarget{
-								Type:               autoscaling.UtilizationMetricType,
-								AverageUtilization: &util,
+			Hpa: autoscalingv1alpha1.HpaSpec{
+				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
+					UpdateMode: &updateMode,
+				},
+				Template: autoscalingv1alpha1.HpaTemplate{
+					Spec: autoscalingv1alpha1.HpaTemplateSpec{
+						MinReplicas: &replica,
+						MaxReplicas: 2,
+						Metrics: []autoscaling.MetricSpec{
+							autoscaling.MetricSpec{
+								Type: autoscaling.ResourceMetricSourceType,
+								Resource: &autoscaling.ResourceMetricSource{
+									Name: v1.ResourceCPU,
+									Target: autoscaling.MetricTarget{
+										Type:               autoscaling.UtilizationMetricType,
+										AverageUtilization: &util,
+									},
+								},
 							},
 						},
 					},
+				},
+			},
+			Vpa: autoscalingv1alpha1.VpaSpec{
+				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
+					UpdateMode: &updateMode,
 				},
 			},
 		},

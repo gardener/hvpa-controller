@@ -130,7 +130,7 @@ type VpaSpec struct {
 type VpaTemplate struct {
 	// Metadata of the pods created from this template.
 	// +optional
-	metav1.ObjectMeta
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// Spec defines the behavior of a VPA.
 	// +optional
@@ -141,7 +141,7 @@ type VpaTemplate struct {
 type HpaTemplate struct {
 	// Metadata of the pods created from this template.
 	// +optional
-	metav1.ObjectMeta
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// Spec defines the behavior of a HPA.
 	// +optional
@@ -267,8 +267,8 @@ const (
 
 // BlockedScaling defines the details for blocked scaling
 type BlockedScaling struct {
-	Reason BlockingReason `json:"reason,omitempty"`
-	ScalingStatus
+	Reason        BlockingReason `json:"reason,omitempty"`
+	ScalingStatus `json:"scalingStatus,omitempty"`
 }
 
 // ScalingStatus defines the staus of scaling
