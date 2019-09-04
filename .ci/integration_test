@@ -84,7 +84,7 @@ function setup_hvpacontroller(){
     go build \
     -v \
     -o ${GOBIN}/manager \
-    github.com/gardener/hvpa-controller/cmd/manager
+    github.com/gardener/hvpa-controller/
     chmod +x ${GOBIN}/manager
     echo "Successfully installed hvpa-controller."
 }
@@ -109,7 +109,7 @@ setup_test_cluster
 echo "Starting integration tests..."
 
 set +e
-ginkgo -r cmd pkg
+ginkgo -r api controllers
 TEST_RESULT=$?
 set -e
 

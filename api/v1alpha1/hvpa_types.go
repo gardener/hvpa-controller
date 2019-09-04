@@ -296,14 +296,14 @@ type Hvpa struct {
 	Status HvpaStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
 // HvpaList contains a list of Hvpa
+// +kubebuilder:object:root=true
 type HvpaList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Hvpa `json:"items"`
 }
 
-func init() {
+/*func init() {
 	SchemeBuilder.Register(&Hvpa{}, &HvpaList{})
-}
+}*/
