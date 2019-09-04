@@ -1001,7 +1001,6 @@ func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeThreshold, resourceTy
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;watch;list
-
 func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	_ = context.Background()
 	_ = r.Log.WithValues("hvpa", req.NamespacedName)
@@ -1125,8 +1124,8 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	//	return ctrl.Result{}, nil
 }
 
+// SetupWithManager sets up manager with a new controller and r as the reconcile.Reconciler
 func (r *HvpaReconciler) SetupWithManager(mgr ctrl.Manager) error {
-
 	hvpaSource := source.Kind{Type: &autoscalingv1alpha1.Hvpa{}}
 	hvpaHandler := handler.EnqueueRequestForObject{}
 

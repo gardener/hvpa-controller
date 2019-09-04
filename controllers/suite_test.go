@@ -122,8 +122,9 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 		},
 		Spec: autoscalingv1alpha1.HvpaSpec{
 			TargetRef: &autoscaling.CrossVersionObjectReference{
-				Kind: "Deployment",
-				Name: "deploy-test",
+				Kind:       "Deployment",
+				Name:       "deploy-test",
+				APIVersion: "apps/v1",
 			},
 			Hpa: autoscalingv1alpha1.HpaSpec{
 				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
