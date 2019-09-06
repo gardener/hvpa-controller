@@ -61,19 +61,15 @@ var log = logf.Log.WithName("controller").WithName("hvpa")
 
 func updateEventFunc(e event.UpdateEvent) bool {
 	// If update event is for HVPA/HPA/VPA then we would want to reconcile unconditionally.
-	_, ok := e.ObjectOld.(*autoscalingv1alpha1.Hvpa)
-	if ok {
+	switch t := e.ObjectOld.(type) {
+	case *autoscalingv1alpha1.Hvpa, *autoscaling.HorizontalPodAutoscaler, *vpa_api.VerticalPodAutoscaler:
+		log.V(4).Info("Update event for", "kind", t.GetObjectKind().GroupVersionKind().Kind)
 		return true
-	}
-
-	_, ok = e.ObjectOld.(*autoscaling.HorizontalPodAutoscaler)
-	if ok {
-		return true
-	}
-
-	_, ok = e.ObjectOld.(*vpa_api.VerticalPodAutoscaler)
-	if ok {
-		return true
+	case *corev1.Pod:
+		log.V(4).Info("Update event for pod")
+	default:
+		log.V(4).Info("Update event of an un-managed resource")
+		return false
 	}
 
 	oldPod, ok := e.ObjectOld.(*corev1.Pod)
