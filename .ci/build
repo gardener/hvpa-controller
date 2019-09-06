@@ -65,12 +65,12 @@ if [[ -z "$LOCAL_BUILD" ]]; then
     -a \
     -v \
     -o ${BINARY_PATH}/linux-amd64/manager \
-    github.com/gardener/hvpa-controller/cmd/manager
+    main.go
 
 # If the LOCAL_BUILD environment variable is set, we simply run `go build`.
 else
   go build \
     -v \
     -o ${BINARY_PATH}/manager \
-    github.com/gardener/hvpa-controller/cmd/manager
+    main.go
 fi
