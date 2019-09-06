@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
@@ -46,7 +45,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
@@ -56,16 +54,28 @@ import (
 // HvpaReconciler reconciles a Hvpa object
 type HvpaReconciler struct {
 	client.Client
-	Log    logr.Logger
-	scheme *runtime.Scheme
+	Scheme *runtime.Scheme
 }
 
-var log = logf.Log.WithName("controller")
+var log = logf.Log.WithName("controller").WithName("hvpa")
 
-func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &HvpaReconciler{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
-}
 func updateEventFunc(e event.UpdateEvent) bool {
+	// If update event is for HVPA/HPA/VPA then we would want to reconcile unconditionally.
+	_, ok := e.ObjectOld.(*autoscalingv1alpha1.Hvpa)
+	if ok {
+		return true
+	}
+
+	_, ok = e.ObjectOld.(*autoscaling.HorizontalPodAutoscaler)
+	if ok {
+		return true
+	}
+
+	_, ok = e.ObjectOld.(*vpa_api.VerticalPodAutoscaler)
+	if ok {
+		return true
+	}
+
 	oldPod, ok := e.ObjectOld.(*corev1.Pod)
 	if !ok {
 		return false
@@ -294,7 +304,7 @@ func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) *vpa_api.VerticalPodAutoscal
 func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
 	vpa := getVpaFromHvpa(hvpa)
 
-	if err := controllerutil.SetControllerReference(hvpa, vpa, r.scheme); err != nil {
+	if err := controllerutil.SetControllerReference(hvpa, vpa, r.Scheme); err != nil {
 		return nil, err
 	}
 
@@ -348,7 +358,7 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 		hpa.SetAnnotations(annotations)
 	}
 
-	if err := controllerutil.SetControllerReference(hvpa, hpa, r.scheme); err != nil {
+	if err := controllerutil.SetControllerReference(hvpa, hpa, r.Scheme); err != nil {
 		return nil, err
 	}
 
@@ -1002,12 +1012,11 @@ func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeThreshold, resourceTy
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;watch;list
 func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	_ = context.Background()
-	_ = r.Log.WithValues("hvpa", req.NamespacedName)
+	ctx := context.Background()
 
 	// Fetch the Hvpa instance
 	instance := &autoscalingv1alpha1.Hvpa{}
-	err := r.Get(context.TODO(), req.NamespacedName, instance)
+	err := r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Object not found, return.  Created objects are automatically garbage collected.
@@ -1027,7 +1036,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 			r.deleteHvpaFinalizers(instance)
 		}
 
-		return ctrl.Result{}, r.Delete(context.TODO(), instance)
+		return ctrl.Result{}, r.Delete(ctx, instance)
 	}
 
 	r.addHvpaFinalizers(instance)
@@ -1067,7 +1076,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
-	err = r.Get(context.TODO(), types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, obj)
+	err = r.Get(ctx, types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, obj)
 	if err != nil {
 		log.Error(err, "Error getting", "kind", instance.Spec.TargetRef.Kind, "name", instance.Spec.TargetRef.Name, "namespace", instance.Namespace)
 		return ctrl.Result{}, err
@@ -1116,32 +1125,14 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		}*/
 	}
 	if !reflect.DeepEqual(hvpa.Status, instance.Status) {
-		return result, r.Status().Update(context.TODO(), hvpa)
+		return result, r.Status().Update(ctx, hvpa)
 	}
 
 	return result, nil
-
-	//	return ctrl.Result{}, nil
 }
 
-// SetupWithManager sets up manager with a new controller and r as the reconcile.Reconciler
-func (r *HvpaReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	hvpaSource := source.Kind{Type: &autoscalingv1alpha1.Hvpa{}}
-	hvpaHandler := handler.EnqueueRequestForObject{}
-
-	hpaSource := source.Kind{Type: &autoscaling.HorizontalPodAutoscaler{}}
-	hpaHandler := handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &autoscalingv1alpha1.Hvpa{},
-	}
-
-	vpaSource := source.Kind{Type: &vpa_api.VerticalPodAutoscaler{}}
-	vpaHandler := handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &autoscalingv1alpha1.Hvpa{},
-	}
-
-	eventHandler := &handler.EnqueueRequestsFromMapFunc{
+func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
+	return &handler.EnqueueRequestsFromMapFunc{
 		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
 			/* This event handler function, sets the flag on hvpa to override the last scale time stabilization window if:
 			 * 1. The pod was oomkilled, OR
@@ -1241,6 +1232,11 @@ func (r *HvpaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return nil
 		}),
 	}
+}
+
+// SetupWithManager sets up manager with a new controller and r as the reconcile.Reconciler
+func (r *HvpaReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	podEventHandler := getPodEventHandler(mgr)
 
 	pred := OomkillPredicate{
 		Funcs: predicate.Funcs{
@@ -1249,13 +1245,11 @@ func (r *HvpaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	podSource := source.Kind{Type: &corev1.Pod{}}
-	ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		For(&autoscalingv1alpha1.Hvpa{}).
-		Watches(&hvpaSource, &hvpaHandler).
-		Watches(&hpaSource, &hpaHandler).
-		Watches(&vpaSource, &vpaHandler).
-		Watches(&podSource, eventHandler).WithEventFilter(pred).Complete(r)
-
-	return nil
-
+		Owns(&autoscaling.HorizontalPodAutoscaler{}).
+		Owns(&vpa_api.VerticalPodAutoscaler{}).
+		Watches(&podSource, podEventHandler).
+		WithEventFilter(pred).
+		Complete(r)
 }

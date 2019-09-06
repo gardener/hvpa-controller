@@ -84,8 +84,7 @@ var _ = Describe("#TestReconcile", func() {
 
 			reconciler := HvpaReconciler{
 				Client: mgr.GetClient(),
-				Log:    ctrl.Log.WithName("controllers").WithName("Hvpa"),
-				scheme: mgr.GetScheme(),
+				Scheme: mgr.GetScheme(),
 			}
 
 			err = reconciler.SetupWithManager(mgr)
