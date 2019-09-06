@@ -308,14 +308,24 @@ func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.
 		return nil, err
 	}
 
+	updatePolicy := hvpa.Spec.Vpa.UpdatePolicy.UpdateMode
+
 	foundVpa := &vpa_api.VerticalPodAutoscaler{}
 	err := r.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, foundVpa)
 	if err != nil && errors.IsNotFound(err) {
+		if *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
+			// If update policy is "Purge", then return
+			return nil, nil
+		}
 		log.V(2).Info("Creating VPA", "namespace", vpa.Namespace, "name", vpa.Name)
 		err = r.Create(context.TODO(), vpa)
 		return nil, err
 	} else if err != nil {
 		return nil, err
+	} else if *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
+		// Delete existing VPA, as VPA is not deployed in "Purge" mode
+		log.V(2).Info("Deleting VPA because update policy is set to Purge", "namespace", foundVpa.Namespace, "name", foundVpa.Name)
+		return nil, r.Delete(context.TODO(), foundVpa)
 	}
 
 	// Update the found object and write the result back if there are any changes
@@ -367,8 +377,8 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 	foundHpa := &autoscaling.HorizontalPodAutoscaler{}
 	err := r.Get(context.TODO(), types.NamespacedName{Name: hpa.Name, Namespace: hpa.Namespace}, foundHpa)
 	if err != nil && errors.IsNotFound(err) {
-		if *updatePolicy == autoscalingv1alpha1.UpdateModeOff {
-			// If update policy is "Off", then return
+		if *updatePolicy == autoscalingv1alpha1.UpdateModeOff || *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
+			// If update policy is "Off" or "Purge", then return
 			return nil, nil
 		}
 		log.V(2).Info("Creating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
@@ -376,11 +386,10 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 		return nil, err
 	} else if err != nil {
 		return nil, err
-	} else if *updatePolicy == autoscalingv1alpha1.UpdateModeOff {
-		// Delete existing HPA, as HPA can not be deployed in "Off" mode as of now
-		log.V(2).Info("Deleting HPA because update policy is set to Off", "namespace", foundHpa.Namespace, "name", foundHpa.Name)
-		err = r.Delete(context.TODO(), foundHpa)
-		return nil, err
+	} else if *updatePolicy == autoscalingv1alpha1.UpdateModeOff || *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
+		// Delete existing HPA, as HPA can not be deployed in "Off"/"Purge" mode as of now
+		log.V(2).Info("Deleting HPA because update policy is set to Off/Purge", "namespace", foundHpa.Namespace, "name", foundHpa.Name)
+		return nil, r.Delete(context.TODO(), foundHpa)
 	}
 
 	// Update the found object and write the result back if there are any changes
