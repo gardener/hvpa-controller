@@ -31,18 +31,18 @@ spec:
         maxReplicas: 3
         minReplicas: 1
         metrics:
-        - resource:
-            name: memory
-            target:
-              averageUtilization: 70
-              type: Utilization
-          type: Resource
-        - resource:
-            name: cpu
-            target:
-              averageUtilization: 60
-              type: Utilization
-          type: Resource
+          - resource:
+              name: memory
+              target:
+                averageUtilization: 70
+                type: Utilization
+            type: Resource
+          - resource:
+              name: cpu
+              target:
+                averageUtilization: 60
+                type: Utilization
+            type: Resource
     updatePolicy:
       updateMode: ScaleUp
   vpa:
@@ -51,11 +51,11 @@ spec:
       spec:
         resourcePolicy:
           containerPolicies:
-          - containerName: resource-consumer
-            maxAllowed:
-              memory: 3000Mi
-            minAllowed:
-              memory: 400Mi
+            - containerName: resource-consumer
+              maxAllowed:
+                memory: 3000Mi
+              minAllowed:
+                memory: 400Mi
     updatePolicy:
       updateMode: "On"
   weightBasedScalingIntervals:
