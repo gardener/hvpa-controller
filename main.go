@@ -46,11 +46,16 @@ func init() {
 func main() {
 	klog.InitFlags(nil)
 
-	var metricsAddr string
-	var enableLeaderElection bool
+	var (
+		metricsAddr           string
+		enableLeaderElection  bool
+		enableDetailedMetrics bool
+	)
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&enableDetailedMetrics, "enable-detailed-metrics", false,
+		"Enable detailed per HVPA resource metrics. This could significantly increase the cardinality of the metrics.")
 	flag.Parse()
 
 	ctrl.SetLogger(klogr.New())
@@ -66,8 +71,9 @@ func main() {
 	}
 
 	if err = (&controllers.HvpaReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:                mgr.GetClient(),
+		Scheme:                mgr.GetScheme(),
+		EnableDetailedMetrics: enableDetailedMetrics,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Hvpa")
 		os.Exit(1)

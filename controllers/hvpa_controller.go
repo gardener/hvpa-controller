@@ -54,7 +54,9 @@ import (
 // HvpaReconciler reconciles a Hvpa object
 type HvpaReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme                *runtime.Scheme
+	EnableDetailedMetrics bool
+	metrics               *hvpaMetrics
 }
 
 var log = logf.Log.WithName("controller").WithName("hvpa")
@@ -242,6 +244,7 @@ func (r *HvpaReconciler) addHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
 	if finalizers := sets.NewString(clone.Finalizers...); !finalizers.Has(deleteFinalizerName) {
 		finalizers.Insert(deleteFinalizerName)
 		r.updateFinalizers(clone, finalizers.List())
+		r.incrementResourcesTotal()
 	}
 }
 
@@ -271,6 +274,7 @@ func (r *HvpaReconciler) deleteHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
 	if finalizers := sets.NewString(clone.Finalizers...); finalizers.Has(deleteFinalizerName) {
 		finalizers.Delete(deleteFinalizerName)
 		r.updateFinalizers(clone, finalizers.List())
+		r.decrementResourcesTotal()
 	}
 }
 
@@ -1241,6 +1245,10 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 
 // SetupWithManager sets up manager with a new controller and r as the reconcile.Reconciler
 func (r *HvpaReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := r.AddMetrics(); err != nil {
+		return err
+	}
+
 	podEventHandler := getPodEventHandler(mgr)
 
 	pred := OomkillPredicate{
