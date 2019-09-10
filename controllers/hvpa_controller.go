@@ -51,6 +51,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
+var controllerKindHvpa = autoscalingv1alpha1.SchemeGroupVersionHvpa.WithKind("Hvpa")
+
 // HvpaReconciler reconciles a Hvpa object
 type HvpaReconciler struct {
 	client.Client
@@ -144,14 +146,6 @@ type hvpaObj struct {
 var cachedNames map[string][]*hvpaObj
 var cacheMux sync.Mutex
 
-//var _ reconcile.Reconciler = &HvapaReconciler{}
-
-// ReconcileHvpa reconciles a Hvpa object
-type ReconcileHvpa struct {
-	client.Client
-	scheme *runtime.Scheme
-}
-
 const deleteFinalizerName = "autoscaling.k8s.io/hvpa-controller"
 
 func (r *HvpaReconciler) getSelectorFromHvpa(instance *autoscalingv1alpha1.Hvpa) (labels.Selector, error) {
@@ -232,6 +226,7 @@ func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa) {
 					cachedNames[instance.Namespace] = cachedNames[instance.Namespace][:len-1]
 					log.V(3).Info("HVPA", instance.Name, "removed from cache")
 				}
+				// TODO: Check if the selector also matches in the cache, otherwise update
 				break
 			}
 		}
@@ -298,7 +293,12 @@ func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutosca
 		log.V(3).Info("Warning", "Generate name provided in the vpa template will be ignored", generateName)
 	}
 
-	metadata.SetName(hvpa.Name + "-vpa")
+	if name := metadata.GetName(); len(name) != 0 {
+		log.V(3).Info("Warning", "Name provided in the hpa template will be ignored", name)
+		metadata.SetName("")
+	}
+
+	metadata.SetGenerateName(hvpa.Name + "-")
 	metadata.SetNamespace(hvpa.Namespace)
 
 	// Updater policy set to "Off", as we don't want vpa-updater to act on recommendations
@@ -321,6 +321,66 @@ func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutosca
 }
 
 func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
+	selector, err := metav1.LabelSelectorAsSelector(hvpa.Spec.Vpa.Selector)
+	if err != nil {
+		log.Error(err, "Error converting vpa selector to selector")
+		return nil, err
+	}
+
+	// list all vpas to include the vpas that don't match the hvpa`s selector
+	// anymore but has the stale controller ref.
+	vpas := &vpa_api.VerticalPodAutoscalerList{}
+	err = r.List(context.TODO(), vpas, client.InNamespace(hvpa.Namespace))
+	if err != nil {
+		log.Error(err, "Error listing vpas")
+		return nil, err
+	}
+
+	updatePolicy := hvpa.Spec.Vpa.UpdatePolicy.UpdateMode
+
+	// NOTE: filteredVpas are pointing to deepcopies of the cache, but this could change in the future.
+	// Ref: https://github.com/kubernetes-sigs/controller-runtime/blob/release-0.2/pkg/cache/internal/cache_reader.go#L74
+	// if you need to modify them, you need to copy it first.
+	filteredVpas, err := r.claimVpas(hvpa, selector, vpas)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(filteredVpas) > 0 {
+		// TODO: Sync spec and delete OR First delete and then sync spec?
+
+		// VPAs are claimed by this HVPA. Just sync the specs
+		if err = r.syncVpaSpec(filteredVpas, hvpa); err != nil {
+			return nil, err
+		}
+
+		// Keep only 1 VPA. Delete the rest
+		for i := 1; i < len(filteredVpas); i++ {
+			vpa := filteredVpas[i]
+			if err := r.Delete(context.TODO(), vpa); err != nil {
+				log.Error(err, "Error in deleting duplicate VPAs")
+				continue
+			}
+		}
+
+		if *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
+			// If update policy is "Purge", then delete remaining VPA
+			return nil, r.Delete(context.TODO(), filteredVpas[0])
+		}
+
+		// Return the updated VPA status
+		vpa := &vpa_api.VerticalPodAutoscaler{}
+		err = r.Get(context.TODO(), types.NamespacedName{Name: filteredVpas[0].Name, Namespace: filteredVpas[0].Namespace}, vpa)
+		return vpa.Status.DeepCopy(), err
+	}
+
+	// Required VPA doesn't exist. Create new
+
+	if *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
+		// If update policy is "Purge", then return
+		return nil, nil
+	}
+
 	vpa, err := getVpaFromHvpa(hvpa)
 	if err != nil {
 		return nil, err
@@ -330,42 +390,14 @@ func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.
 		return nil, err
 	}
 
-	updatePolicy := hvpa.Spec.Vpa.UpdatePolicy.UpdateMode
-
-	foundVpa := &vpa_api.VerticalPodAutoscaler{}
-	err = r.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, foundVpa)
-	if err != nil && errors.IsNotFound(err) {
-		if *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
-			// If update policy is "Purge", then return
-			return nil, nil
-		}
-		log.V(2).Info("Creating VPA", "namespace", vpa.Namespace, "name", vpa.Name)
-		err = r.Create(context.TODO(), vpa)
+	if err := r.Create(context.TODO(), vpa); err != nil {
 		return nil, err
-	} else if err != nil {
-		return nil, err
-	} else if *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
-		// Delete existing VPA, as VPA is not deployed in "Purge" mode
-		log.V(2).Info("Deleting VPA because update policy is set to Purge", "namespace", foundVpa.Namespace, "name", foundVpa.Name)
-		return nil, r.Delete(context.TODO(), foundVpa)
 	}
 
-	// Update the found object and write the result back if there are any changes
-	if !reflect.DeepEqual(vpa.Spec, foundVpa.Spec) {
-		foundVpa.Spec = vpa.Spec
-		log.V(2).Info("Updating VPA", "namespace", vpa.Namespace, "name", vpa.Name)
-		err = r.Update(context.TODO(), foundVpa)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	status := foundVpa.Status.DeepCopy()
-
-	return status, nil
+	return vpa.Status.DeepCopy(), nil
 }
 
-func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
+func getHpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscaler, error) {
 	metadata := hvpa.Spec.Hpa.Template.ObjectMeta.DeepCopy()
 
 	labels := metadata.GetLabels()
@@ -383,10 +415,15 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 		log.V(3).Info("Warning", "Generate name provided in the hpa template will be ignored", generateName)
 	}
 
-	metadata.SetName(hvpa.Name + "-hpa")
+	if name := metadata.GetName(); len(name) != 0 {
+		log.V(3).Info("Warning", "Name provided in the hpa template will be ignored", name)
+		metadata.SetName("")
+	}
+
+	metadata.SetGenerateName(hvpa.Name + "-")
 	metadata.SetNamespace(hvpa.Namespace)
 
-	hpa := &autoscaling.HorizontalPodAutoscaler{
+	return &autoscaling.HorizontalPodAutoscaler{
 		ObjectMeta: *metadata,
 		Spec: autoscaling.HorizontalPodAutoscalerSpec{
 			MaxReplicas:    hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
@@ -394,56 +431,81 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 			ScaleTargetRef: *hvpa.Spec.TargetRef.DeepCopy(),
 			Metrics:        hvpa.Spec.Hpa.Template.Spec.Metrics,
 		},
+	}, nil
+}
+
+func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
+	selector, err := metav1.LabelSelectorAsSelector(hvpa.Spec.Hpa.Selector)
+	if err != nil {
+		log.Error(err, "Error converting hpa selector to selector")
+		return nil, err
 	}
 
-	anno := hvpa.GetAnnotations()
-	if val, ok := anno["hpa-controller"]; ok && val == "hvpa" {
-		// If this annotation is set on hvpa, AND
-		// If the value of this annotation on hvpa is "hvpa", then set hpa's mode off
-		// so that kube-controller-manager doesn't act on hpa recommendations
-		if hpa.GetAnnotations() == nil {
-			hpa.Annotations = make(map[string]string)
+	// list all hpas to include the hpas that don't match the hvpa`s selector
+	// anymore but has the stale controller ref.
+	hpas := &autoscaling.HorizontalPodAutoscalerList{}
+	err = r.List(context.TODO(), hpas, client.InNamespace(hvpa.Namespace))
+	if err != nil {
+		log.Error(err, "Error listing hpas")
+		return nil, err
+	}
+
+	updatePolicy := hvpa.Spec.Hpa.UpdatePolicy.UpdateMode
+
+	// NOTE: filteredHpas are pointing to deepcopies of the cache, but this could change in the future.
+	// Ref: https://github.com/kubernetes-sigs/controller-runtime/blob/release-0.2/pkg/cache/internal/cache_reader.go#L74
+	// if you need to modify them, you need to copy it first.
+	filteredHpas, err := r.claimHpas(hvpa, selector, hpas)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(filteredHpas) > 0 {
+		// TODO: Sync spec and delete OR First delete and then sync spec?
+
+		// HPAs are claimed by this HVPA. Just sync the specs
+		if err = r.syncHpaSpec(filteredHpas, hvpa); err != nil {
+			return nil, err
 		}
-		hpa.Annotations["mode"] = "Off"
+
+		// Keep only 1 HPA. Delete the rest
+		for i := 1; i < len(filteredHpas); i++ {
+			hpa := filteredHpas[i]
+			if err := r.Delete(context.TODO(), hpa); err != nil {
+				log.Error(err, "Error in deleting duplicate HPAs")
+				continue
+			}
+		}
+
+		if *updatePolicy == autoscalingv1alpha1.UpdateModeOff || *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
+			// If update policy is "Off" or "Purge", then delete remaining HPA
+			return nil, r.Delete(context.TODO(), filteredHpas[0])
+		}
+
+		// Return the updated HPA status
+		hpa := &autoscaling.HorizontalPodAutoscaler{}
+		err = r.Get(context.TODO(), types.NamespacedName{Name: filteredHpas[0].Name, Namespace: filteredHpas[0].Namespace}, hpa)
+		return hpa.Status.DeepCopy(), err
+	}
+
+	// Required HPA doesn't exist. Create new
+
+	if *updatePolicy == autoscalingv1alpha1.UpdateModeOff || *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
+		// If update policy is "Off" or "Purge", then return
+		return nil, nil
+	}
+
+	hpa, err := getHpaFromHvpa(hvpa)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := controllerutil.SetControllerReference(hvpa, hpa, r.Scheme); err != nil {
 		return nil, err
 	}
 
-	updatePolicy := hvpa.Spec.Hpa.UpdatePolicy.UpdateMode
-
-	foundHpa := &autoscaling.HorizontalPodAutoscaler{}
-	err := r.Get(context.TODO(), types.NamespacedName{Name: hpa.Name, Namespace: hpa.Namespace}, foundHpa)
-	if err != nil && errors.IsNotFound(err) {
-		if *updatePolicy == autoscalingv1alpha1.UpdateModeOff || *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
-			// If update policy is "Off" or "Purge", then return
-			return nil, nil
-		}
-		log.V(2).Info("Creating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
-		err = r.Create(context.TODO(), hpa)
-		return nil, err
-	} else if err != nil {
-		return nil, err
-	} else if *updatePolicy == autoscalingv1alpha1.UpdateModeOff || *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
-		// Delete existing HPA, as HPA can not be deployed in "Off"/"Purge" mode as of now
-		log.V(2).Info("Deleting HPA because update policy is set to Off/Purge", "namespace", foundHpa.Namespace, "name", foundHpa.Name)
-		return nil, r.Delete(context.TODO(), foundHpa)
-	}
-
-	// Update the found object and write the result back if there are any changes
-	if !reflect.DeepEqual(hpa.Spec, foundHpa.Spec) || !reflect.DeepEqual(hpa.GetAnnotations(), foundHpa.GetAnnotations()) {
-		foundHpa.Spec = hpa.Spec
-		foundHpa.SetAnnotations(hpa.GetAnnotations())
-		log.V(2).Info("Updating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
-		err = r.Update(context.TODO(), foundHpa)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	status := foundHpa.Status.DeepCopy()
-	return status, nil
+	err = r.Create(context.TODO(), hpa)
+	return hpa.Status.DeepCopy(), err
 }
 
 func getVpaWeightFromIntervals(hvpa *autoscalingv1alpha1.Hvpa, desiredReplicas, currentReplicas int32) autoscalingv1alpha1.VpaWeight {
