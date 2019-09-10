@@ -274,7 +274,14 @@ func (r *HvpaReconciler) deleteHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
 	}
 }
 
-func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) *vpa_api.VerticalPodAutoscaler {
+func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscaler, error) {
+	labels := hvpa.Spec.Vpa.Template.GetLabels()
+
+	if labels == nil || len(labels) == 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("Need labels in VPA template")
+	}
+
 	// Updater policy set to "Off", as we don't want vpa-updater to act on recommendations
 	updatePolicy := vpa_api.UpdateModeOff
 
@@ -282,6 +289,7 @@ func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) *vpa_api.VerticalPodAutoscal
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hvpa.Name + "-vpa",
 			Namespace: hvpa.Namespace,
+			Labels:    labels,
 		},
 		Spec: vpa_api.VerticalPodAutoscalerSpec{
 			TargetRef: &autoscalingv1.CrossVersionObjectReference{
@@ -294,11 +302,14 @@ func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) *vpa_api.VerticalPodAutoscal
 				UpdateMode: &updatePolicy,
 			},
 		},
-	}
+	}, nil
 }
 
 func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
-	vpa := getVpaFromHvpa(hvpa)
+	vpa, err := getVpaFromHvpa(hvpa)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := controllerutil.SetControllerReference(hvpa, vpa, r.Scheme); err != nil {
 		return nil, err
@@ -307,7 +318,7 @@ func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.
 	updatePolicy := hvpa.Spec.Vpa.UpdatePolicy.UpdateMode
 
 	foundVpa := &vpa_api.VerticalPodAutoscaler{}
-	err := r.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, foundVpa)
+	err = r.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, foundVpa)
 	if err != nil && errors.IsNotFound(err) {
 		if *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
 			// If update policy is "Purge", then return
@@ -340,10 +351,18 @@ func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.
 }
 
 func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
+	labels := hvpa.Spec.Hpa.Template.GetLabels()
+
+	if labels == nil || len(labels) == 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("Need labels in HPA template")
+	}
+
 	hpa := &autoscaling.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hvpa.Name + "-hpa",
 			Namespace: hvpa.Namespace,
+			Labels:    labels,
 		},
 		Spec: autoscaling.HorizontalPodAutoscalerSpec{
 			MaxReplicas:    hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
@@ -1040,8 +1059,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		if finalizers := sets.NewString(instance.Finalizers...); finalizers.Has(deleteFinalizerName) {
 			r.deleteHvpaFinalizers(instance)
 		}
-
-		return ctrl.Result{}, r.Delete(ctx, instance)
+		return ctrl.Result{}, err
 	}
 
 	r.addHvpaFinalizers(instance)

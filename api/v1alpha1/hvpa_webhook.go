@@ -26,6 +26,7 @@ import (
 // log is for logging in this package.
 var hvpalog = logf.Log.WithName("hvpa-resource")
 
+// SetupWebhookWithManager sets up manager with a new webhook and r as the reconcile.Reconciler
 func (r *Hvpa) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).

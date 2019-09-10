@@ -173,10 +173,10 @@ type HvpaSpec struct {
 	// Replicas is the number of replicas of target resource
 	Replicas *int32 `json:"replicas,omitempty"`
 
-	// HpaTemplate defines the spec of HPA
+	// Hpa defines the spec of HPA
 	Hpa HpaSpec `json:"hpa,omitempty"`
 
-	// VpaTemplate defines the spec of VPA
+	// Vpa defines the spec of VPA
 	Vpa VpaSpec `json:"vpa,omitempty"`
 
 	// WeightBasedScalingIntervals defines the intervals of replica counts, and the weights for scaling a deployment vertically
