@@ -37,7 +37,7 @@ spec:
           description: HvpaSpec defines the desired state of Hvpa
           properties:
             hpa:
-              description: HpaTemplate defines the spec of HPA
+              description: Hpa defines the spec of HPA
               properties:
                 selector:
                   description: 'Selector is a label query that should match HPA. Must
@@ -630,7 +630,7 @@ spec:
               - name
               type: object
             vpa:
-              description: VpaTemplate defines the spec of VPA
+              description: Vpa defines the spec of VPA
               properties:
                 selector:
                   description: 'Selector is a label query that should match VPA. Must

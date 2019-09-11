@@ -274,15 +274,32 @@ func (r *HvpaReconciler) deleteHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
 	}
 }
 
-func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) *vpa_api.VerticalPodAutoscaler {
+func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscaler, error) {
+	metadata := hvpa.Spec.Vpa.Template.ObjectMeta.DeepCopy()
+
+	labels := metadata.GetLabels()
+	if labels == nil || len(labels) == 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("Need labels in VPA template")
+	}
+
+	if ownerRef := metadata.GetOwnerReferences(); len(ownerRef) != 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("vpa template in hvpa object already has an owner reference")
+	}
+
+	if generateName := metadata.GetGenerateName(); len(generateName) != 0 {
+		log.V(3).Info("Warning", "Generate name provided in the vpa template will be ignored", generateName)
+	}
+
+	metadata.SetName(hvpa.Name + "-vpa")
+	metadata.SetNamespace(hvpa.Namespace)
+
 	// Updater policy set to "Off", as we don't want vpa-updater to act on recommendations
 	updatePolicy := vpa_api.UpdateModeOff
 
 	return &vpa_api.VerticalPodAutoscaler{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      hvpa.Name + "-vpa",
-			Namespace: hvpa.Namespace,
-		},
+		ObjectMeta: *metadata,
 		Spec: vpa_api.VerticalPodAutoscalerSpec{
 			TargetRef: &autoscalingv1.CrossVersionObjectReference{
 				Name:       hvpa.Spec.TargetRef.Name,
@@ -294,11 +311,14 @@ func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) *vpa_api.VerticalPodAutoscal
 				UpdateMode: &updatePolicy,
 			},
 		},
-	}
+	}, nil
 }
 
 func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
-	vpa := getVpaFromHvpa(hvpa)
+	vpa, err := getVpaFromHvpa(hvpa)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := controllerutil.SetControllerReference(hvpa, vpa, r.Scheme); err != nil {
 		return nil, err
@@ -307,7 +327,7 @@ func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.
 	updatePolicy := hvpa.Spec.Vpa.UpdatePolicy.UpdateMode
 
 	foundVpa := &vpa_api.VerticalPodAutoscaler{}
-	err := r.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, foundVpa)
+	err = r.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, foundVpa)
 	if err != nil && errors.IsNotFound(err) {
 		if *updatePolicy == autoscalingv1alpha1.UpdateModePurge {
 			// If update policy is "Purge", then return
@@ -340,11 +360,28 @@ func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.
 }
 
 func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
+	metadata := hvpa.Spec.Hpa.Template.ObjectMeta.DeepCopy()
+
+	labels := metadata.GetLabels()
+	if labels == nil || len(labels) == 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("Need labels in HPA template")
+	}
+
+	if ownerRef := metadata.GetOwnerReferences(); len(ownerRef) != 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("hpa template in hvpa object already has an owner reference")
+	}
+
+	if generateName := metadata.GetGenerateName(); len(generateName) != 0 {
+		log.V(3).Info("Warning", "Generate name provided in the hpa template will be ignored", generateName)
+	}
+
+	metadata.SetName(hvpa.Name + "-hpa")
+	metadata.SetNamespace(hvpa.Namespace)
+
 	hpa := &autoscaling.HorizontalPodAutoscaler{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      hvpa.Name + "-hpa",
-			Namespace: hvpa.Namespace,
-		},
+		ObjectMeta: *metadata,
 		Spec: autoscaling.HorizontalPodAutoscalerSpec{
 			MaxReplicas:    hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
 			MinReplicas:    hvpa.Spec.Hpa.Template.Spec.MinReplicas,
@@ -358,10 +395,10 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 		// If this annotation is set on hvpa, AND
 		// If the value of this annotation on hvpa is "hvpa", then set hpa's mode off
 		// so that kube-controller-manager doesn't act on hpa recommendations
-		annotations := make(map[string]string)
-		annotations["mode"] = "Off"
-
-		hpa.SetAnnotations(annotations)
+		if hpa.GetAnnotations() == nil {
+			hpa.Annotations = make(map[string]string)
+		}
+		hpa.Annotations["mode"] = "Off"
 	}
 
 	if err := controllerutil.SetControllerReference(hvpa, hpa, r.Scheme); err != nil {
@@ -1040,8 +1077,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		if finalizers := sets.NewString(instance.Finalizers...); finalizers.Has(deleteFinalizerName) {
 			r.deleteHvpaFinalizers(instance)
 		}
-
-		return ctrl.Result{}, r.Delete(ctx, instance)
+		return ctrl.Result{}, err
 	}
 
 	r.addHvpaFinalizers(instance)

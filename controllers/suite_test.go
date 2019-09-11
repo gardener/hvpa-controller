@@ -131,6 +131,11 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 					UpdateMode: &updateMode,
 				},
 				Template: autoscalingv1alpha1.HpaTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							"hpaKey": "hpaValue",
+						},
+					},
 					Spec: autoscalingv1alpha1.HpaTemplateSpec{
 						MinReplicas: &replica,
 						MaxReplicas: 2,
@@ -152,6 +157,13 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 			Vpa: autoscalingv1alpha1.VpaSpec{
 				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
 					UpdateMode: &updateMode,
+				},
+				Template: autoscalingv1alpha1.VpaTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							"vpaKey": "vpaValue",
+						},
+					},
 				},
 			},
 		},
