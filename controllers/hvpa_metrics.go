@@ -46,7 +46,6 @@ const (
 )
 
 type hvpaMetrics struct {
-	aggrResourcesTotal              *prometheus.GaugeVec
 	aggrAppliedScalingsTotal        *prometheus.GaugeVec
 	aggrBlockedScalingsTotal        *prometheus.GaugeVec
 	specReplicas                    *prometheus.GaugeVec
@@ -65,17 +64,6 @@ func (r *HvpaReconciler) AddMetrics() error {
 		m             = &hvpaMetrics{}
 		allCollectors []prometheus.Collector
 	)
-	m.aggrResourcesTotal = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: metricsNamespace,
-			Subsystem: metricsSubsystemAggregate,
-			Name:      "resources_total",
-			Help:      "The number of HVPA resources currenrly managed by the HVPA controller.",
-		},
-		nil,
-	)
-	allCollectors = append(allCollectors, m.aggrResourcesTotal)
-
 	m.aggrAppliedScalingsTotal = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricsNamespace,
@@ -125,7 +113,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 			prometheus.GaugeOpts{
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
-				Name:      "replicas",
+				Name:      "applied_hpa_current_replicas",
 				Help:      "The the applied current replicas recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy},
@@ -136,7 +124,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 			prometheus.GaugeOpts{
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
-				Name:      "replicas",
+				Name:      "applied_hpa_desired_replicas",
 				Help:      "The the applied desired replicas recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy},
@@ -147,7 +135,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 			prometheus.GaugeOpts{
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
-				Name:      "replicas",
+				Name:      "applied_vpa_recommendation",
 				Help:      "The the applied recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy, labelContainer, labelRecommendation, labelResource},
@@ -158,7 +146,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 			prometheus.GaugeOpts{
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
-				Name:      "replicas",
+				Name:      "blocked_hpa_current_replicas",
 				Help:      "The the blocked current replicas recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy, labelReason},
@@ -169,7 +157,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 			prometheus.GaugeOpts{
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
-				Name:      "replicas",
+				Name:      "blocked_hpa_desired_replicas",
 				Help:      "The the blocked desired replicas recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy, labelReason},
@@ -180,7 +168,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 			prometheus.GaugeOpts{
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
-				Name:      "replicas",
+				Name:      "blocked_vpa_recommendation",
 				Help:      "The the ap, labelReasonplied recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy, labelReason, labelContainer, labelRecommendation, labelResource},
@@ -197,22 +185,6 @@ func (r *HvpaReconciler) AddMetrics() error {
 	}
 
 	return nil
-}
-
-func (r *HvpaReconciler) incrementResourcesTotal() {
-	if r == nil || r.metrics == nil {
-		return
-	}
-
-	r.metrics.aggrResourcesTotal.With(nil).Inc()
-}
-
-func (r *HvpaReconciler) decrementResourcesTotal() {
-	if r == nil || r.metrics == nil {
-		return
-	}
-
-	r.metrics.aggrResourcesTotal.With(nil).Dec()
 }
 
 func copyLabels(s prometheus.Labels) prometheus.Labels {
