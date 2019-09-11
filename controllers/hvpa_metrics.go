@@ -114,7 +114,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
 				Name:      "applied_hpa_current_replicas",
-				Help:      "The the applied current replicas recommendation from HPA.",
+				Help:      "The applied current replicas recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy},
 		)
@@ -125,7 +125,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
 				Name:      "applied_hpa_desired_replicas",
-				Help:      "The the applied desired replicas recommendation from HPA.",
+				Help:      "The applied desired replicas recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy},
 		)
@@ -136,7 +136,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
 				Name:      "applied_vpa_recommendation",
-				Help:      "The the applied recommendation from HPA.",
+				Help:      "The applied recommendation from VPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy, labelContainer, labelRecommendation, labelResource},
 		)
@@ -147,7 +147,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
 				Name:      "blocked_hpa_current_replicas",
-				Help:      "The the blocked current replicas recommendation from HPA.",
+				Help:      "The blocked current replicas recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy, labelReason},
 		)
@@ -158,7 +158,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
 				Name:      "blocked_hpa_desired_replicas",
-				Help:      "The the blocked desired replicas recommendation from HPA.",
+				Help:      "The blocked desired replicas recommendation from HPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy, labelReason},
 		)
@@ -169,7 +169,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Namespace: metricsNamespace,
 				Subsystem: metricsSubsystemStatus,
 				Name:      "blocked_vpa_recommendation",
-				Help:      "The the ap, labelReasonplied recommendation from HPA.",
+				Help:      "The blocked recommendation from VPA.",
 			},
 			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaUpdatePolicy, labelVpaUpdatePolicy, labelReason, labelContainer, labelRecommendation, labelResource},
 		)
