@@ -244,7 +244,6 @@ func (r *HvpaReconciler) addHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
 	if finalizers := sets.NewString(clone.Finalizers...); !finalizers.Has(deleteFinalizerName) {
 		finalizers.Insert(deleteFinalizerName)
 		r.updateFinalizers(clone, finalizers.List())
-		r.incrementResourcesTotal()
 	}
 }
 
@@ -274,7 +273,6 @@ func (r *HvpaReconciler) deleteHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
 	if finalizers := sets.NewString(clone.Finalizers...); finalizers.Has(deleteFinalizerName) {
 		finalizers.Delete(deleteFinalizerName)
 		r.updateFinalizers(clone, finalizers.List())
-		r.decrementResourcesTotal()
 	}
 }
 
@@ -1170,6 +1168,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		}*/
 	}
 	if !reflect.DeepEqual(hvpa.Status, instance.Status) {
+		r.updateScalingMetrics(hvpa, hpaScaled, vpaScaled)
 		return result, r.Status().Update(ctx, hvpa)
 	}
 
