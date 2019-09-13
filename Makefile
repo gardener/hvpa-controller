@@ -12,8 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+VERSION             := $(shell cat VERSION)
+REGISTRY            := eu.gcr.io/gardener-project/gardener
+
+IMAGE_REPOSITORY    := $(REGISTRY)/hvpa-controller
+IMAGE_TAG           := $(VERSION)
+
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= $(IMAGE_REPOSITORY):$(IMAGE_TAG)
+
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 
