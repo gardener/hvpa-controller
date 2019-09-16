@@ -1,5 +1,28 @@
 # hvpa-controller
 
+### Goals
+1. The goal of HVPA is to re-use the upstream components [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler) as much as possible for scaling components horizontally and vertically respectively.
+   1. HPA for recommendation and scaling horizontally.
+   1. VPA for recommendation for scaling vertically.
+1. Where there are gaps in using HPA and VPA simultaneously to scale a given component, introduce functionality to fill those gaps.
+   1. HPA and VPA are recommended to be mixed only in case HPA is used for custom/external metrics as mentioned [here](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler#limitations-of-beta-version). But in some scenarios it might make sense to use them both even for CPU and memory (e.g. `kube-apiserver` or ingress etc.)
+   1. VPA updates the pods directly (via webhooks) which may confuse HPA (especially, when used for the same scaling metrics) as it may not see the changes in the upstream `targetRefs`.
+1. Where there is functionality missing in either HPA or VPA, introduce them to provide more flexibility during horizontal and vertical scaling. Especially, for the components that experience disruption during scaling.
+   1. [Weight-based scaling](#weight-based-scaling) horizontally and vertically silmultaneously.
+   1. Support for configurable (at the resource level) threshold levels to trigger VPA (and possibly HPA) updates to minimize unnecessary scaling of components. Especially, if scaling is disruptive.
+   1. Support for configurable (at the resource level) stabilisation window in all the four directions (up/down/out/in) to stabilize scaling of components. Especially, if scaling is disruptive.
+   1. Support for configurable maintenance window for scaling (especially, scaling in/down) for components that do not scale well smoothly (mainly, `etcd`, but to a lesser extent `kube-apiserver` as well for `WATCH` requests). This could be as an alternative or complementary to the stabilisation window mentioned above.
+   1. Support for flexible update policy for all four scaling directions (Off/Auto/ScaleUp). ScaleUp would only apply scale up and not scale down (vertically or horizontally). This is again from the perspective of components which experience disruption while scaling (mainly, `etcd`, but to a lesser extent `kube-apiserver` as well for `WATCH` requests). For such components, a `ScaleUp` update policy will ensure that the component can scale up (with some disruption) automatically to meet the workload requirement but not scale down to avoid unnecessary disruption. This would mean over-provisioning for workloads that experience a short upsurge.
+   1. Custom resource support for VPA updates.
+      * At the beginning, this would be with some well-defined annotations to describe which part of the CRD to update the resource requests.
+      * But eventually, we can think of proposing a `Resource` subresource (per container) along the lines of `Scale` subresource.
+
+
+### Non-goals
+
+* It is *not* a goal of HVPA to duplicate the functionality of the upstream components like [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler).
+
+
 ### Weight based scaling
 In this mode, deployment's scaling is divided into stages depending on number of replicas. A user can provide an array of intervals `x1` to `x2` and corresponding `vpaWeight`s between and including `0` and `1`. `x1` and `x2` are the number of replicas where that stage begins and ends respectively. In a particular stage, HVPA controller will consider VPA's recommendations according to the weights provided, and scale the deployment accordingly. The weights given to the HPA's recommendation will be `1 - vpaWeight`.
 
@@ -211,3 +234,13 @@ request
 |--|---|----|------>
    1   3    10     #Replicas
 ```
+
+### Custom Resource Definition
+
+#### Types
+
+See [here](https://github.com/gardener/hvpa-controller/blob/a336e86111bbd5ec87f5a749003ba39b4735261e/api/v1alpha1/hvpa_types.go#L28-L305).
+
+#### Example
+
+See [here](https://github.com/gardener/hvpa-controller/blob/a698b08bc371525f666bb2f4766ccb9a403a0d4b/config/samples/autoscaling_v1alpha1_hvpa.yaml).
