@@ -22,6 +22,7 @@ import (
 	"reflect"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -98,4 +99,49 @@ func (r *HvpaReconciler) syncVpaSpec(vpaList []*vpa_api.VerticalPodAutoscaler, h
 		}
 	}
 	return nil
+}
+
+func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscaler, error) {
+	metadata := hvpa.Spec.Vpa.Template.ObjectMeta.DeepCopy()
+
+	labels := metadata.GetLabels()
+	if labels == nil || len(labels) == 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("Need labels in VPA template")
+	}
+
+	if ownerRef := metadata.GetOwnerReferences(); len(ownerRef) != 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("vpa template in hvpa object already has an owner reference")
+	}
+
+	if generateName := metadata.GetGenerateName(); len(generateName) != 0 {
+		log.V(3).Info("Warning", "Generate name provided in the vpa template will be ignored", generateName)
+	}
+
+	if name := metadata.GetName(); len(name) != 0 {
+		log.V(3).Info("Warning", "Name provided in the hpa template will be ignored", name)
+		metadata.SetName("")
+	}
+
+	metadata.SetGenerateName(hvpa.Name + "-")
+	metadata.SetNamespace(hvpa.Namespace)
+
+	// Updater policy set to "Off", as we don't want vpa-updater to act on recommendations
+	updatePolicy := vpa_api.UpdateModeOff
+
+	return &vpa_api.VerticalPodAutoscaler{
+		ObjectMeta: *metadata,
+		Spec: vpa_api.VerticalPodAutoscalerSpec{
+			TargetRef: &autoscalingv1.CrossVersionObjectReference{
+				Name:       hvpa.Spec.TargetRef.Name,
+				APIVersion: hvpa.Spec.TargetRef.APIVersion,
+				Kind:       hvpa.Spec.TargetRef.Kind,
+			},
+			ResourcePolicy: hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.DeepCopy(),
+			UpdatePolicy: &vpa_api.PodUpdatePolicy{
+				UpdateMode: &updatePolicy,
+			},
+		},
+	}, nil
 }

@@ -103,3 +103,40 @@ func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutosca
 	}
 	return nil
 }
+
+func getHpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscaler, error) {
+	metadata := hvpa.Spec.Hpa.Template.ObjectMeta.DeepCopy()
+
+	labels := metadata.GetLabels()
+	if labels == nil || len(labels) == 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("Need labels in HPA template")
+	}
+
+	if ownerRef := metadata.GetOwnerReferences(); len(ownerRef) != 0 {
+		// TODO: Could be done better as part of validation
+		return nil, fmt.Errorf("hpa template in hvpa object already has an owner reference")
+	}
+
+	if generateName := metadata.GetGenerateName(); len(generateName) != 0 {
+		log.V(3).Info("Warning", "Generate name provided in the hpa template will be ignored", generateName)
+	}
+
+	if name := metadata.GetName(); len(name) != 0 {
+		log.V(3).Info("Warning", "Name provided in the hpa template will be ignored", name)
+		metadata.SetName("")
+	}
+
+	metadata.SetGenerateName(hvpa.Name + "-")
+	metadata.SetNamespace(hvpa.Namespace)
+
+	return &autoscaling.HorizontalPodAutoscaler{
+		ObjectMeta: *metadata,
+		Spec: autoscaling.HorizontalPodAutoscalerSpec{
+			MaxReplicas:    hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
+			MinReplicas:    hvpa.Spec.Hpa.Template.Spec.MinReplicas,
+			ScaleTargetRef: *hvpa.Spec.TargetRef.DeepCopy(),
+			Metrics:        hvpa.Spec.Hpa.Template.Spec.Metrics,
+		},
+	}, nil
+}
