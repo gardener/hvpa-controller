@@ -154,7 +154,7 @@ type ReconcileHvpa struct {
 
 const deleteFinalizerName = "autoscaling.k8s.io/hvpa-controller"
 
-func (r *HvpaReconciler) getSelectorFromHvpa(instance *autoscalingv1alpha1.Hvpa) (labels.Selector, error) {
+func (r *HvpaReconciler) getScaleStatusFromTarget(instance *autoscalingv1alpha1.Hvpa) (labels.Selector, *int32, error) {
 	targetRef := instance.Spec.TargetRef
 
 	target := &unstructured.Unstructured{}
@@ -164,43 +164,70 @@ func (r *HvpaReconciler) getSelectorFromHvpa(instance *autoscalingv1alpha1.Hvpa)
 	err := r.Get(context.TODO(), types.NamespacedName{Name: targetRef.Name, Namespace: instance.Namespace}, target)
 	if err != nil {
 		log.Error(err, "Error getting target using targetRef.", "Will skip", instance.Name)
-		return nil, err
+		return nil, nil, err
 	}
 
-	selectorMap, found, err := unstructured.NestedMap(target.Object, "spec", "selector")
-	if err != nil {
+	var selector labels.Selector
+
+	// TODO use the Scale subresource if possible
+	if selectorMap, found, err := unstructured.NestedMap(target.Object, "spec", "selector"); err != nil {
 		log.Error(err, "Not able to get the selectorMap from target.", "Will skip", instance.Name)
-		return nil, err
-	}
-	if !found {
+		return nil, nil, err
+	} else if !found {
 		log.V(2).Info("Target doesn't have selector", "will skip HVPA", instance.Name)
-		return nil, err
+		return nil, nil, err
+	} else {
+		labelSelector := &metav1.LabelSelector{}
+		selectorStr, err := json.Marshal(selectorMap)
+		err = json.Unmarshal(selectorStr, &labelSelector)
+		if err != nil {
+			log.Error(err, "Error in reading selector string.", "will skip", instance.Name)
+			return nil, nil, err
+		}
+
+		selector, err = metav1.LabelSelectorAsSelector(labelSelector)
+		if err != nil {
+			log.Error(err, "Error in getting label selector", "will skip", instance.Name)
+			return nil, nil, err
+		}
 	}
 
-	labelSelector := &metav1.LabelSelector{}
-	selectorStr, err := json.Marshal(selectorMap)
-	err = json.Unmarshal(selectorStr, &labelSelector)
+	// TODO use the Scale subresource if possible
+	if replicas, found, err := unstructured.NestedInt64(target.Object, "status", "replicas"); err != nil {
+		log.Error(err, "Not able to get the status replicas from target.", "Will skip", instance.Name)
+		return nil, nil, err
+	} else if !found {
+		log.V(2).Info("Target doesn't have status replicas", "will skip HVPA", instance.Name)
+		return nil, nil, err
+	} else {
+		statusReplicas := int32(replicas)
+		return selector, &statusReplicas, nil
+	}
+}
+
+// reconcileScaleStatus reconciles the status fields relevant to the Scale subresource.
+func (r *HvpaReconciler) reconcileScaleStatus(instance *autoscalingv1alpha1.Hvpa) error {
+	selector, statusReplicas, err := r.getScaleStatusFromTarget(instance)
 	if err != nil {
-		log.Error(err, "Error in reading selector string.", "will skip", instance.Name)
-		return nil, err
+		return err
 	}
 
-	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
-	if err != nil {
-		log.Error(err, "Error in getting label selector", "will skip", instance.Name)
-		return nil, err
+	selectorStr := selector.String()
+	if oldSelector := instance.Status.TargetSelector; oldSelector == nil || *oldSelector != selectorStr {
+		instance.Status.TargetSelector = &selectorStr
 	}
-	return selector, nil
+
+	if oldReplicas := instance.Status.Replicas; oldReplicas == nil || *oldReplicas != *statusReplicas {
+		instance.Status.Replicas = statusReplicas
+	}
+
+	r.manageCache(instance, selector)
+
+	return nil
 }
 
 // manageCache manages the global map of HVPAs
-func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa) {
-	selector, err := r.getSelectorFromHvpa(instance)
-	if err != nil {
-		log.Error(err, "Error in getting label selector", "will skip", instance.Name)
-		return
-	}
-
+func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa, selector labels.Selector) {
 	obj := hvpaObj{
 		Name:     instance.Name,
 		Selector: selector,
@@ -1077,7 +1104,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 	log.V(1).Info("Reconciling", "hvpa", instance.GetName())
 
-	r.manageCache(instance)
+	r.reconcileScaleStatus(instance)
 
 	if instance.GetDeletionTimestamp() != nil {
 		if finalizers := sets.NewString(instance.Finalizers...); finalizers.Has(deleteFinalizerName) {
