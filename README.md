@@ -20,7 +20,7 @@
 
 ### Non-goals
 
-* It is *not* a goal of HVPA to duplicate the functionality of the upstream components like [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler).
+* It is *not* a goal of HVPA to duplicate the functionality of the upstream components like [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscaler/) and [VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler).
 
 
 ### Weight based scaling
@@ -82,7 +82,7 @@ vpaWeight
 * Once replica count reaches `maxReplicas`, and VPA still recommends higher resource requirements, then vertical scaling will be done unconditionally
 
 #### Spec
-[Here](https://github.com/ggaurav10/hvpa-controller/blob/master/pkg/apis/autoscaling/v1alpha1/hvpa_types.go) is the spec for HVPA controller
+[Here](#types) is the spec for HVPA controller
 
 Example 1:
 
