@@ -220,6 +220,10 @@ func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa) {
 		for i, cache := range cachedNames[instance.Namespace] {
 			if cache.Name == obj.Name {
 				found = true
+				if !reflect.DeepEqual(cache.Selector, obj.Selector) {
+					// Update selector if it has changed
+					cache.Selector = obj.Selector
+				}
 				if instance.DeletionTimestamp != nil {
 					// object is under deletion, remove it from the cache
 					len := len(cachedNames[instance.Namespace])
