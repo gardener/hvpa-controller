@@ -52,8 +52,11 @@ var _ = Describe("Hvpa", func() {
 	Context("Create API", func() {
 
 		It("should create an object successfully", func() {
-
-			updateMode := UpdateModeAuto
+			var (
+				updateMode  string = UpdateModeAuto
+				minReplicas int32  = 1
+				maxReplicas int32  = 2
+			)
 
 			key = types.NamespacedName{
 				Name:      "foo",
@@ -67,13 +70,41 @@ var _ = Describe("Hvpa", func() {
 				Spec: HvpaSpec{
 					TargetRef: &autoscaling.CrossVersionObjectReference{},
 					Hpa: HpaSpec{
+						Selector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"test-label": "test-label",
+							},
+						},
 						UpdatePolicy: &UpdatePolicy{
 							UpdateMode: &updateMode,
 						},
+						Template: HpaTemplate{
+							ObjectMeta: metav1.ObjectMeta{
+								Labels: map[string]string{
+									"test-label": "test-label",
+								},
+							},
+							Spec: HpaTemplateSpec{
+								MinReplicas: &minReplicas,
+								MaxReplicas: maxReplicas,
+							},
+						},
 					},
 					Vpa: VpaSpec{
+						Selector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"test-label": "test-label",
+							},
+						},
 						UpdatePolicy: &UpdatePolicy{
 							UpdateMode: &updateMode,
+						},
+						Template: VpaTemplate{
+							ObjectMeta: metav1.ObjectMeta{
+								Labels: map[string]string{
+									"test-label": "test-label",
+								},
+							},
 						},
 					},
 				},

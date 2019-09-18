@@ -41,8 +41,9 @@ func internalValidateHvpa(hvpa *v1alpha1.Hvpa) field.ErrorList {
 func validateHvpaSpec(spec *v1alpha1.HvpaSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
-	if *spec.Replicas < 0 {
-		allErrs = append(allErrs, field.Required(fldPath.Child("replicas"), "Replicas has to be a whole number"))
+	if spec == nil {
+		allErrs = append(allErrs, field.Required(fldPath, ""))
+		return allErrs
 	}
 
 	if nil == spec.TargetRef {
