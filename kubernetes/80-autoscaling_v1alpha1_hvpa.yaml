@@ -4,8 +4,6 @@ metadata:
   # Comment below annotation if you want kube-controller-manager to act on HPA's recommendation instead of hvpa-controller
   annotations:
     "hpa-controller": "hvpa"
-  labels:
-    controller-tools.k8s.io: "1.0"
   name: hvpa-sample
 spec:
   scaleUpStabilization:
@@ -24,34 +22,50 @@ spec:
     minMemChange:
       value: 100M
       percentage: 80
-  hpaTemplate:
-    maxReplicas: 3
-    minReplicas: 1
-    metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 50
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 50
+  hpa:
+    selector:
+      matchLabels:
+        key1: value1
+    template:
+      metadata:
+        labels:
+          key1: value1
+      spec:
+        maxReplicas: 3
+        minReplicas: 1
+        metrics:
+          - resource:
+              name: memory
+              target:
+                averageUtilization: 70
+                type: Utilization
+            type: Resource
+          - resource:
+              name: cpu
+              target:
+                averageUtilization: 60
+                type: Utilization
+            type: Resource
     updatePolicy:
-      updateMode: "On"
-  vpaTemplate:
-    resourcePolicy:
-      containerPolicies:
-      - MinAllowed:
-          memory: 400Mi
-        containerName: resource-consumer
-        maxAllowed:
-          memory: 3000Mi
+      updateMode: "Auto"
+  vpa:
+    selector:
+      matchLabels:
+        key2: value2
+    template:
+      metadata:
+        labels:
+          key2: value2
+      spec:
+        resourcePolicy:
+          containerPolicies:
+            - containerName: resource-consumer
+              maxAllowed:
+                memory: 3000Mi
+              minAllowed:
+                memory: 400Mi
     updatePolicy:
-      updateMode: "On"
+      updateMode: "scaleUp"
   weightBasedScalingIntervals:
     - vpaWeight: 0
       startReplicaCount: 1

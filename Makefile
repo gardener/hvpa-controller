@@ -80,6 +80,11 @@ docker-build: test
 docker-push:
 	docker push ${IMG}
 
+# Revendor
+revendor:
+	@GO111MODULE=on go mod vendor
+	@GO111MODULE=on go mod tidy
+
 # find or download controller-gen
 # download controller-gen if necessary
 controller-gen:

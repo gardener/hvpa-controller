@@ -3,7 +3,6 @@ module github.com/gardener/hvpa-controller
 go 1.12
 
 require (
-	github.com/go-logr/logr v0.1.0
 	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/json-iterator/go v1.1.6 // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect

@@ -127,6 +127,11 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 				APIVersion: "apps/v1",
 			},
 			Hpa: autoscalingv1alpha1.HpaSpec{
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"hpaKey": "hpaValue",
+					},
+				},
 				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
 					UpdateMode: &updateMode,
 				},
@@ -155,6 +160,11 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 				},
 			},
 			Vpa: autoscalingv1alpha1.VpaSpec{
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"vpaKey": "vpaValue",
+					},
+				},
 				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
 					UpdateMode: &updateMode,
 				},
