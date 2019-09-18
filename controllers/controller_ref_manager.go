@@ -151,7 +151,7 @@ type HvpaControllerRefManager struct {
 // If CanAdopt() returns a non-nil error, all adoptions will fail.
 //
 // NOTE: Once CanAdopt() is called, it will not be called again by the same
-//       MachineControllerRefManager machine. Create a new machine if it makes
+//       HvpaControllerRefManager HPA/VPA. Create a new HPA/VPA if it makes
 //       sense to check CanAdopt() again (e.g. in a different sync pass).
 func NewHvpaControllerRefManager(
 	reconciler *HvpaReconciler,
@@ -305,8 +305,20 @@ func (m *HvpaControllerRefManager) ReleaseHpa(hpa *autoscaling.HorizontalPodAuto
 		hpa.Namespace, hpa.Name, m.controllerKind.GroupVersion(), m.controllerKind.Kind, m.Controller.GetName())
 
 	hpaClone := hpa.DeepCopy()
-	// Assuming there are no other owners
-	hpaClone.OwnerReferences = nil
+	owners := hpaClone.GetOwnerReferences()
+	ownersCopy := []metav1.OwnerReference{}
+	for i := range owners {
+		owner := &owners[i]
+		if owner.UID == m.Controller.GetUID() {
+			continue
+		}
+		ownersCopy = append(ownersCopy, *owner)
+	}
+	if len(ownersCopy) == 0 {
+		hpaClone.OwnerReferences = nil
+	} else {
+		hpaClone.OwnerReferences = ownersCopy
+	}
 
 	err := client.IgnoreNotFound(m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa)))
 	if errors.IsInvalid(err) {
@@ -348,8 +360,20 @@ func (m *HvpaControllerRefManager) ReleaseVpa(vpa *vpa_api.VerticalPodAutoscaler
 		vpa.Namespace, vpa.Name, m.controllerKind.GroupVersion(), m.controllerKind.Kind, m.Controller.GetName())
 
 	vpaClone := vpa.DeepCopy()
-	// Assuming there are no other owners
-	vpaClone.OwnerReferences = nil
+	owners := vpaClone.GetOwnerReferences()
+	ownersCopy := []metav1.OwnerReference{}
+	for i := range owners {
+		owner := &owners[i]
+		if owner.UID == m.Controller.GetUID() {
+			continue
+		}
+		ownersCopy = append(ownersCopy, *owner)
+	}
+	if len(ownersCopy) == 0 {
+		vpaClone.OwnerReferences = nil
+	} else {
+		vpaClone.OwnerReferences = ownersCopy
+	}
 
 	err := client.IgnoreNotFound(m.reconciler.Patch(context.TODO(), vpaClone, client.MergeFrom(vpa)))
 	if errors.IsInvalid(err) {
