@@ -3,9 +3,8 @@ kind: Hvpa
 metadata:
   annotations:
     "hpa-controller": "hvpa"
-  labels:
-    controller-tools.k8s.io: "1.0"
   name: hvpa-sample
+  namespace: default
 spec:
   replicas: 1
   scaleUpStabilization:
@@ -25,6 +24,9 @@ spec:
       value: 100M
       percentage: 80
   hpa:
+    selector:
+      matchLabels:
+        key1: value1
     template:
       metadata:
         labels:
@@ -48,6 +50,9 @@ spec:
     updatePolicy:
       updateMode: ScaleUp
   vpa:
+    selector:
+      matchLabels:
+        key2: value2
     template:
       metadata:
         labels:

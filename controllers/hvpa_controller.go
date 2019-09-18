@@ -28,6 +28,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	validation "github.com/gardener/hvpa-controller/api/validation"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta2"
 	corev1 "k8s.io/api/core/v1"
@@ -225,7 +226,6 @@ func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa) {
 					cachedNames[instance.Namespace] = cachedNames[instance.Namespace][:len-1]
 					log.V(3).Info("HVPA", instance.Name, "removed from cache")
 				}
-				// TODO: Check if the selector also matches in the cache, otherwise update
 				break
 			}
 		}
@@ -1055,6 +1055,12 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	}
 
 	log.V(1).Info("Reconciling", "hvpa", instance.GetName())
+
+	validationerr := validation.ValidateHvpa(instance)
+	if validationerr.ToAggregate() != nil && len(validationerr.ToAggregate().Errors()) > 0 {
+		log.Error(fmt.Errorf(validationerr.ToAggregate().Error()), "Validation of HVPA failed", "HVPA", instance.Name)
+		return ctrl.Result{}, nil
+	}
 
 	r.manageCache(instance)
 

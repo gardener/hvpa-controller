@@ -104,12 +104,6 @@ func (r *HvpaReconciler) syncVpaSpec(vpaList []*vpa_api.VerticalPodAutoscaler, h
 func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscaler, error) {
 	metadata := hvpa.Spec.Vpa.Template.ObjectMeta.DeepCopy()
 
-	labels := metadata.GetLabels()
-	if labels == nil || len(labels) == 0 {
-		// TODO: Could be done better as part of validation
-		return nil, fmt.Errorf("Need labels in VPA template")
-	}
-
 	if ownerRef := metadata.GetOwnerReferences(); len(ownerRef) != 0 {
 		// TODO: Could be done better as part of validation
 		return nil, fmt.Errorf("vpa template in hvpa object already has an owner reference")

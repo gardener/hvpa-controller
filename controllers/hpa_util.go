@@ -107,12 +107,6 @@ func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutosca
 func getHpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscaler, error) {
 	metadata := hvpa.Spec.Hpa.Template.ObjectMeta.DeepCopy()
 
-	labels := metadata.GetLabels()
-	if labels == nil || len(labels) == 0 {
-		// TODO: Could be done better as part of validation
-		return nil, fmt.Errorf("Need labels in HPA template")
-	}
-
 	if ownerRef := metadata.GetOwnerReferences(); len(ownerRef) != 0 {
 		// TODO: Could be done better as part of validation
 		return nil, fmt.Errorf("hpa template in hvpa object already has an owner reference")
