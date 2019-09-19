@@ -301,8 +301,7 @@ func (m *HvpaControllerRefManager) AdoptHpa(hpa *autoscaling.HorizontalPodAutosc
 // ReleaseHpa sends a patch to free the Hpa from the control of the controller.
 // It returns the error if the patching fails. 404 and 422 errors are ignored.
 func (m *HvpaControllerRefManager) ReleaseHpa(hpa *autoscaling.HorizontalPodAutoscaler) error {
-	log.V(4).Info("patching HPA %s_%s to remove its controllerRef to %s/%s:%s",
-		hpa.Namespace, hpa.Name, m.controllerKind.GroupVersion(), m.controllerKind.Kind, m.Controller.GetName())
+	log.V(4).Info("ReleaseHpa()", "HPA", hpa.Name, "controller", m.controllerKind.String(), "controller name", m.Controller.GetName())
 
 	hpaClone := hpa.DeepCopy()
 	owners := hpaClone.GetOwnerReferences()
@@ -356,8 +355,7 @@ func (m *HvpaControllerRefManager) AdoptVpa(vpa *vpa_api.VerticalPodAutoscaler) 
 // ReleaseVpa sends a patch to free the Vpa from the control of the controller.
 // It returns the error if the patching fails. 404 and 422 errors are ignored.
 func (m *HvpaControllerRefManager) ReleaseVpa(vpa *vpa_api.VerticalPodAutoscaler) error {
-	log.V(4).Info("patching VPA %s_%s to remove its controllerRef to %s/%s:%s",
-		vpa.Namespace, vpa.Name, m.controllerKind.GroupVersion(), m.controllerKind.Kind, m.Controller.GetName())
+	log.V(4).Info("ReleaseVpa()", "VPA", vpa.Name, "controller", m.controllerKind.String(), "controller name", m.Controller.GetName())
 
 	vpaClone := vpa.DeepCopy()
 	owners := vpaClone.GetOwnerReferences()
