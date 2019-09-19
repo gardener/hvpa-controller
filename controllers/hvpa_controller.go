@@ -1104,7 +1104,8 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 	log.V(1).Info("Reconciling", "hvpa", instance.GetName())
 
-	r.reconcileScaleStatus(instance)
+	hvpa := instance.DeepCopy()
+	r.reconcileScaleStatus(hvpa)
 
 	if instance.GetDeletionTimestamp() != nil {
 		if finalizers := sets.NewString(instance.Finalizers...); finalizers.Has(deleteFinalizerName) {
@@ -1161,7 +1162,6 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, err
 	}
 
-	hvpa := instance.DeepCopy()
 	if len(*blockedScaling) != 0 {
 		hvpa.Status.LastBlockedScaling = *blockedScaling
 	}
