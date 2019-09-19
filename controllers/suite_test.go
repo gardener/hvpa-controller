@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
-	autoscaling "k8s.io/api/autoscaling/v2beta2"
+	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -148,11 +148,8 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 							autoscaling.MetricSpec{
 								Type: autoscaling.ResourceMetricSourceType,
 								Resource: &autoscaling.ResourceMetricSource{
-									Name: v1.ResourceCPU,
-									Target: autoscaling.MetricTarget{
-										Type:               autoscaling.UtilizationMetricType,
-										AverageUtilization: &util,
-									},
+									Name:                     v1.ResourceCPU,
+									TargetAverageUtilization: &util,
 								},
 							},
 						},

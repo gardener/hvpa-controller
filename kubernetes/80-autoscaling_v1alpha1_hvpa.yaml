@@ -34,18 +34,14 @@ spec:
         maxReplicas: 3
         minReplicas: 1
         metrics:
-          - resource:
-              name: memory
-              target:
-                averageUtilization: 70
-                type: Utilization
-            type: Resource
-          - resource:
-              name: cpu
-              target:
-                averageUtilization: 60
-                type: Utilization
-            type: Resource
+        - resource:
+            name: memory
+            targetAverageUtilization: 70
+          type: Resource
+        - resource:
+            name: cpu
+            targetAverageUtilization: 60
+          type: Resource
     updatePolicy:
       updateMode: "Auto"
   vpa:

@@ -17,7 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	autoscaling "k8s.io/api/autoscaling/v2beta2"
+	autoscaling "k8s.io/api/autoscaling/v2beta1"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
