@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
-	autoscaling "k8s.io/api/autoscaling/v2beta2"
+	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"

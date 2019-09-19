@@ -125,116 +125,146 @@ spec:
                                   length of queue in cloud messaging service, or QPS
                                   from loadbalancer running outside of cluster).
                                 properties:
-                                  metric:
-                                    description: metric identifies the target metric
-                                      by name and selector
+                                  metricName:
+                                    description: metricName is the name of the metric
+                                      in question.
+                                    type: string
+                                  metricSelector:
+                                    description: metricSelector is used to identify
+                                      a specific time series within a given metric.
                                     properties:
-                                      name:
-                                        description: name is the name of the given
-                                          metric
-                                        type: string
-                                      selector:
-                                        description: selector is the string-encoded
-                                          form of a standard kubernetes label selector
-                                          for the given metric When set, it is passed
-                                          as an additional parameter to the metrics
-                                          server for more specific metrics scoping.
-                                          When unset, just the metricName will be
-                                          used to gather metrics.
-                                        properties:
-                                          matchExpressions:
-                                            description: matchExpressions is a list
-                                              of label selector requirements. The
-                                              requirements are ANDed.
-                                            items:
-                                              description: A label selector requirement
-                                                is a selector that contains values,
-                                                a key, and an operator that relates
-                                                the key and values.
-                                              properties:
-                                                key:
-                                                  description: key is the label key
-                                                    that the selector applies to.
-                                                  type: string
-                                                operator:
-                                                  description: operator represents
-                                                    a key's relationship to a set
-                                                    of values. Valid operators are
-                                                    In, NotIn, Exists and DoesNotExist.
-                                                  type: string
-                                                values:
-                                                  description: values is an array
-                                                    of string values. If the operator
-                                                    is In or NotIn, the values array
-                                                    must be non-empty. If the operator
-                                                    is Exists or DoesNotExist, the
-                                                    values array must be empty. This
-                                                    array is replaced during a strategic
-                                                    merge patch.
-                                                  items:
-                                                    type: string
-                                                  type: array
-                                              required:
-                                              - key
-                                              - operator
-                                              type: object
-                                            type: array
-                                          matchLabels:
-                                            additionalProperties:
+                                      matchExpressions:
+                                        description: matchExpressions is a list of
+                                          label selector requirements. The requirements
+                                          are ANDed.
+                                        items:
+                                          description: A label selector requirement
+                                            is a selector that contains values, a
+                                            key, and an operator that relates the
+                                            key and values.
+                                          properties:
+                                            key:
+                                              description: key is the label key that
+                                                the selector applies to.
                                               type: string
-                                            description: matchLabels is a map of {key,value}
-                                              pairs. A single {key,value} in the matchLabels
-                                              map is equivalent to an element of matchExpressions,
-                                              whose key field is "key", the operator
-                                              is "In", and the values array contains
-                                              only "value". The requirements are ANDed.
-                                            type: object
+                                            operator:
+                                              description: operator represents a key's
+                                                relationship to a set of values. Valid
+                                                operators are In, NotIn, Exists and
+                                                DoesNotExist.
+                                              type: string
+                                            values:
+                                              description: values is an array of string
+                                                values. If the operator is In or NotIn,
+                                                the values array must be non-empty.
+                                                If the operator is Exists or DoesNotExist,
+                                                the values array must be empty. This
+                                                array is replaced during a strategic
+                                                merge patch.
+                                              items:
+                                                type: string
+                                              type: array
+                                          required:
+                                          - key
+                                          - operator
+                                          type: object
+                                        type: array
+                                      matchLabels:
+                                        additionalProperties:
+                                          type: string
+                                        description: matchLabels is a map of {key,value}
+                                          pairs. A single {key,value} in the matchLabels
+                                          map is equivalent to an element of matchExpressions,
+                                          whose key field is "key", the operator is
+                                          "In", and the values array contains only
+                                          "value". The requirements are ANDed.
                                         type: object
-                                    required:
-                                    - name
                                     type: object
-                                  target:
-                                    description: target specifies the target value
-                                      for the given metric
-                                    properties:
-                                      averageUtilization:
-                                        description: averageUtilization is the target
-                                          value of the average of the resource metric
-                                          across all relevant pods, represented as
-                                          a percentage of the requested value of the
-                                          resource for the pods. Currently only valid
-                                          for Resource metric source type
-                                        format: int32
-                                        type: integer
-                                      averageValue:
-                                        description: averageValue is the target value
-                                          of the average of the metric across all
-                                          relevant pods (as a quantity)
-                                        type: string
-                                      type:
-                                        description: type represents whether the metric
-                                          type is Utilization, Value, or AverageValue
-                                        type: string
-                                      value:
-                                        description: value is the target value of
-                                          the metric (as a quantity).
-                                        type: string
-                                    required:
-                                    - type
-                                    type: object
+                                  targetAverageValue:
+                                    description: targetAverageValue is the target
+                                      per-pod value of global metric (as a quantity).
+                                      Mutually exclusive with TargetValue.
+                                    type: string
+                                  targetValue:
+                                    description: targetValue is the target value of
+                                      the metric (as a quantity). Mutually exclusive
+                                      with TargetAverageValue.
+                                    type: string
                                 required:
-                                - metric
-                                - target
+                                - metricName
                                 type: object
                               object:
                                 description: object refers to a metric describing
                                   a single kubernetes object (for example, hits-per-second
                                   on an Ingress object).
                                 properties:
-                                  describedObject:
-                                    description: CrossVersionObjectReference contains
-                                      enough information to let you identify the referred
-                                      resource.
+                                  averageValue:
+                                    description: averageValue is the target value
+                                      of the average of the metric across all relevant
+                                      pods (as a quantity)
+                                    type: string
+                                  metricName:
+                                    description: metricName is the name of the metric
+                                      in question.
+                                    type: string
+                                  selector:
+                                    description: selector is the string-encoded form
+                                      of a standard kubernetes label selector for
+                                      the given metric When set, it is passed as an
+                                      additional parameter to the metrics server for
+                                      more specific metrics scoping When unset, just
+                                      the metricName will be used to gather metrics.
+                                    properties:
+                                      matchExpressions:
+                                        description: matchExpressions is a list of
+                                          label selector requirements. The requirements
+                                          are ANDed.
+                                        items:
+                                          description: A label selector requirement
+                                            is a selector that contains values, a
+                                            key, and an operator that relates the
+                                            key and values.
+                                          properties:
+                                            key:
+                                              description: key is the label key that
+                                                the selector applies to.
+                                              type: string
+                                            operator:
+                                              description: operator represents a key's
+                                                relationship to a set of values. Valid
+                                                operators are In, NotIn, Exists and
+                                                DoesNotExist.
+                                              type: string
+                                            values:
+                                              description: values is an array of string
+                                                values. If the operator is In or NotIn,
+                                                the values array must be non-empty.
+                                                If the operator is Exists or DoesNotExist,
+                                                the values array must be empty. This
+                                                array is replaced during a strategic
+                                                merge patch.
+                                              items:
+                                                type: string
+                                              type: array
+                                          required:
+                                          - key
+                                          - operator
+                                          type: object
+                                        type: array
+                                      matchLabels:
+                                        additionalProperties:
+                                          type: string
+                                        description: matchLabels is a map of {key,value}
+                                          pairs. A single {key,value} in the matchLabels
+                                          map is equivalent to an element of matchExpressions,
+                                          whose key field is "key", the operator is
+                                          "In", and the values array contains only
+                                          "value". The requirements are ANDed.
+                                        type: object
+                                    type: object
+                                  target:
+                                    description: target is the described Kubernetes
+                                      object.
                                     properties:
                                       apiVersion:
                                         description: API version of the referent
@@ -251,107 +281,14 @@ spec:
                                     - kind
                                     - name
                                     type: object
-                                  metric:
-                                    description: metric identifies the target metric
-                                      by name and selector
-                                    properties:
-                                      name:
-                                        description: name is the name of the given
-                                          metric
-                                        type: string
-                                      selector:
-                                        description: selector is the string-encoded
-                                          form of a standard kubernetes label selector
-                                          for the given metric When set, it is passed
-                                          as an additional parameter to the metrics
-                                          server for more specific metrics scoping.
-                                          When unset, just the metricName will be
-                                          used to gather metrics.
-                                        properties:
-                                          matchExpressions:
-                                            description: matchExpressions is a list
-                                              of label selector requirements. The
-                                              requirements are ANDed.
-                                            items:
-                                              description: A label selector requirement
-                                                is a selector that contains values,
-                                                a key, and an operator that relates
-                                                the key and values.
-                                              properties:
-                                                key:
-                                                  description: key is the label key
-                                                    that the selector applies to.
-                                                  type: string
-                                                operator:
-                                                  description: operator represents
-                                                    a key's relationship to a set
-                                                    of values. Valid operators are
-                                                    In, NotIn, Exists and DoesNotExist.
-                                                  type: string
-                                                values:
-                                                  description: values is an array
-                                                    of string values. If the operator
-                                                    is In or NotIn, the values array
-                                                    must be non-empty. If the operator
-                                                    is Exists or DoesNotExist, the
-                                                    values array must be empty. This
-                                                    array is replaced during a strategic
-                                                    merge patch.
-                                                  items:
-                                                    type: string
-                                                  type: array
-                                              required:
-                                              - key
-                                              - operator
-                                              type: object
-                                            type: array
-                                          matchLabels:
-                                            additionalProperties:
-                                              type: string
-                                            description: matchLabels is a map of {key,value}
-                                              pairs. A single {key,value} in the matchLabels
-                                              map is equivalent to an element of matchExpressions,
-                                              whose key field is "key", the operator
-                                              is "In", and the values array contains
-                                              only "value". The requirements are ANDed.
-                                            type: object
-                                        type: object
-                                    required:
-                                    - name
-                                    type: object
-                                  target:
-                                    description: target specifies the target value
-                                      for the given metric
-                                    properties:
-                                      averageUtilization:
-                                        description: averageUtilization is the target
-                                          value of the average of the resource metric
-                                          across all relevant pods, represented as
-                                          a percentage of the requested value of the
-                                          resource for the pods. Currently only valid
-                                          for Resource metric source type
-                                        format: int32
-                                        type: integer
-                                      averageValue:
-                                        description: averageValue is the target value
-                                          of the average of the metric across all
-                                          relevant pods (as a quantity)
-                                        type: string
-                                      type:
-                                        description: type represents whether the metric
-                                          type is Utilization, Value, or AverageValue
-                                        type: string
-                                      value:
-                                        description: value is the target value of
-                                          the metric (as a quantity).
-                                        type: string
-                                    required:
-                                    - type
-                                    type: object
+                                  targetValue:
+                                    description: targetValue is the target value of
+                                      the metric (as a quantity).
+                                    type: string
                                 required:
-                                - describedObject
-                                - metric
+                                - metricName
                                 - target
+                                - targetValue
                                 type: object
                               pods:
                                 description: pods refers to a metric describing each
@@ -359,106 +296,73 @@ spec:
                                   values will be averaged together before being compared
                                   to the target value.
                                 properties:
-                                  metric:
-                                    description: metric identifies the target metric
-                                      by name and selector
+                                  metricName:
+                                    description: metricName is the name of the metric
+                                      in question
+                                    type: string
+                                  selector:
+                                    description: selector is the string-encoded form
+                                      of a standard kubernetes label selector for
+                                      the given metric When set, it is passed as an
+                                      additional parameter to the metrics server for
+                                      more specific metrics scoping When unset, just
+                                      the metricName will be used to gather metrics.
                                     properties:
-                                      name:
-                                        description: name is the name of the given
-                                          metric
-                                        type: string
-                                      selector:
-                                        description: selector is the string-encoded
-                                          form of a standard kubernetes label selector
-                                          for the given metric When set, it is passed
-                                          as an additional parameter to the metrics
-                                          server for more specific metrics scoping.
-                                          When unset, just the metricName will be
-                                          used to gather metrics.
-                                        properties:
-                                          matchExpressions:
-                                            description: matchExpressions is a list
-                                              of label selector requirements. The
-                                              requirements are ANDed.
-                                            items:
-                                              description: A label selector requirement
-                                                is a selector that contains values,
-                                                a key, and an operator that relates
-                                                the key and values.
-                                              properties:
-                                                key:
-                                                  description: key is the label key
-                                                    that the selector applies to.
-                                                  type: string
-                                                operator:
-                                                  description: operator represents
-                                                    a key's relationship to a set
-                                                    of values. Valid operators are
-                                                    In, NotIn, Exists and DoesNotExist.
-                                                  type: string
-                                                values:
-                                                  description: values is an array
-                                                    of string values. If the operator
-                                                    is In or NotIn, the values array
-                                                    must be non-empty. If the operator
-                                                    is Exists or DoesNotExist, the
-                                                    values array must be empty. This
-                                                    array is replaced during a strategic
-                                                    merge patch.
-                                                  items:
-                                                    type: string
-                                                  type: array
-                                              required:
-                                              - key
-                                              - operator
-                                              type: object
-                                            type: array
-                                          matchLabels:
-                                            additionalProperties:
+                                      matchExpressions:
+                                        description: matchExpressions is a list of
+                                          label selector requirements. The requirements
+                                          are ANDed.
+                                        items:
+                                          description: A label selector requirement
+                                            is a selector that contains values, a
+                                            key, and an operator that relates the
+                                            key and values.
+                                          properties:
+                                            key:
+                                              description: key is the label key that
+                                                the selector applies to.
                                               type: string
-                                            description: matchLabels is a map of {key,value}
-                                              pairs. A single {key,value} in the matchLabels
-                                              map is equivalent to an element of matchExpressions,
-                                              whose key field is "key", the operator
-                                              is "In", and the values array contains
-                                              only "value". The requirements are ANDed.
-                                            type: object
+                                            operator:
+                                              description: operator represents a key's
+                                                relationship to a set of values. Valid
+                                                operators are In, NotIn, Exists and
+                                                DoesNotExist.
+                                              type: string
+                                            values:
+                                              description: values is an array of string
+                                                values. If the operator is In or NotIn,
+                                                the values array must be non-empty.
+                                                If the operator is Exists or DoesNotExist,
+                                                the values array must be empty. This
+                                                array is replaced during a strategic
+                                                merge patch.
+                                              items:
+                                                type: string
+                                              type: array
+                                          required:
+                                          - key
+                                          - operator
+                                          type: object
+                                        type: array
+                                      matchLabels:
+                                        additionalProperties:
+                                          type: string
+                                        description: matchLabels is a map of {key,value}
+                                          pairs. A single {key,value} in the matchLabels
+                                          map is equivalent to an element of matchExpressions,
+                                          whose key field is "key", the operator is
+                                          "In", and the values array contains only
+                                          "value". The requirements are ANDed.
                                         type: object
-                                    required:
-                                    - name
                                     type: object
-                                  target:
-                                    description: target specifies the target value
-                                      for the given metric
-                                    properties:
-                                      averageUtilization:
-                                        description: averageUtilization is the target
-                                          value of the average of the resource metric
-                                          across all relevant pods, represented as
-                                          a percentage of the requested value of the
-                                          resource for the pods. Currently only valid
-                                          for Resource metric source type
-                                        format: int32
-                                        type: integer
-                                      averageValue:
-                                        description: averageValue is the target value
-                                          of the average of the metric across all
-                                          relevant pods (as a quantity)
-                                        type: string
-                                      type:
-                                        description: type represents whether the metric
-                                          type is Utilization, Value, or AverageValue
-                                        type: string
-                                      value:
-                                        description: value is the target value of
-                                          the metric (as a quantity).
-                                        type: string
-                                    required:
-                                    - type
-                                    type: object
+                                  targetAverageValue:
+                                    description: targetAverageValue is the target
+                                      value of the average of the metric across all
+                                      relevant pods (as a quantity)
+                                    type: string
                                 required:
-                                - metric
-                                - target
+                                - metricName
+                                - targetAverageValue
                                 type: object
                               resource:
                                 description: resource refers to a resource metric
@@ -473,38 +377,23 @@ spec:
                                     description: name is the name of the resource
                                       in question.
                                     type: string
-                                  target:
-                                    description: target specifies the target value
-                                      for the given metric
-                                    properties:
-                                      averageUtilization:
-                                        description: averageUtilization is the target
-                                          value of the average of the resource metric
-                                          across all relevant pods, represented as
-                                          a percentage of the requested value of the
-                                          resource for the pods. Currently only valid
-                                          for Resource metric source type
-                                        format: int32
-                                        type: integer
-                                      averageValue:
-                                        description: averageValue is the target value
-                                          of the average of the metric across all
-                                          relevant pods (as a quantity)
-                                        type: string
-                                      type:
-                                        description: type represents whether the metric
-                                          type is Utilization, Value, or AverageValue
-                                        type: string
-                                      value:
-                                        description: value is the target value of
-                                          the metric (as a quantity).
-                                        type: string
-                                    required:
-                                    - type
-                                    type: object
+                                  targetAverageUtilization:
+                                    description: targetAverageUtilization is the target
+                                      value of the average of the resource metric
+                                      across all relevant pods, represented as a percentage
+                                      of the requested value of the resource for the
+                                      pods.
+                                    format: int32
+                                    type: integer
+                                  targetAverageValue:
+                                    description: targetAverageValue is the target
+                                      value of the average of the resource metric
+                                      across all relevant pods, as a raw value (instead
+                                      of as a percentage of the request), similar
+                                      to the "pods" metric source type.
+                                    type: string
                                 required:
                                 - name
-                                - target
                                 type: object
                               type:
                                 description: type is the type of metric source.  It

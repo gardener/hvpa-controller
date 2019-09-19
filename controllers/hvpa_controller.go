@@ -30,7 +30,7 @@ import (
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	validation "github.com/gardener/hvpa-controller/api/validation"
 	appsv1 "k8s.io/api/apps/v1"
-	autoscaling "k8s.io/api/autoscaling/v2beta2"
+	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
