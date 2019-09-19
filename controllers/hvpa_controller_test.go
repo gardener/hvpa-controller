@@ -18,6 +18,8 @@ package controllers
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
@@ -77,6 +79,9 @@ var _ = Describe("#TestReconcile", func() {
 						},
 					},
 				},
+				Status: appsv1.DeploymentStatus{
+					Replicas: replica,
+				},
 			}
 			// Setup the Manager.
 			mgr, err := ctrl.NewManager(cfg, ctrl.Options{})
@@ -99,13 +104,39 @@ var _ = Describe("#TestReconcile", func() {
 			}()
 
 			// Create the test deployment
-			err = c.Create(context.TODO(), deploytest)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(c.Create(context.TODO(), deploytest)).To(Succeed())
+			Expect(c.Status().Update(context.TODO(), deploytest)).To(Succeed()) //Update deployment status
 
 			// Create the Hvpa object and expect the Reconcile and HPA to be created
-			err = c.Create(context.TODO(), instance)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(c.Create(context.TODO(), instance)).To(Succeed())
 			defer c.Delete(context.TODO(), instance)
+
+			Eventually(func() error {
+				hvpa := &autoscalingv1alpha1.Hvpa{}
+				if err := c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
+					return err
+				}
+
+				if hvpa.Status.TargetSelector == nil {
+					return errors.New(".status.TargetSelector is nil")
+				}
+				if selector, err := metav1.LabelSelectorAsSelector(deploytest.Spec.Selector); err != nil {
+					return err
+				} else if selector == nil {
+					return errors.New("selector is nil")
+				} else if *hvpa.Status.TargetSelector != selector.String() {
+					return fmt.Errorf("Expected .status.TargetSelector to be %s but was %s", selector.String(), *hvpa.Status.TargetSelector)
+				}
+
+				if hvpa.Status.Replicas == nil {
+					return errors.New(".status.Replicas is nil")
+				} else if *hvpa.Status.Replicas != replica {
+					return fmt.Errorf("Expected .status.Replicas to be %d but was %d", replica, *hvpa.Status.Replicas)
+				}
+
+				return nil
+
+			}, "2s").Should(Succeed())
 
 			hpa := &autoscaling.HorizontalPodAutoscaler{}
 			Eventually(func() error { return c.Get(context.TODO(), hpaKey, hpa) }, timeout).

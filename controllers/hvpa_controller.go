@@ -195,10 +195,10 @@ func (r *HvpaReconciler) getScaleStatusFromTarget(instance *autoscalingv1alpha1.
 	// TODO use the Scale subresource if possible
 	if replicas, found, err := unstructured.NestedInt64(target.Object, "status", "replicas"); err != nil {
 		log.Error(err, "Not able to get the status replicas from target.", "Will skip", instance.Name)
-		return nil, nil, err
+		return selector, nil, err
 	} else if !found {
 		log.V(2).Info("Target doesn't have status replicas", "will skip HVPA", instance.Name)
-		return nil, nil, err
+		return selector, nil, err
 	} else {
 		statusReplicas := int32(replicas)
 		return selector, &statusReplicas, nil
