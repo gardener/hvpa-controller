@@ -123,7 +123,7 @@ var _ = Describe("#TestReconcile", func() {
 			vpaList = &vpa_api.VerticalPodAutoscalerList{}
 			Eventually(func() error {
 				c.List(context.TODO(), vpaList)
-				if len(hpaList.Items) == 1 {
+				if len(vpaList.Items) == 1 {
 					return nil
 				}
 				return fmt.Errorf("Error")
