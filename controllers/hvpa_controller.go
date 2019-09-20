@@ -39,7 +39,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -146,8 +145,6 @@ type hvpaObj struct {
 var cachedNames map[string][]*hvpaObj
 var cacheMux sync.Mutex
 
-const deleteFinalizerName = "autoscaling.k8s.io/hvpa-controller"
-
 func (r *HvpaReconciler) getSelectorFromHvpa(instance *autoscalingv1alpha1.Hvpa) (labels.Selector, error) {
 	targetRef := instance.Spec.TargetRef
 
@@ -187,8 +184,30 @@ func (r *HvpaReconciler) getSelectorFromHvpa(instance *autoscalingv1alpha1.Hvpa)
 	return selector, nil
 }
 
+func removeFromCache(namespacedName types.NamespacedName) {
+	for i, cache := range cachedNames[namespacedName.Namespace] {
+		if cache.Name == namespacedName.Name {
+			len := len(cachedNames[namespacedName.Namespace])
+			cachedNames[namespacedName.Namespace][i] = cachedNames[namespacedName.Namespace][len-1]
+			cachedNames[namespacedName.Namespace][len-1] = nil
+			cachedNames[namespacedName.Namespace] = cachedNames[namespacedName.Namespace][:len-1]
+			log.V(3).Info("HVPA", namespacedName.Name, "removed from cache")
+			break
+		}
+	}
+}
+
 // manageCache manages the global map of HVPAs
-func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa) {
+func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa, namespacedName types.NamespacedName, foundHvpa bool) {
+	cacheMux.Lock()
+	defer cacheMux.Unlock()
+
+	if !foundHvpa {
+		// HVPA doesn't exist anymore, remove it from the cache
+		removeFromCache(namespacedName)
+		return
+	}
+
 	selector, err := r.getSelectorFromHvpa(instance)
 	if err != nil {
 		log.Error(err, "Error in getting label selector", "will skip", instance.Name)
@@ -200,9 +219,6 @@ func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa) {
 		Selector: selector,
 	}
 
-	cacheMux.Lock()
-	defer cacheMux.Unlock()
-
 	if _, ok := cachedNames[instance.Namespace]; !ok {
 		if cachedNames == nil {
 			cachedNames = make(map[string][]*hvpaObj)
@@ -211,20 +227,12 @@ func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa) {
 		cachedNames[instance.Namespace] = []*hvpaObj{&obj}
 	} else {
 		found := false
-		for i, cache := range cachedNames[instance.Namespace] {
+		for _, cache := range cachedNames[instance.Namespace] {
 			if cache.Name == obj.Name {
 				found = true
 				if !reflect.DeepEqual(cache.Selector, obj.Selector) {
 					// Update selector if it has changed
 					cache.Selector = obj.Selector
-				}
-				if instance.DeletionTimestamp != nil {
-					// object is under deletion, remove it from the cache
-					len := len(cachedNames[instance.Namespace])
-					cachedNames[instance.Namespace][i] = cachedNames[instance.Namespace][len-1]
-					cachedNames[instance.Namespace][len-1] = nil
-					cachedNames[instance.Namespace] = cachedNames[instance.Namespace][:len-1]
-					log.V(3).Info("HVPA", instance.Name, "removed from cache")
 				}
 				break
 			}
@@ -234,44 +242,6 @@ func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa) {
 		}
 	}
 	log.V(4).Info("HVPA", "number of hvpas in cache", len(cachedNames[instance.Namespace]), "for namespace", instance.Namespace)
-}
-
-func (r *HvpaReconciler) addHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
-	clone := hvpa.DeepCopy()
-
-	if finalizers := sets.NewString(clone.Finalizers...); !finalizers.Has(deleteFinalizerName) {
-		finalizers.Insert(deleteFinalizerName)
-		r.updateFinalizers(clone, finalizers.List())
-	}
-}
-
-func (r *HvpaReconciler) updateFinalizers(hvpa *autoscalingv1alpha1.Hvpa, finalizers []string) {
-	// Get the latest version of the machine so that we can avoid conflicts
-	instance := &autoscalingv1alpha1.Hvpa{}
-	err := r.Get(context.TODO(), types.NamespacedName{Name: hvpa.Name, Namespace: hvpa.Namespace}, instance)
-	if err != nil {
-		return
-	}
-
-	clone := instance.DeepCopy()
-	clone.Finalizers = finalizers
-	err = r.Update(context.TODO(), clone)
-	if err != nil {
-		// Free the memory for clone before retrying, so that we limit memory usage in case we keep failing
-		clone = nil
-		// Keep retrying until update goes through
-		log.V(2).Info("Warning: Update failed, retrying")
-		r.updateFinalizers(hvpa, finalizers)
-	}
-}
-
-func (r *HvpaReconciler) deleteHvpaFinalizers(hvpa *autoscalingv1alpha1.Hvpa) {
-	clone := hvpa.DeepCopy()
-
-	if finalizers := sets.NewString(clone.Finalizers...); finalizers.Has(deleteFinalizerName) {
-		finalizers.Delete(deleteFinalizerName)
-		r.updateFinalizers(clone, finalizers.List())
-	}
 }
 
 func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
@@ -1048,6 +1018,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		if errors.IsNotFound(err) {
 			// Object not found, return.  Created objects are automatically garbage collected.
 			// For additional cleanup logic use finalizers.
+			r.manageCache(instance, req.NamespacedName, false)
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -1062,16 +1033,12 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
-	r.manageCache(instance)
+	r.manageCache(instance, req.NamespacedName, true)
 
 	if instance.GetDeletionTimestamp() != nil {
-		if finalizers := sets.NewString(instance.Finalizers...); finalizers.Has(deleteFinalizerName) {
-			r.deleteHvpaFinalizers(instance)
-		}
+		log.V(2).Info("HVPA is under deletion. Skipping reconciliation", "HVPA", instance.Name)
 		return ctrl.Result{}, err
 	}
-
-	r.addHvpaFinalizers(instance)
 
 	// Default duration after which the object should be requeued
 	requeAfter, _ := time.ParseDuration("1m")
