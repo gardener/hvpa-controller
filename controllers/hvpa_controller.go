@@ -184,6 +184,7 @@ func (r *HvpaReconciler) getSelectorFromHvpa(instance *autoscalingv1alpha1.Hvpa)
 	return selector, nil
 }
 
+// removeFromCache removes hvpa from the internal cache. The caller is responsible for synchronisation using cacheMux.
 func removeFromCache(namespacedName types.NamespacedName) {
 	for i, cache := range cachedNames[namespacedName.Namespace] {
 		if cache.Name == namespacedName.Name {
@@ -197,8 +198,8 @@ func removeFromCache(namespacedName types.NamespacedName) {
 	}
 }
 
-// manageCache manages the global map of HVPAs
-func (r *HvpaReconciler) manageCache(instance *autoscalingv1alpha1.Hvpa, namespacedName types.NamespacedName, foundHvpa bool) {
+// ManageCache manages the global map of HVPAs
+func (r *HvpaReconciler) ManageCache(instance *autoscalingv1alpha1.Hvpa, namespacedName types.NamespacedName, foundHvpa bool) {
 	cacheMux.Lock()
 	defer cacheMux.Unlock()
 
@@ -1018,7 +1019,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		if errors.IsNotFound(err) {
 			// Object not found, return.  Created objects are automatically garbage collected.
 			// For additional cleanup logic use finalizers.
-			r.manageCache(instance, req.NamespacedName, false)
+			r.ManageCache(instance, req.NamespacedName, false)
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -1033,7 +1034,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
-	r.manageCache(instance, req.NamespacedName, true)
+	r.ManageCache(instance, req.NamespacedName, true)
 
 	if instance.GetDeletionTimestamp() != nil {
 		log.V(2).Info("HVPA is under deletion. Skipping reconciliation", "HVPA", instance.Name)
