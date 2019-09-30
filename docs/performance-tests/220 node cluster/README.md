@@ -70,7 +70,7 @@ A round of HVPA test was triggered with HPA and VPA on kube-apiserver (via HVPA)
    * Two-level metrics for HVPA -> https://github.com/gardener/hvpa-controller/issues/15
 
 1. Initial worker node : 10
-1. Node type : n1-standard-1 (1c CPU, 3.75Gi Mem)
+1. Node type : n1-standard-2 (1c CPU, 3.75Gi Mem)
 1. Maximum nodes it can reach : 500.
 1. The control-plane was hosted as workload in another dedicated Kubernetes cluster (the seed cluster).
 1. ETCD:          
