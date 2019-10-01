@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"time"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	. "github.com/onsi/ginkgo"
@@ -29,20 +28,17 @@ import (
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 )
 
-const timeout = time.Second * 5
+var _ = Describe("#Adopt HPA", func() {
 
-var _ = Describe("#TestReconcile", func() {
-
-	DescribeTable("##ReconcileHPAandVPA",
+	DescribeTable("##AdoptHPA",
 		func(instance *autoscalingv1alpha1.Hvpa) {
 
 			replica := int32(1)
 			deploytest := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "deploy-test-1",
+					Name:      "deploy-test-2",
 					Namespace: "default",
 				},
 				Spec: appsv1.DeploymentSpec{
@@ -81,65 +77,41 @@ var _ = Describe("#TestReconcile", func() {
 			defer c.Delete(context.TODO(), instance)
 
 			hpaList := &autoscaling.HorizontalPodAutoscalerList{}
-			hpa := &autoscaling.HorizontalPodAutoscaler{}
 			Eventually(func() error {
 				num := 0
 				c.List(context.TODO(), hpaList)
 				for _, obj := range hpaList.Items {
-					if obj.GenerateName == "hvpa-1-" {
+					if obj.GenerateName == "hvpa-2-" {
 						num = num + 1
-						hpa = obj.DeepCopy()
 					}
 				}
 				if num == 1 {
 					return nil
 				}
-				return fmt.Errorf("Error: Expected 1 HPA; found %v", len(hpaList.Items))
+				return fmt.Errorf("Error: Number of HPAs expected: 1; found %v", num)
 			}, timeout).Should(Succeed())
 
-			vpaList := &vpa_api.VerticalPodAutoscalerList{}
-			vpa := &vpa_api.VerticalPodAutoscaler{}
-			Eventually(func() error {
-				num := 0
-				c.List(context.TODO(), vpaList)
-				for _, obj := range vpaList.Items {
-					if obj.GenerateName == "hvpa-1-" {
-						num = num + 1
-						vpa = obj.DeepCopy()
-					}
-				}
-				if num == 1 {
-					return nil
-				}
-				return fmt.Errorf("Error: Expected 1 VPA; found %v", len(vpaList.Items))
-			}, timeout).Should(Succeed())
+			// Create new HPA for same HVPA
+			newHpa, err := getHpaFromHvpa(instance)
+			Expect(err).NotTo(HaveOccurred())
+			err = c.Create(context.TODO(), newHpa)
+			Expect(err).NotTo(HaveOccurred())
 
-			// Delete the HPA and expect Reconcile to be called for HPA deletion
-			Expect(c.Delete(context.TODO(), hpa)).NotTo(HaveOccurred())
+			// Eventually one of the HPAs should be garbage collected
 			Eventually(func() error {
 				num := 0
 				c.List(context.TODO(), hpaList)
 				for _, obj := range hpaList.Items {
-					if obj.GenerateName == "hvpa-1-" {
+					if obj.GenerateName == "hvpa-2-" {
 						num = num + 1
-						hpa = obj.DeepCopy()
 					}
 				}
 				if num == 1 {
 					return nil
 				}
-				return fmt.Errorf("Error: Expected 1 HPA; found %v", len(hpaList.Items))
+				return fmt.Errorf("Error: Number of HPAs expected: 1; found %v", num)
 			}, timeout).Should(Succeed())
-
-			// Manually delete HPA & VPA since GC isn't enabled in the test control plane
-			Eventually(func() error { return c.Delete(context.TODO(), hpa) }, timeout).
-				Should(MatchError(fmt.Sprintf("horizontalpodautoscalers.autoscaling \"%s\" not found", hpa.Name)))
-			Eventually(func() error { return c.Delete(context.TODO(), vpa) }, timeout).
-				Should(MatchError(fmt.Sprintf("verticalpodautoscalers.autoscaling.k8s.io \"%s\" not found", vpa.Name)))
-
-			// Delete the test deployment
-			Expect(c.Delete(context.TODO(), deploytest)).NotTo(HaveOccurred())
 		},
-		Entry("hvpa", newHvpa("hvpa-1", "deploy-test-1", "label-1")),
+		Entry("hvpa", newHvpa("hvpa-2", "deploy-test-2", "label-2")),
 	)
 })
