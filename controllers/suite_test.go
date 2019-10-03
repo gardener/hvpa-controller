@@ -30,13 +30,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -46,6 +46,9 @@ import (
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
+var mgr manager.Manager
+var stopMgr chan struct{}
+var mgrStopped *sync.WaitGroup
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -77,10 +80,27 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 	Expect(k8sClient).ToNot(BeNil())
 
+	// Setup the Manager.
+	mgr, err = ctrl.NewManager(cfg, ctrl.Options{})
+	Expect(err).NotTo(HaveOccurred())
+
+	reconciler := HvpaReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}
+
+	err = reconciler.SetupWithManager(mgr)
+	Expect(err).NotTo(HaveOccurred())
+
+	stopMgr, mgrStopped = StartTestManager(mgr, &GomegaWithT{})
+
 	close(done)
 }, 60)
 
 var _ = AfterSuite(func() {
+	close(stopMgr)
+	mgrStopped.Wait()
+
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).ToNot(HaveOccurred())
@@ -110,26 +130,26 @@ func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync
 	return stop, wg
 }
 
-func newHvpa() *autoscalingv1alpha1.Hvpa {
+func newHvpa(name, target, labelVal string) *autoscalingv1alpha1.Hvpa {
 	replica := int32(1)
 	util := int32(70)
 	updateMode := autoscalingv1alpha1.UpdateModeAuto
 
 	instance := &autoscalingv1alpha1.Hvpa{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "foo",
+			Name:      name,
 			Namespace: "default",
 		},
 		Spec: autoscalingv1alpha1.HvpaSpec{
 			TargetRef: &autoscaling.CrossVersionObjectReference{
 				Kind:       "Deployment",
-				Name:       "deploy-test",
+				Name:       target,
 				APIVersion: "apps/v1",
 			},
 			Hpa: autoscalingv1alpha1.HpaSpec{
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
-						"hpaKey": "hpaValue",
+						"hpaKey": labelVal,
 					},
 				},
 				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
@@ -138,7 +158,7 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 				Template: autoscalingv1alpha1.HpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
-							"hpaKey": "hpaValue",
+							"hpaKey": labelVal,
 						},
 					},
 					Spec: autoscalingv1alpha1.HpaTemplateSpec{
@@ -159,7 +179,7 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 			Vpa: autoscalingv1alpha1.VpaSpec{
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
-						"vpaKey": "vpaValue",
+						"vpaKey": labelVal,
 					},
 				},
 				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
@@ -168,7 +188,7 @@ func newHvpa() *autoscalingv1alpha1.Hvpa {
 				Template: autoscalingv1alpha1.VpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
-							"vpaKey": "vpaValue",
+							"vpaKey": labelVal,
 						},
 					},
 				},
