@@ -28,6 +28,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 var _ = Describe("#Adopt VPA", func() {
@@ -68,28 +70,32 @@ var _ = Describe("#Adopt VPA", func() {
 
 			c := mgr.GetClient()
 			// Create the test deployment
-			err := c.Create(context.TODO(), deploytest)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(c.Create(context.TODO(), deploytest)).To(Succeed())
 
-			// Create the Hvpa object and expect the Reconcile and HPA to be created
-			err = c.Create(context.TODO(), instance)
-			Expect(err).NotTo(HaveOccurred())
+			// Create the Hvpa object and expect the Reconcile and VPA to be created
+			Expect(c.Create(context.TODO(), instance)).To(Succeed())
 			defer c.Delete(context.TODO(), instance)
 
-			vpaList := &vpa_api.VerticalPodAutoscalerList{}
-			Eventually(func() error {
+			hasSingleChildFn := func() error {
 				num := 0
-				c.List(context.TODO(), vpaList)
-				for _, obj := range vpaList.Items {
-					if obj.GenerateName == "hvpa-3-" {
-						num = num + 1
+				objList := &vpa_api.VerticalPodAutoscalerList{}
+				if err := c.List(context.TODO(), objList); err != nil {
+					return err
+				}
+				for _, obj := range objList.Items {
+					for _, owner := range obj.GetOwnerReferences() {
+						if owner.UID == instance.GetUID() {
+							num = num + 1
+						}
 					}
 				}
 				if num == 1 {
 					return nil
 				}
 				return fmt.Errorf("Error: Number of VPAs expected: 1; found %v", num)
-			}, timeout).Should(Succeed())
+			}
+
+			Eventually(hasSingleChildFn, timeout).Should(Succeed())
 
 			// Create new VPA for same HVPA
 			newVpa, err := getVpaFromHvpa(instance)
@@ -98,18 +104,33 @@ var _ = Describe("#Adopt VPA", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Eventually one of the VPAs should be garbage collected
+			Eventually(hasSingleChildFn, timeout).Should(Succeed())
+
+			// Create new VPA for same HVPA
+			newVpa, err = getVpaFromHvpa(instance)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(controllerutil.SetControllerReference(instance, newVpa, mgr.GetScheme())).To(Succeed())
+
+			// Replace the labels. The HVPA controller should remove the owner reference
+			label := make(map[string]string)
+			label["orphanKeyVpa"] = "orphanValueVpa"
+			newVpa.SetLabels(label)
+
+			Expect(c.Create(context.TODO(), newVpa)).To(Succeed())
+
+			// Eventually the owner ref from VPA should be removed by the HVPA controller
 			Eventually(func() error {
-				num := 0
-				c.List(context.TODO(), vpaList)
+				vpaList := &vpa_api.VerticalPodAutoscalerList{}
+				c.List(context.TODO(), vpaList, client.MatchingLabels(label))
 				for _, obj := range vpaList.Items {
-					if obj.GenerateName == "hvpa-3-" {
-						num = num + 1
+					for _, ref := range obj.GetOwnerReferences() {
+						if ref.UID == instance.GetUID() {
+							return fmt.Errorf("Error: VPA with label %v not released by HVPA %v", label, instance.Name)
+						}
 					}
 				}
-				if num == 1 {
-					return nil
-				}
-				return fmt.Errorf("Error: Number of VPAs expected: 1; found %v", num)
+				return nil
 			}, timeout).Should(Succeed())
 		},
 		Entry("hvpa", newHvpa("hvpa-3", "deploy-test-3", "label-3")),

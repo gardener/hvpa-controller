@@ -28,6 +28,8 @@ import (
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 var _ = Describe("#Adopt HPA", func() {
@@ -68,28 +70,32 @@ var _ = Describe("#Adopt HPA", func() {
 
 			c := mgr.GetClient()
 			// Create the test deployment
-			err := c.Create(context.TODO(), deploytest)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(c.Create(context.TODO(), deploytest)).To(Succeed())
 
 			// Create the Hvpa object and expect the Reconcile and HPA to be created
-			err = c.Create(context.TODO(), instance)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(c.Create(context.TODO(), instance)).To(Succeed())
 			defer c.Delete(context.TODO(), instance)
 
-			hpaList := &autoscaling.HorizontalPodAutoscalerList{}
-			Eventually(func() error {
+			hasSingleChildFn := func() error {
 				num := 0
-				c.List(context.TODO(), hpaList)
-				for _, obj := range hpaList.Items {
-					if obj.GenerateName == "hvpa-2-" {
-						num = num + 1
+				objList := &autoscaling.HorizontalPodAutoscalerList{}
+				if err := c.List(context.TODO(), objList); err != nil {
+					return err
+				}
+				for _, obj := range objList.Items {
+					for _, owner := range obj.GetOwnerReferences() {
+						if owner.UID == instance.GetUID() {
+							num = num + 1
+						}
 					}
 				}
 				if num == 1 {
 					return nil
 				}
-				return fmt.Errorf("Error: Number of HPAs expected: 1; found %v", num)
-			}, timeout).Should(Succeed())
+				return fmt.Errorf("Error: Number of VPAs expected: 1; found %v", num)
+			}
+
+			Eventually(hasSingleChildFn, timeout).Should(Succeed())
 
 			// Create new HPA for same HVPA
 			newHpa, err := getHpaFromHvpa(instance)
@@ -98,18 +104,33 @@ var _ = Describe("#Adopt HPA", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Eventually one of the HPAs should be garbage collected
+			Eventually(hasSingleChildFn, timeout).Should(Succeed())
+
+			// Create new HPA for same HVPA
+			newHpa, err = getHpaFromHvpa(instance)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(controllerutil.SetControllerReference(instance, newHpa, mgr.GetScheme())).To(Succeed())
+
+			// Replace the labels. The HVPA controller should remove the owner reference
+			label := make(map[string]string)
+			label["orphanKeyHpa"] = "orphanValueHpa"
+			newHpa.SetLabels(label)
+
+			Expect(c.Create(context.TODO(), newHpa)).To(Succeed())
+
+			// Eventually the owner ref from HPA should be removed by the HVPA controller
 			Eventually(func() error {
-				num := 0
-				c.List(context.TODO(), hpaList)
+				hpaList := &autoscaling.HorizontalPodAutoscalerList{}
+				c.List(context.TODO(), hpaList, client.MatchingLabels(label))
 				for _, obj := range hpaList.Items {
-					if obj.GenerateName == "hvpa-2-" {
-						num = num + 1
+					for _, ref := range obj.GetOwnerReferences() {
+						if ref.UID == instance.GetUID() {
+							return fmt.Errorf("Error: HPA with label %v not released by HVPA %v", label, instance.Name)
+						}
 					}
 				}
-				if num == 1 {
-					return nil
-				}
-				return fmt.Errorf("Error: Number of HPAs expected: 1; found %v", num)
+				return nil
 			}, timeout).Should(Succeed())
 		},
 		Entry("hvpa", newHvpa("hvpa-2", "deploy-test-2", "label-2")),
