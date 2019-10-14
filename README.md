@@ -92,38 +92,62 @@ kind: Hvpa
 metadata:
   name: hvpa-sample
 spec:
-  scaleUpStabilizationWindow: "2m"
-  scaleDownStabilizationWindow : "3m"
-  minCpuChange:
-    value: "200m"
-    percentage: 70
-  minMemChange:
-    value: "200M"
-    percentage: 80
-  hpaTemplate:
-    maxReplicas: 10
-    minReplicas: 1
-    metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 50
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 50
-  vpaTemplate:
-    resourcePolicy:
-      containerPolicies:
-      - MinAllowed:
-          memory: 400Mi
-        containerName: resource-consumer
-        maxAllowed:
-          memory: 3000Mi
+  scaleUpStabilization:
+    duration: "2m"
+    minCpuChange:
+      value: 200m
+      percentage: 70
+    minMemChange:
+      value: 200M
+      percentage: 80
+  scaleDownStabilization:
+    duration: "3m"
+    minCpuChange:
+      value: 300m
+      percentage: 80
+    minMemChange:
+      value: 400M
+      percentage: 90
+  hpa:
+    selector:
+      matchLabels:
+        key1: value1
+    template:
+      metadata:
+        labels:
+          key1: value1
+      spec:
+        maxReplicas: 10
+        minReplicas: 1
+        metrics:
+        - resource:
+            name: memory
+            targetAverageUtilization: 50
+          type: Resource
+        - resource:
+            name: cpu
+            targetAverageUtilization: 50
+          type: Resource
+    updatePolicy:
+      updateMode: "Auto"
+ vpa:
+    selector:
+      matchLabels:
+        key2: value2
+    template:
+      metadata:
+        labels:
+          key2: value2
+      spec:
+        resourcePolicy:
+          containerPolicies:
+            - containerName: resource-consumer
+              minAllowed:
+                memory: 400Mi
+              maxAllowed:
+                memory: 3000Mi
+    updatePolicy:
+      updateMode: "scaleUp"
   weightBasedScalingIntervals:
     - vpaWeight: 0
       startReplicaCount: 1
@@ -173,7 +197,7 @@ spec:
     - vpaWeight: 0
       startReplicaCount: 5
       lastReplicaCount: 10
-  hpaTemplate:
+  hpa:
     .
     .
     .
@@ -210,9 +234,18 @@ spec:
     - vpaWeight: 0.6
       startReplicaCount: 4
       lastReplicaCount: 10
-  hpaTemplate:
-    minReplicas: 1
-    maxReplicas: 10
+  hpa:
+    .
+    .
+    template:
+      .
+      .
+      spec:
+        minReplicas: 1
+        maxReplicas: 10
+        metrics:
+        .
+        .
     .
     .
     .
