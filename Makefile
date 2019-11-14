@@ -43,7 +43,7 @@ manager: generate fmt vet
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet
-	go run ./main.go --logtostderr=true --v=2
+	go run ./main.go --enable-detailed-metrics --logtostderr=true --v=2
 
 # Install CRDs into a cluster
 install: manifests
