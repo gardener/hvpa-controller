@@ -67,10 +67,10 @@ spec:
     - vpaWeight: 0
       startReplicaCount: 1
       lastReplicaCount: 2
-    - vpaWeight: 0.5
+    - vpaWeight: 50
       startReplicaCount: 3
       lastReplicaCount: 5
-    - vpaWeight: 0.6
+    - vpaWeight: 60
       startReplicaCount: 6
       lastReplicaCount: 7
   targetRef:
