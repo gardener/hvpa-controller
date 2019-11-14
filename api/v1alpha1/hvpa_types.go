@@ -265,6 +265,15 @@ const (
 	BlockingReasonMinChange BlockingReason = "MinChange"
 )
 
+// BlockingReasons lists all the blocking reasons
+var BlockingReasons = [...]BlockingReason{
+	BlockingReasonMaintenanceWindow,
+	BlockingReasonMinChange,
+	BlockingReasonStabilizationWindow,
+	BlockingReasonUpdatePolicy,
+	BlockingReasonWeight,
+}
+
 // BlockedScaling defines the details for blocked scaling
 type BlockedScaling struct {
 	Reason        BlockingReason `json:"reason,omitempty"`

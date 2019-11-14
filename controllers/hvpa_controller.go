@@ -1035,25 +1035,10 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 	r.ManageCache(instance, req.NamespacedName, true)
 
-	if instance.GetDeletionTimestamp() != nil {
-		log.V(2).Info("HVPA is under deletion. Skipping reconciliation", "HVPA", instance.Name)
-		return ctrl.Result{}, err
-	}
-
 	// Default duration after which the object should be requeued
 	requeAfter, _ := time.ParseDuration("1m")
 	result := ctrl.Result{
 		RequeueAfter: requeAfter,
-	}
-
-	hpaStatus, err := r.reconcileHpa(instance)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	vpaStatus, err := r.reconcileVpa(instance)
-	if err != nil {
-		return ctrl.Result{}, err
 	}
 
 	var obj runtime.Object
@@ -1078,6 +1063,24 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	err = r.Get(ctx, types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, obj)
 	if err != nil {
 		log.Error(err, "Error getting", "kind", instance.Spec.TargetRef.Kind, "name", instance.Spec.TargetRef.Name, "namespace", instance.Namespace)
+		return ctrl.Result{}, err
+	}
+
+	if instance.GetDeletionTimestamp() != nil {
+		log.V(2).Info("HVPA is under deletion. Skipping reconciliation", "HVPA", instance.Name)
+		if r.deleteScalingMetrics(instance, obj) != nil {
+			log.Error(err, "Error deleting scaling metrics")
+		}
+		return ctrl.Result{}, err
+	}
+
+	hpaStatus, err := r.reconcileHpa(instance)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	vpaStatus, err := r.reconcileVpa(instance)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -1123,8 +1126,13 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 			hvpa.Status.HvpaStatus.LastScaleType.Vertical = autoscalingv1alpha1.Up
 		}*/
 	}
+
+	if r.initScalingMetrics(hvpa, obj) != nil {
+		log.Error(err, "Error initializing scaling metrics")
+	}
+	r.updateScalingMetrics(hvpa, hpaScaled, vpaScaled)
+
 	if !reflect.DeepEqual(hvpa.Status, instance.Status) {
-		r.updateScalingMetrics(hvpa, hpaScaled, vpaScaled)
 		return result, r.Status().Update(ctx, hvpa)
 	}
 
