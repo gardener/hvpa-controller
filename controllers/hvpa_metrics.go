@@ -235,61 +235,55 @@ func basicBlockedLabels(hvpa *hvpav1alpha1.Hvpa, reason hvpav1alpha1.BlockingRea
 	return l
 }
 
-func addVPARecommendations(gv *prometheus.GaugeVec, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, baseLabelsFn func() prometheus.Labels) {
+func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, baseLabelsFn func() prometheus.Labels) {
 	if gv == nil || vpaStatus == nil || vpaStatus.Recommendation == nil {
 		return
 	}
 
-	addReco := func(container, recommendation string, resourceList v1.ResourceList) {
-		for resource, q := range resourceList {
-			l := baseLabelsFn()
-			l[labelContainer] = container
-			l[labelRecommendation] = recommendation
-			l[labelResource] = string(resource)
-
-			if resource == "cpu" {
-				gv.With(l).Set(float64(q.MilliValue()))
-			} else {
-				gv.With(l).Set(float64(q.Value()))
-			}
-		}
-	}
-
-	for i := range vpaStatus.Recommendation.ContainerRecommendations {
-		cr := &vpaStatus.Recommendation.ContainerRecommendations[i]
-		addReco(cr.ContainerName, recoTarget, cr.Target)
-		addReco(cr.ContainerName, recoLowerBound, cr.LowerBound)
-		addReco(cr.ContainerName, recoUpperBound, cr.UpperBound)
-		addReco(cr.ContainerName, recoUncappedTarget, cr.UncappedTarget)
-	}
-}
-
-var allContainerResourceNames = [...]v1.ResourceName{
-	v1.ResourceCPU,
-	v1.ResourceMemory,
-}
-
-func addNaNVPARecommendations(gv *prometheus.GaugeVec, containers []string, baseLabelsFn func() prometheus.Labels) {
-	if gv == nil || len(containers) <= 0 {
-		return
-	}
-
-	addReco := func(container, recommendation string) {
+	updateReco := func(container, recommendation string, resourceList v1.ResourceList) {
 		for _, resource := range allContainerResourceNames {
 			l := baseLabelsFn()
 			l[labelContainer] = container
 			l[labelRecommendation] = recommendation
 			l[labelResource] = string(resource)
 
-			gv.With(l).Set(math.NaN())
+			if resourceList == nil {
+				gv.With(l).Set(math.NaN())
+			} else if q, ok := resourceList[resource]; !ok {
+				gv.With(l).Set(math.NaN())
+			} else {
+				if resource == v1.ResourceCPU {
+					gv.With(l).Set(float64(q.MilliValue()))
+				} else {
+					gv.With(l).Set(float64(q.Value()))
+				}
+			}
 		}
 	}
 
-	for _, c := range containers {
-		for _, reco := range []string{recoTarget, recoLowerBound, recoUpperBound, recoUncappedTarget} {
-			addReco(c, reco)
-		}
+	recoMap := make(map[string]*vpa_api.RecommendedContainerResources)
+	for i := range vpaStatus.Recommendation.ContainerRecommendations {
+		cr := &vpaStatus.Recommendation.ContainerRecommendations[i]
+		recoMap[cr.ContainerName] = cr
 	}
+
+	for _, c := range containers {
+		if cr, ok := recoMap[c]; ok {
+			updateReco(c, recoTarget, cr.Target)
+		} else {
+			updateReco(c, recoTarget, nil)
+		}
+		/* To be enabled later
+		updateReco(cr.ContainerName, recoLowerBound, cr.LowerBound)
+		updateReco(cr.ContainerName, recoUpperBound, cr.UpperBound)
+		updateReco(cr.ContainerName, recoUncappedTarget, cr.UncappedTarget)
+		*/
+	}
+}
+
+var allContainerResourceNames = [...]v1.ResourceName{
+	v1.ResourceCPU,
+	v1.ResourceMemory,
 }
 
 func deleteVPARecommendations(gv *prometheus.GaugeVec, containers []string, baseLabelsFn func() prometheus.Labels) {
@@ -309,7 +303,7 @@ func deleteVPARecommendations(gv *prometheus.GaugeVec, containers []string, base
 	}
 
 	for _, c := range containers {
-		for _, reco := range []string{recoTarget, recoLowerBound, recoUpperBound, recoUncappedTarget} {
+		for _, reco := range []string{recoTarget /* To be enabled later, recoLowerBound, recoUpperBound, recoUncappedTarget*/} {
 			deleteReco(c, reco)
 		}
 	}
@@ -341,66 +335,7 @@ func (r *HvpaReconciler) getContainers(target runtime.Object) ([]string, error) 
 	return containers, nil
 }
 
-func (r *HvpaReconciler) initScalingMetrics(hvpa *hvpav1alpha1.Hvpa, target runtime.Object) error {
-	if hvpa == nil || hvpa.Spec.TargetRef == nil {
-		log.V(3).Info("Invalid HVPA resource", "hvpa", hvpa)
-		return nil
-	}
-
-	var m = r.metrics
-
-	if m.specReplicas != nil && hvpa.Spec.Replicas != nil {
-		var replicas float64
-		if hvpa.Spec.Replicas != nil {
-			replicas = float64(*hvpa.Spec.Replicas)
-		}
-		m.specReplicas.With(basicDetailedLabels(hvpa)).Set(replicas)
-	}
-
-	if m.statusReplicas != nil && hvpa.Status.Replicas != nil {
-		var replicas float64
-		if hvpa.Status.Replicas != nil {
-			replicas = float64(*hvpa.Status.Replicas)
-		}
-		m.statusReplicas.With(basicDetailedLabels(hvpa)).Set(replicas)
-	}
-
-	if r.EnableDetailedMetrics {
-		if m.statusAppliedHPACurrentReplicas != nil {
-			m.statusAppliedHPACurrentReplicas.With(basicDetailedLabels(hvpa)).Set(math.NaN())
-		}
-		if m.statusAppliedHPADesiredReplicas != nil {
-			m.statusAppliedHPADesiredReplicas.With(basicDetailedLabels(hvpa)).Set(math.NaN())
-		}
-
-		containers, err := r.getContainers(target)
-		if err != nil {
-			log.V(4).Info(err.Error())
-			return err
-		}
-
-		addNaNVPARecommendations(m.statusAppliedVPARecommendation, containers, func() prometheus.Labels {
-			return basicDetailedLabels(hvpa)
-		})
-
-		for _, reason := range hvpav1alpha1.BlockingReasons {
-			if m.statusBlockedHPACurrentReplicas != nil {
-				m.statusBlockedHPACurrentReplicas.With(basicBlockedLabels(hvpa, reason)).Set(math.NaN())
-			}
-			if m.statusBlockedHPADesiredReplicas != nil {
-				m.statusBlockedHPADesiredReplicas.With(basicBlockedLabels(hvpa, reason)).Set(math.NaN())
-			}
-			addNaNVPARecommendations(m.statusBlockedVPARecommendation, containers, func() prometheus.Labels {
-				return basicBlockedLabels(hvpa, reason)
-			})
-		}
-	}
-
-	return nil
-}
-
 func (r *HvpaReconciler) deleteScalingMetrics(hvpa *hvpav1alpha1.Hvpa, target runtime.Object) error {
-
 	if hvpa == nil || hvpa.Spec.TargetRef == nil {
 		log.V(3).Info("Invalid HVPA resource", "hvpa", hvpa)
 		return nil
@@ -450,20 +385,28 @@ func (r *HvpaReconciler) deleteScalingMetrics(hvpa *hvpav1alpha1.Hvpa, target ru
 	return nil
 }
 
-func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled, vpaScaled bool) {
+func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled, vpaScaled bool, target runtime.Object) error {
 	if hvpa == nil || hvpa.Spec.TargetRef == nil {
 		log.V(3).Info("Invalid HVPA resource", "hvpa", hvpa)
-		return
+		return nil
 	}
 
 	var m = r.metrics
 
-	if m.specReplicas != nil && hvpa.Spec.Replicas != nil {
-		m.specReplicas.With(basicDetailedLabels(hvpa)).Set(float64(*hvpa.Spec.Replicas))
+	if m.specReplicas != nil {
+		if hvpa.Spec.Replicas != nil {
+			m.specReplicas.With(basicDetailedLabels(hvpa)).Set(float64(*hvpa.Spec.Replicas))
+		} else {
+			m.specReplicas.With(basicDetailedLabels(hvpa)).Set(math.NaN())
+		}
 	}
 
-	if m.statusReplicas != nil && hvpa.Status.Replicas != nil {
-		m.statusReplicas.With(basicDetailedLabels(hvpa)).Set(float64(*hvpa.Status.Replicas))
+	if m.statusReplicas != nil {
+		if hvpa.Status.Replicas != nil {
+			m.statusReplicas.With(basicDetailedLabels(hvpa)).Set(float64(*hvpa.Status.Replicas))
+		} else {
+			m.statusReplicas.With(basicDetailedLabels(hvpa)).Set(math.NaN())
+		}
 	}
 
 	if hpaScaled || vpaScaled {
@@ -472,41 +415,77 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 		}
 	}
 
-	if r.EnableDetailedMetrics && hpaScaled {
+	if m.aggrBlockedScalingsTotal != nil && (!hpaScaled || !vpaScaled) {
+		for _, blocked := range hvpa.Status.LastBlockedScaling {
+			m.aggrBlockedScalingsTotal.WithLabelValues(string(blocked.Reason)).Inc()
+		}
+	}
+
+	if r.EnableDetailedMetrics {
 		if m.statusAppliedHPACurrentReplicas != nil {
 			m.statusAppliedHPACurrentReplicas.With(basicDetailedLabels(hvpa)).Set(float64(hvpa.Status.LastScaling.HpaStatus.CurrentReplicas))
 		}
 		if m.statusAppliedHPADesiredReplicas != nil {
 			m.statusAppliedHPADesiredReplicas.With(basicDetailedLabels(hvpa)).Set(float64(hvpa.Status.LastScaling.HpaStatus.DesiredReplicas))
 		}
-	}
 
-	if r.EnableDetailedMetrics && vpaScaled {
-		addVPARecommendations(m.statusAppliedVPARecommendation, &hvpa.Status.LastScaling.VpaStatus, func() prometheus.Labels {
-			return basicDetailedLabels(hvpa)
-		})
-	}
-
-	for _, blocked := range hvpa.Status.LastBlockedScaling {
-		if blocked == nil {
-			log.V(4).Info("Invalid blocked scaling entry", "hvpa", hvpa)
-			continue
+		containers, err := r.getContainers(target)
+		if err != nil {
+			log.V(4).Info(err.Error())
+			return err
 		}
 
-		if m.aggrBlockedScalingsTotal != nil {
-			m.aggrBlockedScalingsTotal.WithLabelValues(string(blocked.Reason)).Inc()
-		}
-
-		if r.EnableDetailedMetrics {
-			if m.statusBlockedHPACurrentReplicas != nil {
-				m.statusBlockedHPACurrentReplicas.With(basicBlockedLabels(hvpa, blocked.Reason)).Set(float64(blocked.HpaStatus.CurrentReplicas))
-			}
-			if m.statusBlockedHPADesiredReplicas != nil {
-				m.statusBlockedHPADesiredReplicas.With(basicBlockedLabels(hvpa, blocked.Reason)).Set(float64(blocked.HpaStatus.DesiredReplicas))
-			}
-			addVPARecommendations(m.statusBlockedVPARecommendation, &blocked.VpaStatus, func() prometheus.Labels {
-				return basicBlockedLabels(hvpa, blocked.Reason)
+		if hvpa.Status.LastScaling.VpaStatus.Recommendation != nil {
+			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &hvpa.Status.LastScaling.VpaStatus, func() prometheus.Labels {
+				return basicDetailedLabels(hvpa)
+			})
+		} else {
+			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &vpa_api.VerticalPodAutoscalerStatus{
+				Recommendation: &vpa_api.RecommendedPodResources{},
+			}, func() prometheus.Labels {
+				return basicDetailedLabels(hvpa)
 			})
 		}
+
+		blockedMap := make(map[hvpav1alpha1.BlockingReason]*hvpav1alpha1.BlockedScaling)
+		for _, blocked := range hvpa.Status.LastBlockedScaling {
+			if blocked == nil {
+				log.V(4).Info("Invalid blocked scaling entry", "hvpa", hvpa)
+				continue
+			}
+			blockedMap[blocked.Reason] = blocked
+		}
+		for _, blockingReason := range hvpav1alpha1.BlockingReasons {
+			blocked, ok := blockedMap[blockingReason]
+			if m.statusBlockedHPACurrentReplicas != nil {
+				if ok {
+					m.statusBlockedHPACurrentReplicas.With(basicBlockedLabels(hvpa, blockingReason)).Set(float64(blocked.HpaStatus.CurrentReplicas))
+				} else {
+					m.statusBlockedHPACurrentReplicas.With(basicBlockedLabels(hvpa, blockingReason)).Set(math.NaN())
+				}
+			}
+			if m.statusBlockedHPADesiredReplicas != nil {
+				if ok {
+					m.statusBlockedHPADesiredReplicas.With(basicBlockedLabels(hvpa, blockingReason)).Set(float64(blocked.HpaStatus.DesiredReplicas))
+				} else {
+					m.statusBlockedHPADesiredReplicas.With(basicBlockedLabels(hvpa, blockingReason)).Set(math.NaN())
+				}
+			}
+			if m.statusBlockedVPARecommendation != nil {
+				if ok && blocked.VpaStatus.Recommendation != nil {
+					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &blocked.VpaStatus, func() prometheus.Labels {
+						return basicBlockedLabels(hvpa, blockingReason)
+					})
+				} else {
+					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &vpa_api.VerticalPodAutoscalerStatus{
+						Recommendation: &vpa_api.RecommendedPodResources{},
+					}, func() prometheus.Labels {
+						return basicBlockedLabels(hvpa, blockingReason)
+					})
+				}
+			}
+		}
 	}
+
+	return nil
 }

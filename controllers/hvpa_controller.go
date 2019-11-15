@@ -1127,10 +1127,9 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		}*/
 	}
 
-	if r.initScalingMetrics(hvpa, obj) != nil {
-		log.Error(err, "Error initializing scaling metrics")
+	if r.updateScalingMetrics(hvpa, hpaScaled, vpaScaled, obj) != nil {
+		log.Error(err, "Error updating scaling metrics")
 	}
-	r.updateScalingMetrics(hvpa, hpaScaled, vpaScaled)
 
 	if !reflect.DeepEqual(hvpa.Status, instance.Status) {
 		return result, r.Status().Update(ctx, hvpa)
