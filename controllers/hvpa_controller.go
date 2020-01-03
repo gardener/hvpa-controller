@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"reflect"
 	"sync"
 	"time"
@@ -799,12 +800,14 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 		outTargetStabilizationWindow := make(corev1.ResourceList)
 		outTargetMinChanged := make(corev1.ResourceList)
 
-		for id, container := range newPodSpec.Containers {
+		for id := range newPodSpec.Containers {
+			container := &newPodSpec.Containers[id]
 			if rec.ContainerName == container.Name {
 				vpaMemTarget := rec.Target.Memory().DeepCopy()
 				vpaCPUTarget := rec.Target.Cpu().DeepCopy()
-				currMem := newPodSpec.Containers[id].Resources.Requests.Memory().DeepCopy()
-				currCPU := newPodSpec.Containers[id].Resources.Requests.Cpu().DeepCopy()
+				currReq := container.Resources.Requests
+				currMem := currReq.Memory().DeepCopy()
+				currCPU := currReq.Cpu().DeepCopy()
 
 				log.V(2).Info("VPA", "target mem", vpaMemTarget, "target cpu", vpaCPUTarget, "vpaWeight", vpaWeight, "minutes after last scaling", lastScaleTimeDuration.Minutes())
 
@@ -827,6 +830,13 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				diffCPU.SetScaled(diffCPU.Value(), -3)
 				currCPU.Add(*diffCPU)
 				weightedCPU := currCPU
+
+				weightedReq := corev1.ResourceList{
+					corev1.ResourceCPU:    weightedCPU,
+					corev1.ResourceMemory: weightedMem,
+				}
+
+				newLimits := getScaledLimits(container.Resources.Limits, currReq, weightedReq, hvpa.Spec.Vpa.LimitsScaleParams)
 
 				log.V(3).Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU)
 				log.V(3).Info("VPA scale down", "minimum CPU delta", scaleDownMinDeltaCPU.String(), "minimum memory delta", scaleDownMinDeltaMem)
@@ -852,6 +862,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					} else {
 						log.V(2).Info("VPA", "Scaling up", "memory", "Container", container.Name)
 						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+						newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = *newLimits.Memory()
 						// Override VPA status in outVpaStatus with weighted value
 						outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
 						resourceChange = true
@@ -873,6 +884,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					} else {
 						log.V(2).Info("VPA", "Scaling down", "memory", "Container", container.Name)
 						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+						newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = *newLimits.Memory()
 						// Override VPA status in outVpaStatus with weighted value
 						outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
 						resourceChange = true
@@ -899,6 +911,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					} else {
 						log.V(2).Info("VPA", "Scaling up", "CPU", "Container", container.Name)
 						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+						newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = *newLimits.Cpu()
 						// Override VPA status in outVpaStatus with weighted value
 						outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 						resourceChange = true
@@ -920,6 +933,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					} else {
 						log.V(2).Info("VPA", "Scaling down", "CPU", "Container", container.Name)
 						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+						newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = *newLimits.Cpu()
 						// Override VPA status in outVpaStatus with weighted value
 						outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 						resourceChange = true
@@ -963,7 +977,101 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	return nil, false, nil, nil
 }
 
-func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeThreshold, resourceType corev1.ResourceName, currentVal resource.Quantity) (*resource.Quantity, error) {
+func getScaledLimits(currLimits, currReq, weightedReq corev1.ResourceList, scaleParams autoscalingv1alpha1.ScaleParams) corev1.ResourceList {
+	cpuLimit, msg := getScaledResourceLimit(corev1.ResourceCPU, currLimits.Cpu(), currReq.Cpu(), weightedReq.Cpu(), &scaleParams.CPU)
+	if msg != "" {
+		log.V(3).Info("VPA", "Warning", msg)
+	}
+	memLimit, msg := getScaledResourceLimit(corev1.ResourceMemory, currLimits.Memory(), currReq.Memory(), weightedReq.Memory(), &scaleParams.Memory)
+	if msg != "" {
+		log.V(3).Info("VPA", "Warning", msg)
+	}
+
+	result := corev1.ResourceList{}
+	if cpuLimit != nil {
+		result[corev1.ResourceCPU] = *cpuLimit
+	}
+	if memLimit != nil {
+		memLimit.SetScaled(memLimit.ScaledValue(resource.Kilo), resource.Kilo) // Set the scale to Kilo
+		result[corev1.ResourceMemory] = *memLimit
+	}
+	return result
+}
+
+func getScaledResourceLimit(resourceName corev1.ResourceName, originalLimit, originalRequest, weightedRequest *resource.Quantity, changeParams *autoscalingv1alpha1.ChangeParams) (*resource.Quantity, string) {
+	// originalLimit not set, don't set limit.
+	if originalLimit == nil || originalLimit.Value() == 0 {
+		return nil, ""
+	}
+	// originalLimit set but originalRequest not set - K8s will treat the pod as if they were equal,
+	// recommend limit equal to request
+	if originalRequest == nil || originalRequest.Value() == 0 {
+		result := *weightedRequest
+		return &result, ""
+	}
+	// originalLimit and originalRequest are set. If they are equal recommend limit equal to request.
+	if originalRequest.MilliValue() == originalLimit.MilliValue() {
+		result := *weightedRequest
+		return &result, ""
+	}
+	// If change threshold is not provided, scale the limits proportinally
+	if changeParams == nil ||
+		(changeParams.Value == nil && (changeParams.Percentage == nil || *changeParams.Percentage == 0)) {
+		result, capped := scaleQuantityProportionally( /*scaledQuantity=*/ originalLimit /*scaleBase=*/, originalRequest /*scaleResult=*/, weightedRequest)
+		if !capped {
+			return result, ""
+		}
+		return result, fmt.Sprintf(
+			"%v: failed to keep limit to request ratio; capping limit to int64", resourceName)
+	}
+
+	// Initialise to max, and return the min after all the calculations
+	var scaledPercentageVal, scaledAddedVal big.Int = *big.NewInt(math.MaxInt64), *big.NewInt(math.MaxInt64)
+	weightedReqMilli := big.NewInt(weightedRequest.MilliValue())
+
+	if changeParams.Percentage != nil && *changeParams.Percentage != 0 {
+		scaledPercentageVal.Mul(weightedReqMilli, big.NewInt(int64(*changeParams.Percentage)))
+		scaledPercentageVal.Div(&scaledPercentageVal, big.NewInt(100))
+		scaledPercentageVal.Add(&scaledPercentageVal, weightedReqMilli)
+	}
+
+	if changeParams.Value != nil {
+		delta := resource.MustParse(*changeParams.Value)
+		deltaMilli := big.NewInt(delta.MilliValue())
+		scaledAddedVal.Add(weightedReqMilli, deltaMilli)
+	}
+
+	if scaledAddedVal.Cmp(&scaledPercentageVal) == -1 {
+		if scaledAddedVal.IsInt64() {
+			return resource.NewMilliQuantity(scaledAddedVal.Int64(), originalLimit.Format), ""
+		}
+		return resource.NewMilliQuantity(math.MaxInt64, originalLimit.Format), fmt.Sprintf(
+			"%v: failed to scale the limit as per limit scale parameters; capping limit to int64", resourceName)
+	}
+
+	if scaledPercentageVal.IsInt64() {
+		return resource.NewMilliQuantity(scaledPercentageVal.Int64(), originalLimit.Format), ""
+	}
+	return resource.NewMilliQuantity(math.MaxInt64, originalLimit.Format), fmt.Sprintf(
+		"%v: failed to scale the limit as per limit scale parameters; capping limit to int64", resourceName)
+}
+
+// scaleQuantityProportionally returns value which has the same proportion to scaledQuantity as scaleResult has to scaleBase
+// It also returns a bool indicating if it had to cap result to MaxInt64 milliunits.
+func scaleQuantityProportionally(scaledQuantity, scaleBase, scaleResult *resource.Quantity) (*resource.Quantity, bool) {
+	originalMilli := big.NewInt(scaledQuantity.MilliValue())
+	scaleBaseMilli := big.NewInt(scaleBase.MilliValue())
+	scaleResultMilli := big.NewInt(scaleResult.MilliValue())
+	var scaledOriginal big.Int
+	scaledOriginal.Mul(originalMilli, scaleResultMilli)
+	scaledOriginal.Div(&scaledOriginal, scaleBaseMilli)
+	if scaledOriginal.IsInt64() {
+		return resource.NewMilliQuantity(scaledOriginal.Int64(), scaledQuantity.Format), false
+	}
+	return resource.NewMilliQuantity(math.MaxInt64, scaledQuantity.Format), true
+}
+
+func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeParams, resourceType corev1.ResourceName, currentVal resource.Quantity) (*resource.Quantity, error) {
 	const (
 		defaultMemThreshold string = "200M"
 		defaultCPUThreshold string = "200m"

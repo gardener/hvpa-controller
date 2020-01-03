@@ -100,10 +100,10 @@ type ScaleStabilization struct {
 	Duration *string `json:"duration,omitempty"`
 	// MinCpuChange is the minimum change in CPU on which HVPA acts
 	// HVPA uses minimum of the Value and Percentage value
-	MinCPUChange *ChangeThreshold `json:"minCpuChange,omitempty"`
+	MinCPUChange *ChangeParams `json:"minCpuChange,omitempty"`
 	// MinMemChange is the minimum change in memory on which HVPA acts
 	// HVPA uses minimum of the Value and Percentage value
-	MinMemChange *ChangeThreshold `json:"minMemChange,omitempty"`
+	MinMemChange *ChangeParams `json:"minMemChange,omitempty"`
 }
 
 // VpaSpec defines spec for VPA
@@ -124,6 +124,17 @@ type VpaSpec struct {
 	// Template is the object that describes the VPA that will be created.
 	// +optional
 	Template VpaTemplate `json:"template,omitempty"`
+
+	// LimitsScaleParams is the scaling thresholds for limits
+	LimitsScaleParams ScaleParams `json:"limitsScaleParams,omitempty"`
+}
+
+// ScaleParams defines the scaling parameters for the limits
+type ScaleParams struct {
+	// Scale parameters for CPU
+	CPU ChangeParams `json:"cpu,omitempty"`
+	// Scale parameters for memory
+	Memory ChangeParams `json:"memory,omitempty"`
 }
 
 // VpaTemplate defines the template for VPA
@@ -193,12 +204,12 @@ type HvpaSpec struct {
 	ScaleDownStabilization *ScaleStabilization `json:"scaleDownStabilization,omitempty"`
 }
 
-// ChangeThreshold defines the thresholds for HVPA to apply VPA's recommendations
-type ChangeThreshold struct {
-	// Value is the absolute value of the threshold
+// ChangeParams defines the parameters for scaling
+type ChangeParams struct {
+	// Value is the absolute value of the scaling
 	// +optional
 	Value *string `json:"value,omitempty"`
-	// Percentage is the percentage of currently allocated value to be used as threshold
+	// Percentage is the percentage of currently allocated value to be used for scaling
 	// +optional
 	Percentage *int32 `json:"percentage,omitempty"`
 }
