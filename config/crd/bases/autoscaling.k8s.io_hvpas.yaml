@@ -521,8 +521,9 @@ spec:
             vpa:
               description: Vpa defines the spec of VPA
               properties:
-                limitsScaleParams:
-                  description: LimitsScaleParams is the scaling thresholds for limits
+                limitsRequestsGapScaleParams:
+                  description: LimitsRequestsGapScaleParams is the scaling thresholds
+                    for limits
                   properties:
                     cpu:
                       description: Scale parameters for CPU

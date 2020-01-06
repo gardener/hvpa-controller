@@ -836,7 +836,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					corev1.ResourceMemory: weightedMem,
 				}
 
-				newLimits := getScaledLimits(container.Resources.Limits, currReq, weightedReq, hvpa.Spec.Vpa.LimitsScaleParams)
+				newLimits := getScaledLimits(container.Resources.Limits, currReq, weightedReq, hvpa.Spec.Vpa.LimitsRequestsGapScaleParams)
 
 				log.V(3).Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU)
 				log.V(3).Info("VPA scale down", "minimum CPU delta", scaleDownMinDeltaCPU.String(), "minimum memory delta", scaleDownMinDeltaMem)

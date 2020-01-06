@@ -125,8 +125,8 @@ type VpaSpec struct {
 	// +optional
 	Template VpaTemplate `json:"template,omitempty"`
 
-	// LimitsScaleParams is the scaling thresholds for limits
-	LimitsScaleParams ScaleParams `json:"limitsScaleParams,omitempty"`
+	// LimitsRequestsGapScaleParams is the scaling thresholds for limits
+	LimitsRequestsGapScaleParams ScaleParams `json:"limitsRequestsGapScaleParams,omitempty"`
 }
 
 // ScaleParams defines the scaling parameters for the limits

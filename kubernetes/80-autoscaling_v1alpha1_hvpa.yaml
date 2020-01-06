@@ -48,7 +48,7 @@ spec:
     selector:
       matchLabels:
         key2: value2
-    limitsScaleParams:
+    limitsRequestsGapScaleParams:
       cpu:
         percentage: 80
         value: "2"
