@@ -444,11 +444,11 @@ spec:
                   properties:
                     percentage:
                       description: Percentage is the percentage of currently allocated
-                        value to be used as threshold
+                        value to be used for scaling
                       format: int32
                       type: integer
                     value:
-                      description: Value is the absolute value of the threshold
+                      description: Value is the absolute value of the scaling
                       type: string
                   type: object
                 minMemChange:
@@ -457,11 +457,11 @@ spec:
                   properties:
                     percentage:
                       description: Percentage is the percentage of currently allocated
-                        value to be used as threshold
+                        value to be used for scaling
                       format: int32
                       type: integer
                     value:
-                      description: Value is the absolute value of the threshold
+                      description: Value is the absolute value of the scaling
                       type: string
                   type: object
               type: object
@@ -480,11 +480,11 @@ spec:
                   properties:
                     percentage:
                       description: Percentage is the percentage of currently allocated
-                        value to be used as threshold
+                        value to be used for scaling
                       format: int32
                       type: integer
                     value:
-                      description: Value is the absolute value of the threshold
+                      description: Value is the absolute value of the scaling
                       type: string
                   type: object
                 minMemChange:
@@ -493,11 +493,11 @@ spec:
                   properties:
                     percentage:
                       description: Percentage is the percentage of currently allocated
-                        value to be used as threshold
+                        value to be used for scaling
                       format: int32
                       type: integer
                     value:
-                      description: Value is the absolute value of the threshold
+                      description: Value is the absolute value of the scaling
                       type: string
                   type: object
               type: object
@@ -521,6 +521,35 @@ spec:
             vpa:
               description: Vpa defines the spec of VPA
               properties:
+                limitsRequestsGapScaleParams:
+                  description: LimitsRequestsGapScaleParams is the scaling thresholds
+                    for limits
+                  properties:
+                    cpu:
+                      description: Scale parameters for CPU
+                      properties:
+                        percentage:
+                          description: Percentage is the percentage of currently allocated
+                            value to be used for scaling
+                          format: int32
+                          type: integer
+                        value:
+                          description: Value is the absolute value of the scaling
+                          type: string
+                      type: object
+                    memory:
+                      description: Scale parameters for memory
+                      properties:
+                        percentage:
+                          description: Percentage is the percentage of currently allocated
+                            value to be used for scaling
+                          format: int32
+                          type: integer
+                        value:
+                          description: Value is the absolute value of the scaling
+                          type: string
+                      type: object
+                  type: object
                 selector:
                   description: 'Selector is a label query that should match VPA. Must
                     match in order to be controlled. If empty, defaulted to labels

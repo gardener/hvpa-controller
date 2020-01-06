@@ -48,6 +48,13 @@ spec:
     selector:
       matchLabels:
         key2: value2
+    limitsRequestsGapScaleParams:
+      cpu:
+        percentage: 80
+        value: "2"
+      memory:
+        percentage: 80
+        value: 3G
     template:
       metadata:
         labels:

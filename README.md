@@ -68,6 +68,15 @@ vpaWeight
                x1     x2               #Replicas
 ```
 
+**Scaling of `limits`**:
+
+HVPA will scale `limits` also along with `requests` based on following criteria:
+1. If originalLimit is not set, don't set limit.
+1. If originalLimit is set but originalRequest not set - K8s will treat the pod as if they were equal, then set limit equal to request
+1. If originalLimit and originalRequest are set and if they are equal, recommend limit equal to request.
+1. If limit scaling parameters are not set in `hvpa.spec.vpa` then scale the limits proportionaly as done by VPA
+1. If the scaling parameters are provided, then choose the min of the 2 possible values in `hvpa.spec.vpa.limitsRequestsGapScaleParams` (percentage and value)
+
 #### Pros
 * Works even if HPA and VPA act on different metrices
 * Gives better control to user on scaling of apps
@@ -134,6 +143,13 @@ spec:
     selector:
       matchLabels:
         key2: value2
+    limitsRequestsGapScaleParams:
+      cpu:
+        percentage: 80
+        value: "2"
+      memory:
+        percentage: 80
+        value: 3G
     template:
       metadata:
         labels:
