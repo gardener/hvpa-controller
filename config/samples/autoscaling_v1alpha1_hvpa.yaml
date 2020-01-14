@@ -7,26 +7,22 @@ metadata:
   namespace: default
 spec:
   replicas: 1
-  scaleUpStabilization:
-    duration: "2m"
-    minCpuChange:
-      value: 20m
-      percentage: 80
-    minMemChange:
-      value: 100M
-      percentage: 80
-  scaleDownStabilization:
-    duration: "2m"
-    minCpuChange:
-      value: 20m
-      percentage: 80
-    minMemChange:
-      value: 100M
-      percentage: 80
+  maintenanceWindow:
+    begin: "220000-0000"
+    end:  "230000-0000"
   hpa:
     selector:
       matchLabels:
         key1: value1
+    deploy: true
+    scaleUp:
+      updatePolicy:
+        updateMode: "Auto"
+      stabilizationDuration: "3m"
+    scaleDown:
+      updatePolicy:
+        updateMode: "Auto"
+      stabilizationDuration: "3m"
     template:
       metadata:
         labels:
@@ -43,12 +39,33 @@ spec:
             name: cpu
             targetAverageUtilization: 60
           type: Resource
-    updatePolicy:
-      updateMode: ScaleUp
   vpa:
     selector:
       matchLabels:
         key2: value2
+    deploy: true
+    scaleUp:
+      updatePolicy:
+        updateMode: "Auto"
+      stabilizationDuration: "3m"
+      minChange:
+        cpu:
+          value: "3"
+          percentage: 80
+        memory:
+          value: "3"
+          percentage: 80
+    scaleDown:
+      updatePolicy:
+        updateMode: "MaintenanceWindow"
+      stabilizationDuration: "3m"
+      minChange:
+        cpu:
+          value: "3"
+          percentage: 80
+        memory:
+          value: "3"
+          percentage: 80
     limitsRequestsGapScaleParams:
       cpu:
         percentage: 80
@@ -68,8 +85,6 @@ spec:
                 memory: 3000Mi
               minAllowed:
                 memory: 400Mi
-    updatePolicy:
-      updateMode: "On"
   weightBasedScalingIntervals:
     - vpaWeight: 0
       startReplicaCount: 1

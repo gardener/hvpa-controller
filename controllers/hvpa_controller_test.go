@@ -19,20 +19,57 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"time"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	"github.com/gardener/hvpa-controller/utils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
+	"time"
 )
 
 const timeout = time.Second * 5
+const testNamespace = "test"
+
+var (
+	valMem  = "100M"
+	valCPU  = "100m"
+	percMem = int32(80)
+	percCPU = int32(80)
+
+	limValMem  = "3G"
+	limValCPU  = "2"
+	limPercMem = int32(80)
+	limPercCPU = int32(80)
+
+	minChange = autoscalingv1alpha1.ScaleParams{
+		CPU: autoscalingv1alpha1.ChangeParams{
+			Value:      &valCPU,
+			Percentage: &percCPU,
+		},
+		Memory: autoscalingv1alpha1.ChangeParams{
+			Value:      &valMem,
+			Percentage: &percMem,
+		},
+	}
+
+	limitScale = autoscalingv1alpha1.ScaleParams{
+		CPU: autoscalingv1alpha1.ChangeParams{
+			Value:      &limValCPU,
+			Percentage: &limPercCPU,
+		},
+		Memory: autoscalingv1alpha1.ChangeParams{
+			Value:      &limValMem,
+			Percentage: &limPercMem,
+		},
+	}
+)
 
 var _ = Describe("#TestReconcile", func() {
 
@@ -140,6 +177,195 @@ var _ = Describe("#TestReconcile", func() {
 			// Delete the test deployment
 			Expect(c.Delete(context.TODO(), deploytest)).NotTo(HaveOccurred())
 		},
-		Entry("hvpa", newHvpa("hvpa-1", "deploy-test-1", "label-1")),
+		Entry("hvpa", newHvpa("hvpa-1", "deploy-test-1", "label-1", minChange, limitScale)),
 	)
+
+	Describe("#ScaleTests", func() {
+		type setup struct {
+			hvpa      *autoscalingv1alpha1.Hvpa
+			hpaStatus *autoscaling.HorizontalPodAutoscalerStatus
+			vpaStatus *vpa_api.VerticalPodAutoscalerStatus
+			target    *appsv1.Deployment
+			vpaWeight autoscalingv1alpha1.VpaWeight
+		}
+		type expect struct {
+			desiredReplicas int32
+			resourceChange  bool
+			resources       v1.ResourceRequirements
+			blockedReasons  []autoscalingv1alpha1.BlockingReason
+		}
+		type action struct {
+			maintenanceWindow *autoscalingv1alpha1.MaintenanceTimeWindow
+			updateMode        string
+		}
+		type data struct {
+			setup  setup
+			action action
+			expect expect
+		}
+
+		DescribeTable("##ScaleTestScenarios",
+			func(data *data) {
+				hvpa := data.setup.hvpa
+				hpaStatus := data.setup.hpaStatus
+				vpaStatus := data.setup.vpaStatus
+				target := data.setup.target
+				vpaWeight := data.setup.vpaWeight
+
+				if data.action.maintenanceWindow != nil {
+					hvpa.Spec.MaintenanceTimeWindow = data.action.maintenanceWindow
+				}
+				if data.action.updateMode != "" {
+					hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode = &data.action.updateMode
+					hvpa.Spec.Hpa.ScaleDown.UpdatePolicy.UpdateMode = &data.action.updateMode
+					hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode = &data.action.updateMode
+					hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode = &data.action.updateMode
+				}
+
+				blockedScaling := &[]*autoscalingv1alpha1.BlockedScaling{}
+				podSpec, resourceChanged, vpaStatus, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, &target.Spec.Template.Spec, true, blockedScaling)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(resourceChanged).To(Equal(data.expect.resourceChange))
+				Expect(len(*blockedScaling)).To(Equal(len(data.expect.blockedReasons)))
+
+				if len(data.expect.blockedReasons) != 0 {
+					Expect(len(*blockedScaling)).To(Equal(len(data.expect.blockedReasons)))
+					for i, blockedScaling := range *blockedScaling {
+						Expect(blockedScaling.Reason).To(Equal(data.expect.blockedReasons[i]))
+					}
+				}
+
+				if data.expect.resourceChange {
+					Expect(podSpec).NotTo(BeNil())
+					Expect(podSpec.Containers[0].Resources).To(Equal(data.expect.resources))
+				} else {
+					Expect(podSpec).To(BeNil())
+				}
+
+				hpaStatus, err = getWeightedReplicas(hpaStatus, hvpa, *target.Spec.Replicas, 100-vpaWeight, blockedScaling)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(hpaStatus.DesiredReplicas).To(Equal(data.expect.desiredReplicas))
+			},
+
+			Entry("UpdateMode Auto, Should Scale only memory", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", "deployment", "label-2", minChange, limitScale),
+					hpaStatus: newHpaStatus(2, 3),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    newTarget("deployment", "2", "5G", "300m", "200M", 2),
+					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+				},
+				expect: expect{
+					desiredReplicas: 3,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("2"),
+							v1.ResourceMemory: resource.MustParse("2376000k"),
+						},
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("300m"),
+							v1.ResourceMemory: resource.MustParse("1320000000"),
+						},
+					},
+					blockedReasons: []autoscalingv1alpha1.BlockingReason{
+						autoscalingv1alpha1.BlockingReasonMinChange,
+					},
+				},
+			}),
+			Entry("UpdateMode Auto, blocked Scaling", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", "deployment", "label-2", minChange, limitScale),
+					hpaStatus: newHpaStatus(2, 3),
+					vpaStatus: newVpaStatus("deployment", "250M", "350m"),
+					target:    newTarget("deployment", "2", "5Gi", "300m", "200M", 2),
+					vpaWeight: autoscalingv1alpha1.VpaWeight(90),
+				},
+				expect: expect{
+					desiredReplicas: 3,
+					resourceChange:  false,
+					resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("2"),
+							v1.ResourceMemory: resource.MustParse("5Gi"),
+						},
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("300m"),
+							v1.ResourceMemory: resource.MustParse("200M"),
+						},
+					},
+					blockedReasons: []autoscalingv1alpha1.BlockingReason{
+						autoscalingv1alpha1.BlockingReasonMinChange,
+					},
+				},
+			}),
+			Entry("UpdateMode maintenanceWindow, blocked scaling", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", "deployment", "label-2", minChange, limitScale),
+					hpaStatus: newHpaStatus(2, 3),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    newTarget("deployment", "2", "5Gi", "300m", "200M", 2),
+					vpaWeight: autoscalingv1alpha1.VpaWeight(90),
+				},
+				action: action{
+					maintenanceWindow: &autoscalingv1alpha1.MaintenanceTimeWindow{
+						Begin: utils.NewMaintenanceTime(time.Now().UTC().Hour()+3, 0, 0).Formatted(),
+						End:   utils.NewMaintenanceTime(time.Now().UTC().Hour()+4, 0, 0).Formatted(),
+					},
+					updateMode: autoscalingv1alpha1.UpdateModeMaintenanceWindow,
+				},
+				expect: expect{
+					desiredReplicas: 2,
+					resourceChange:  false,
+					resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("2"),
+							v1.ResourceMemory: resource.MustParse("5Gi"),
+						},
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("300m"),
+							v1.ResourceMemory: resource.MustParse("200M"),
+						},
+					},
+					blockedReasons: []autoscalingv1alpha1.BlockingReason{
+						autoscalingv1alpha1.BlockingReasonMaintenanceWindow,
+					},
+				},
+			}),
+			Entry("UpdateMode maintenanceWindow, Should Scale only memory", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", "deployment", "label-2", minChange, limitScale),
+					hpaStatus: newHpaStatus(2, 3),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    newTarget("deployment", "2", "5G", "300m", "200M", 2),
+					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+				},
+				action: action{
+					maintenanceWindow: &autoscalingv1alpha1.MaintenanceTimeWindow{
+						Begin: utils.NewMaintenanceTime(time.Now().UTC().Hour()-1, 0, 0).Formatted(),
+						End:   utils.NewMaintenanceTime(time.Now().UTC().Hour()+1, 0, 0).Formatted(),
+					},
+					updateMode: autoscalingv1alpha1.UpdateModeMaintenanceWindow,
+				},
+				expect: expect{
+					desiredReplicas: 3,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("2"),
+							v1.ResourceMemory: resource.MustParse("2376000k"),
+						},
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("300m"),
+							v1.ResourceMemory: resource.MustParse("1320000000"),
+						},
+					},
+					blockedReasons: []autoscalingv1alpha1.BlockingReason{
+						autoscalingv1alpha1.BlockingReasonMinChange,
+					},
+				},
+			}),
+		)
+	})
 })

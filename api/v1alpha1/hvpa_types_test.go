@@ -53,9 +53,8 @@ var _ = Describe("Hvpa", func() {
 
 		It("should create an object successfully", func() {
 			var (
-				updateMode  string = UpdateModeAuto
-				minReplicas int32  = 1
-				maxReplicas int32  = 2
+				minReplicas int32 = 1
+				maxReplicas int32 = 2
 			)
 
 			key = types.NamespacedName{
@@ -75,9 +74,6 @@ var _ = Describe("Hvpa", func() {
 								"test-label": "test-label",
 							},
 						},
-						UpdatePolicy: &UpdatePolicy{
-							UpdateMode: &updateMode,
-						},
 						Template: HpaTemplate{
 							ObjectMeta: metav1.ObjectMeta{
 								Labels: map[string]string{
@@ -95,9 +91,6 @@ var _ = Describe("Hvpa", func() {
 							MatchLabels: map[string]string{
 								"test-label": "test-label",
 							},
-						},
-						UpdatePolicy: &UpdatePolicy{
-							UpdateMode: &updateMode,
 						},
 						Template: VpaTemplate{
 							ObjectMeta: metav1.ObjectMeta{

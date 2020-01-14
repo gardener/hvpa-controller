@@ -133,6 +133,6 @@ var _ = Describe("#Adopt HPA", func() {
 				return nil
 			}, timeout).Should(Succeed())
 		},
-		Entry("hvpa", newHvpa("hvpa-2", "deploy-test-2", "label-2")),
+		Entry("hvpa", newHvpa("hvpa-2", "deploy-test-2", "label-2", minChange, limitScale)),
 	)
 })

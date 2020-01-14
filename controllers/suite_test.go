@@ -25,9 +25,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -130,15 +133,21 @@ func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync
 	return stop, wg
 }
 
-func newHvpa(name, target, labelVal string) *autoscalingv1alpha1.Hvpa {
+func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleParams, limitScale autoscalingv1alpha1.ScaleParams) *autoscalingv1alpha1.Hvpa {
 	replica := int32(1)
 	util := int32(70)
+
+	stabilizationDur := "3m"
+
 	updateMode := autoscalingv1alpha1.UpdateModeAuto
 
 	instance := &autoscalingv1alpha1.Hvpa{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
+			Annotations: map[string]string{
+				"hpa-controller": "hvpa",
+			},
 		},
 		Spec: autoscalingv1alpha1.HvpaSpec{
 			TargetRef: &autoscaling.CrossVersionObjectReference{
@@ -152,9 +161,20 @@ func newHvpa(name, target, labelVal string) *autoscalingv1alpha1.Hvpa {
 						"hpaKey": labelVal,
 					},
 				},
-				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
-					UpdateMode: &updateMode,
+				Deploy: true,
+				ScaleUp: autoscalingv1alpha1.ScaleType{
+					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
+						UpdateMode: &updateMode,
+					},
+					StabilizationDuration: &stabilizationDur,
 				},
+				ScaleDown: autoscalingv1alpha1.ScaleType{
+					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
+						UpdateMode: &updateMode,
+					},
+					StabilizationDuration: &stabilizationDur,
+				},
+
 				Template: autoscalingv1alpha1.HpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
@@ -182,9 +202,22 @@ func newHvpa(name, target, labelVal string) *autoscalingv1alpha1.Hvpa {
 						"vpaKey": labelVal,
 					},
 				},
-				UpdatePolicy: &autoscalingv1alpha1.UpdatePolicy{
-					UpdateMode: &updateMode,
+				Deploy: true,
+				ScaleUp: autoscalingv1alpha1.ScaleType{
+					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
+						UpdateMode: &updateMode,
+					},
+					StabilizationDuration: &stabilizationDur,
+					MinChange:             minChange,
 				},
+				ScaleDown: autoscalingv1alpha1.ScaleType{
+					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
+						UpdateMode: &updateMode,
+					},
+					StabilizationDuration: &stabilizationDur,
+					MinChange:             minChange,
+				},
+				LimitsRequestsGapScaleParams: limitScale,
 				Template: autoscalingv1alpha1.VpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
@@ -197,4 +230,76 @@ func newHvpa(name, target, labelVal string) *autoscalingv1alpha1.Hvpa {
 	}
 
 	return instance
+}
+
+func newHpaStatus(currentReplicas, desiredReplicas int32) *autoscaling.HorizontalPodAutoscalerStatus {
+	return &autoscaling.HorizontalPodAutoscalerStatus{
+		CurrentReplicas: currentReplicas,
+		DesiredReplicas: desiredReplicas,
+	}
+}
+
+func newVpaStatus(containerName, mem, cpu string) *vpa_api.VerticalPodAutoscalerStatus {
+
+	return &vpa_api.VerticalPodAutoscalerStatus{
+		Recommendation: &vpa_api.RecommendedPodResources{
+			ContainerRecommendations: []vpa_api.RecommendedContainerResources{
+				{
+					ContainerName: containerName,
+					Target: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse(cpu),
+						v1.ResourceMemory: resource.MustParse(mem),
+					},
+				},
+			},
+		},
+		Conditions: []vpa_api.VerticalPodAutoscalerCondition{
+			{
+				Status: "True",
+				Type:   vpa_api.RecommendationProvided,
+			},
+		},
+	}
+}
+
+func newTarget(name, cpuLimit, memLimit, cpuReq, memReq string, replicas int32) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "testDeployment",
+				},
+			},
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name": "testDeployment",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						v1.Container{
+							Name:  name,
+							Image: "k8s.gcr.io/pause-amd64:3.0",
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse(cpuLimit),
+									v1.ResourceMemory: resource.MustParse(memLimit),
+								},
+								Requests: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse(cpuReq),
+									v1.ResourceMemory: resource.MustParse(memReq),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }

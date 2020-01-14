@@ -109,7 +109,7 @@ setup_test_cluster
 echo "Starting integration tests..."
 
 set +e
-ginkgo -r api controllers
+ginkgo -r -cover utils api controllers
 TEST_RESULT=$?
 set -e
 
