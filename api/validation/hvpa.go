@@ -50,15 +50,15 @@ func validateHvpaSpec(spec *v1alpha1.HvpaSpec, fldPath *field.Path) field.ErrorL
 		allErrs = append(allErrs, field.Required(fldPath.Child("targetRef"), "TargetRef is required"))
 	}
 
-	allErrs = append(allErrs, validateHpaTemplate(&spec.Hpa, field.NewPath("spec.hpa"))...)
-	allErrs = append(allErrs, validateVpaTemplate(&spec.Vpa, field.NewPath("spec.vpa"))...)
+	allErrs = append(allErrs, validateHpaSpec(&spec.Hpa, field.NewPath("spec.hpa"))...)
+	allErrs = append(allErrs, validateVpaSpec(&spec.Vpa, field.NewPath("spec.vpa"))...)
 
 	// TODO: More validations
 
 	return allErrs
 }
 
-func validateHpaTemplate(hpaSpec *v1alpha1.HpaSpec, fldPath *field.Path) field.ErrorList {
+func validateHpaSpec(hpaSpec *v1alpha1.HpaSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if hpaSpec.Selector == nil {
@@ -74,13 +74,13 @@ func validateHpaTemplate(hpaSpec *v1alpha1.HpaSpec, fldPath *field.Path) field.E
 	if err != nil {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("selector"), hpaSpec.Selector, "invalid label selector"))
 	} else {
-		allErrs = append(allErrs, validateHpaTemplateSpec(&hpaSpec.Template, selector, fldPath.Child("template"))...)
+		allErrs = append(allErrs, validateHpaSpecTemplate(&hpaSpec.Template, selector, fldPath.Child("template"))...)
 	}
 
 	return allErrs
 }
 
-func validateVpaTemplate(vpaSpec *v1alpha1.VpaSpec, fldPath *field.Path) field.ErrorList {
+func validateVpaSpec(vpaSpec *v1alpha1.VpaSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if vpaSpec.Selector == nil {
@@ -96,13 +96,13 @@ func validateVpaTemplate(vpaSpec *v1alpha1.VpaSpec, fldPath *field.Path) field.E
 	if err != nil {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("selector"), vpaSpec.Selector, "invalid label selector"))
 	} else {
-		allErrs = append(allErrs, validateVpaTemplateSpec(&vpaSpec.Template, selector, fldPath.Child("template"))...)
+		allErrs = append(allErrs, validateVpaSpecTemplate(&vpaSpec.Template, selector, fldPath.Child("template"))...)
 	}
 
 	return allErrs
 }
 
-func validateHpaTemplateSpec(template *v1alpha1.HpaTemplate, selector labels.Selector, fldPath *field.Path) field.ErrorList {
+func validateHpaSpecTemplate(template *v1alpha1.HpaTemplate, selector labels.Selector, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if template == nil {
 		allErrs = append(allErrs, field.Required(fldPath, ""))
@@ -114,7 +114,7 @@ func validateHpaTemplateSpec(template *v1alpha1.HpaTemplate, selector labels.Sel
 				allErrs = append(allErrs, field.Invalid(fldPath.Child("metadata", "labels"), template.Labels, "`selector` does not match template `labels`"))
 			}
 		}
-		allErrs = append(allErrs, validateHpaSpec(&template.Spec, fldPath.Child("spec"))...)
+		allErrs = append(allErrs, validateHpaTemplateSpec(&template.Spec, fldPath.Child("spec"))...)
 
 		allErrs = append(allErrs, v1validation.ValidateLabels(template.Labels, fldPath.Child("labels"))...)
 		allErrs = append(allErrs, apimachineryvalidation.ValidateAnnotations(template.Annotations, fldPath.Child("annotations"))...)
@@ -123,7 +123,7 @@ func validateHpaTemplateSpec(template *v1alpha1.HpaTemplate, selector labels.Sel
 	return allErrs
 }
 
-func validateHpaSpec(spec *v1alpha1.HpaTemplateSpec, fldPath *field.Path) field.ErrorList {
+func validateHpaTemplateSpec(spec *v1alpha1.HpaTemplateSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if spec == nil {
 		allErrs = append(allErrs, field.Required(fldPath, ""))
@@ -139,7 +139,7 @@ func validateHpaSpec(spec *v1alpha1.HpaTemplateSpec, fldPath *field.Path) field.
 	return allErrs
 }
 
-func validateVpaTemplateSpec(template *v1alpha1.VpaTemplate, selector labels.Selector, fldPath *field.Path) field.ErrorList {
+func validateVpaSpecTemplate(template *v1alpha1.VpaTemplate, selector labels.Selector, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if template == nil {
 		allErrs = append(allErrs, field.Required(fldPath, ""))

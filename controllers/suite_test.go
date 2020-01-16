@@ -133,7 +133,7 @@ func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync
 	return stop, wg
 }
 
-func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleParams, limitScale autoscalingv1alpha1.ScaleParams) *autoscalingv1alpha1.Hvpa {
+func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleParams) *autoscalingv1alpha1.Hvpa {
 	replica := int32(1)
 	util := int32(70)
 
@@ -183,7 +183,7 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 					},
 					Spec: autoscalingv1alpha1.HpaTemplateSpec{
 						MinReplicas: &replica,
-						MaxReplicas: 2,
+						MaxReplicas: 3,
 						Metrics: []autoscaling.MetricSpec{
 							autoscaling.MetricSpec{
 								Type: autoscaling.ResourceMetricSourceType,
@@ -217,7 +217,6 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 					StabilizationDuration: &stabilizationDur,
 					MinChange:             minChange,
 				},
-				LimitsRequestsGapScaleParams: limitScale,
 				Template: autoscalingv1alpha1.VpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
@@ -232,10 +231,11 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 	return instance
 }
 
-func newHpaStatus(currentReplicas, desiredReplicas int32) *autoscaling.HorizontalPodAutoscalerStatus {
+func newHpaStatus(currentReplicas, desiredReplicas int32, conditions []autoscaling.HorizontalPodAutoscalerCondition) *autoscaling.HorizontalPodAutoscalerStatus {
 	return &autoscaling.HorizontalPodAutoscalerStatus{
 		CurrentReplicas: currentReplicas,
 		DesiredReplicas: desiredReplicas,
+		Conditions:      conditions,
 	}
 }
 
@@ -262,7 +262,7 @@ func newVpaStatus(containerName, mem, cpu string) *vpa_api.VerticalPodAutoscaler
 	}
 }
 
-func newTarget(name, cpuLimit, memLimit, cpuReq, memReq string, replicas int32) *appsv1.Deployment {
+func newTarget(name string, resources v1.ResourceRequirements, replicas int32) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -284,18 +284,9 @@ func newTarget(name, cpuLimit, memLimit, cpuReq, memReq string, replicas int32) 
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
 						v1.Container{
-							Name:  name,
-							Image: "k8s.gcr.io/pause-amd64:3.0",
-							Resources: v1.ResourceRequirements{
-								Limits: v1.ResourceList{
-									v1.ResourceCPU:    resource.MustParse(cpuLimit),
-									v1.ResourceMemory: resource.MustParse(memLimit),
-								},
-								Requests: v1.ResourceList{
-									v1.ResourceCPU:    resource.MustParse(cpuReq),
-									v1.ResourceMemory: resource.MustParse(memReq),
-								},
-							},
+							Name:      name,
+							Image:     "k8s.gcr.io/pause-amd64:3.0",
+							Resources: resources,
 						},
 					},
 				},

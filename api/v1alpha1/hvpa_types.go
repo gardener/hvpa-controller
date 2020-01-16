@@ -50,6 +50,9 @@ const (
 	UpdateModeAuto string = "Auto"
 	// UpdateModeMaintenanceWindow means that HPA/VPA will only act during maintenance window.
 	UpdateModeMaintenanceWindow string = "MaintenanceWindow"
+
+	// UpdateModeDefault is the default update mode
+	UpdateModeDefault = UpdateModeAuto
 )
 
 // MaintenanceTimeWindow contains information about the time window for maintenance operations.

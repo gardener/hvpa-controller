@@ -223,6 +223,12 @@ func basicLabels(hvpa *hvpav1alpha1.Hvpa) prometheus.Labels {
 func basicDetailedLabels(hvpa *hvpav1alpha1.Hvpa) prometheus.Labels {
 	l := basicLabels(hvpa)
 
+	// Initialise to default update mode
+	l[labelHpaScaleUpUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
+	l[labelHpaScaleDownUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
+	l[labelVpaScaleUpUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
+	l[labelVpaScaleDownUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
+
 	if hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode != nil {
 		l[labelHpaScaleUpUpdatePolicy] = *hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode
 	}
