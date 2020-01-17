@@ -225,6 +225,18 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 					},
 				},
 			},
+			WeightBasedScalingIntervals: []autoscalingv1alpha1.WeightBasedScalingInterval{
+				{
+					StartReplicaCount: 1,
+					LastReplicaCount:  2,
+					VpaWeight:         30,
+				},
+				{
+					StartReplicaCount: 2,
+					LastReplicaCount:  3,
+					VpaWeight:         80,
+				},
+			},
 		},
 	}
 
@@ -272,13 +284,13 @@ func newTarget(name string, resources v1.ResourceRequirements, replicas int32) *
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"name": "testDeployment",
+					"name": name,
 				},
 			},
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"name": "testDeployment",
+						"name": name,
 					},
 				},
 				Spec: v1.PodSpec{

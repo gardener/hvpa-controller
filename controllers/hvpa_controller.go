@@ -115,7 +115,7 @@ func isOomKillEvent(oldPod, newPod *corev1.Pod) bool {
 			containerStatus.LastTerminationState.Terminated.Reason == "OOMKilled" {
 
 			oldStatus := findStatus(containerStatus.Name, oldPod.Status.ContainerStatuses)
-			if oldStatus != nil && containerStatus.RestartCount > oldStatus.RestartCount {
+			if oldStatus == nil || (oldStatus != nil && containerStatus.RestartCount > oldStatus.RestartCount) {
 				return true
 			}
 		}
@@ -921,6 +921,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				negDiffMem := resource.NewQuantity(-vpaMemTarget.Value()*scale/factor, vpaMemTarget.Format)
 				currMem.Add(*diffMem)
 				weightedMem := currMem
+				weightedMem.SetScaled(weightedMem.ScaledValue(resource.Kilo), resource.Kilo)
 
 				scaleUpMinDeltaCPU, _ := getThreshold(&hvpa.Spec.Vpa.ScaleUp.MinChange.CPU, corev1.ResourceCPU, currCPU)
 				scaleDownMinDeltaCPU, _ := getThreshold(&hvpa.Spec.Vpa.ScaleDown.MinChange.CPU, corev1.ResourceCPU, currCPU)
@@ -931,11 +932,14 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				negDiffCPU.SetScaled(negDiffCPU.Value(), -3)
 				currCPU.Add(*diffCPU)
 				weightedCPU := currCPU
+				_ = weightedCPU.String() // cache string q.s
 
 				weightedReq := corev1.ResourceList{
 					corev1.ResourceCPU:    weightedCPU,
 					corev1.ResourceMemory: weightedMem,
 				}
+
+				initialzeIfRequired(&container.Resources)
 
 				newLimits := getScaledLimits(container.Resources.Limits, currReq, weightedReq, hvpa.Spec.Vpa.LimitsRequestsGapScaleParams)
 
@@ -968,7 +972,9 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					} else {
 						log.V(2).Info("VPA", "Scaling up", "memory", "Container", container.Name)
 						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
-						newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = *newLimits.Memory()
+						if val, ok := (newLimits)[corev1.ResourceMemory]; ok {
+							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = val
+						}
 						// Override VPA status in outVpaStatus with weighted value
 						outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
 						resourceChange = true
@@ -994,7 +1000,9 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					} else {
 						log.V(2).Info("VPA", "Scaling down", "memory", "Container", container.Name)
 						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
-						newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = *newLimits.Memory()
+						if val, ok := (newLimits)[corev1.ResourceMemory]; ok {
+							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = val
+						}
 						// Override VPA status in outVpaStatus with weighted value
 						outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
 						resourceChange = true
@@ -1026,7 +1034,9 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					} else {
 						log.V(2).Info("VPA", "Scaling up", "CPU", "Container", container.Name)
 						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
-						newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = *newLimits.Cpu()
+						if val, ok := (newLimits)[corev1.ResourceCPU]; ok {
+							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = val
+						}
 						// Override VPA status in outVpaStatus with weighted value
 						outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 						resourceChange = true
@@ -1052,7 +1062,9 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					} else {
 						log.V(2).Info("VPA", "Scaling down", "CPU", "Container", container.Name)
 						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
-						newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = *newLimits.Cpu()
+						if val, ok := (newLimits)[corev1.ResourceCPU]; ok {
+							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = val
+						}
 						// Override VPA status in outVpaStatus with weighted value
 						outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
 						resourceChange = true
@@ -1100,6 +1112,15 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	return nil, false, nil, nil
 }
 
+func initialzeIfRequired(resources *corev1.ResourceRequirements) {
+	if resources.Requests == nil {
+		resources.Requests = corev1.ResourceList{}
+	}
+	if resources.Limits == nil {
+		resources.Limits = corev1.ResourceList{}
+	}
+}
+
 func getScaledLimits(currLimits, currReq, weightedReq corev1.ResourceList, scaleParams autoscalingv1alpha1.ScaleParams) corev1.ResourceList {
 	cpuLimit, msg := getScaledResourceLimit(corev1.ResourceCPU, currLimits.Cpu(), currReq.Cpu(), weightedReq.Cpu(), &scaleParams.CPU)
 	if msg != "" {
@@ -1112,6 +1133,7 @@ func getScaledLimits(currLimits, currReq, weightedReq corev1.ResourceList, scale
 
 	result := corev1.ResourceList{}
 	if cpuLimit != nil {
+		_ = cpuLimit.String() // cache string q.s
 		result[corev1.ResourceCPU] = *cpuLimit
 	}
 	if memLimit != nil {
@@ -1410,7 +1432,7 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			clone := hvpa.DeepCopy()
 
 			hvpaStatus := clone.Status
-			if hvpaStatus.LastScaling.LastScaleTime == nil || hvpaStatus.OverrideScaleUpStabilization == true {
+			if hvpaStatus.OverrideScaleUpStabilization == true {
 				log.V(4).Info("HVPA status already set to override last scale time.")
 				return nil
 			}
@@ -1449,8 +1471,9 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 					if containerStatus.RestartCount > 0 &&
 						containerStatus.LastTerminationState.Terminated != nil &&
 						containerStatus.LastTerminationState.Terminated.Reason == "OOMKilled" &&
-						clone.Status.LastScaling.LastScaleTime != nil &&
-						containerStatus.LastTerminationState.Terminated.FinishedAt.After(clone.Status.LastScaling.LastScaleTime.Time) {
+						(clone.Status.LastScaling.LastScaleTime == nil ||
+							clone.Status.LastScaling.LastScaleTime != nil &&
+								containerStatus.LastTerminationState.Terminated.FinishedAt.After(clone.Status.LastScaling.LastScaleTime.Time)) {
 
 						recent = true
 						break
@@ -1465,7 +1488,7 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			clone.Status.OverrideScaleUpStabilization = true
 
 			log.V(2).Info("Updating HVPA status to override last scale time", "HVPA", clone.Name)
-			err = client.Update(context.TODO(), clone)
+			err = client.Status().Update(context.TODO(), clone)
 			if err != nil {
 				log.Error(err, "Error overrinding last scale time for", "HVPA", name)
 			}

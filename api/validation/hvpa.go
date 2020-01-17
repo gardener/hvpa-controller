@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"github.com/gardener/hvpa-controller/api/v1alpha1"
+	"github.com/gardener/hvpa-controller/utils"
 	apimachineryvalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
@@ -50,10 +51,26 @@ func validateHvpaSpec(spec *v1alpha1.HvpaSpec, fldPath *field.Path) field.ErrorL
 		allErrs = append(allErrs, field.Required(fldPath.Child("targetRef"), "TargetRef is required"))
 	}
 
+	allErrs = append(allErrs, validateMaintenanceWindow(spec.MaintenanceTimeWindow, field.NewPath("spec.maintenanceTimeWindow"))...)
 	allErrs = append(allErrs, validateHpaSpec(&spec.Hpa, field.NewPath("spec.hpa"))...)
 	allErrs = append(allErrs, validateVpaSpec(&spec.Vpa, field.NewPath("spec.vpa"))...)
 
 	// TODO: More validations
+
+	return allErrs
+}
+
+func validateMaintenanceWindow(maintenance *v1alpha1.MaintenanceTimeWindow, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	if maintenance == nil {
+		return allErrs
+	}
+
+	_, err := utils.ParseMaintenanceTimeWindow(maintenance.Begin, maintenance.End)
+	if err != nil {
+		allErrs = append(allErrs, field.Invalid(fldPath.Child("begin/end"), maintenance, err.Error()))
+	}
 
 	return allErrs
 }
