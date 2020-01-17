@@ -702,11 +702,22 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 		lastScaleTime = &metav1.Time{}
 	}
 	lastScaleTimeDuration := metav1.Now().Sub(lastScaleTime.Time)
-	scaleUpStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.Hpa.ScaleUp.StabilizationDuration)
-	scaleDownStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.Hpa.ScaleDown.StabilizationDuration)
 
-	scaleUpUpdateMode := *hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode
-	scaleDownUpdateMode := *hvpa.Spec.Hpa.ScaleDown.UpdatePolicy.UpdateMode
+	scaleUpStabilizationWindow, scaleDownStabilizationWindow := time.Duration(0), time.Duration(0)
+	if hvpa.Spec.Hpa.ScaleUp.StabilizationDuration != nil {
+		scaleUpStabilizationWindow, _ = time.ParseDuration(*hvpa.Spec.Hpa.ScaleUp.StabilizationDuration)
+	}
+	if hvpa.Spec.Hpa.ScaleDown.StabilizationDuration != nil {
+		scaleDownStabilizationWindow, _ = time.ParseDuration(*hvpa.Spec.Hpa.ScaleDown.StabilizationDuration)
+	}
+
+	scaleUpUpdateMode, scaleDownUpdateMode := autoscalingv1alpha1.UpdateModeDefault, autoscalingv1alpha1.UpdateModeDefault
+	if hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode != nil {
+		scaleUpUpdateMode = *hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode
+	}
+	if hvpa.Spec.Hpa.ScaleDown.UpdatePolicy.UpdateMode != nil {
+		scaleDownUpdateMode = *hvpa.Spec.Hpa.ScaleDown.UpdatePolicy.UpdateMode
+	}
 
 	if hvpa.Spec.MaintenanceTimeWindow != nil {
 		maintenanceWindow, err = utils.ParseMaintenanceTimeWindow(hvpa.Spec.MaintenanceTimeWindow.Begin, hvpa.Spec.MaintenanceTimeWindow.End)
@@ -862,8 +873,22 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 		lastScaleTime = &metav1.Time{}
 	}
 	lastScaleTimeDuration := time.Now().Sub(lastScaleTime.Time)
-	scaleUpStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.Vpa.ScaleUp.StabilizationDuration)
-	scaleDownStabilizationWindow, _ := time.ParseDuration(*hvpa.Spec.Vpa.ScaleDown.StabilizationDuration)
+
+	scaleUpStabilizationWindow, scaleDownStabilizationWindow := time.Duration(0), time.Duration(0)
+	if hvpa.Spec.Vpa.ScaleUp.StabilizationDuration != nil {
+		scaleUpStabilizationWindow, _ = time.ParseDuration(*hvpa.Spec.Vpa.ScaleUp.StabilizationDuration)
+	}
+	if hvpa.Spec.Vpa.ScaleDown.StabilizationDuration != nil {
+		scaleDownStabilizationWindow, _ = time.ParseDuration(*hvpa.Spec.Vpa.ScaleDown.StabilizationDuration)
+	}
+
+	scaleUpUpdateMode, scaleDownUpdateMode := autoscalingv1alpha1.UpdateModeDefault, autoscalingv1alpha1.UpdateModeDefault
+	if hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode != nil {
+		scaleUpUpdateMode = *hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode
+	}
+	if hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode != nil {
+		scaleDownUpdateMode = *hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode
+	}
 
 	resourceChange := false
 
@@ -952,7 +977,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					blockedByWeight = true
 
 				} else if diffMem.Sign() > 0 {
-					if hpaScaleOutLimited == false || *hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeOff {
+					if hpaScaleOutLimited == false || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
 						outTargetUpdatePolicy[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByUpdatePolicy = true
 
@@ -960,7 +985,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						outTargetStabilizationWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByStabilizationWindow = true
 
-					} else if *hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+					} else if scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
 						!maintenanceTimeWindow.Contains(time.Now()) {
 						outTargetMaintenanceWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByMaintenanceWindow = true
@@ -980,7 +1005,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						resourceChange = true
 					}
 				} else if diffMem.Sign() < 0 {
-					if *hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeOff {
+					if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeOff {
 						outTargetUpdatePolicy[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByUpdatePolicy = true
 
@@ -988,7 +1013,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						outTargetStabilizationWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByStabilizationWindow = true
 
-					} else if *hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+					} else if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
 						!maintenanceTimeWindow.Contains(time.Now()) {
 						outTargetMaintenanceWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByMaintenanceWindow = true
@@ -1014,7 +1039,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					blockedByWeight = true
 
 				} else if diffCPU.Sign() > 0 {
-					if hpaScaleOutLimited == false || *hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeOff {
+					if hpaScaleOutLimited == false || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
 						outTargetUpdatePolicy[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByUpdatePolicy = true
 
@@ -1022,7 +1047,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						outTargetStabilizationWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByStabilizationWindow = true
 
-					} else if *hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+					} else if scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
 						!maintenanceTimeWindow.Contains(time.Now()) {
 						outTargetMaintenanceWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByMaintenanceWindow = true
@@ -1042,7 +1067,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						resourceChange = true
 					}
 				} else if diffCPU.Sign() < 0 {
-					if *hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeOff {
+					if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeOff {
 						outTargetUpdatePolicy[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByUpdatePolicy = true
 
@@ -1050,7 +1075,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						outTargetStabilizationWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByStabilizationWindow = true
 
-					} else if *hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+					} else if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
 						!maintenanceTimeWindow.Contains(time.Now()) {
 						outTargetMaintenanceWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByMaintenanceWindow = true
@@ -1222,7 +1247,7 @@ func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeParams, resourceType 
 		defaultCPUThreshold string = "200m"
 	)
 	var quantity resource.Quantity
-	if thresholdVals == nil {
+	if thresholdVals == nil || (thresholdVals.Value == nil && thresholdVals.Percentage == nil) {
 		if resourceType == corev1.ResourceMemory {
 			// Set to default
 			quantity = resource.MustParse(defaultMemThreshold)
@@ -1234,7 +1259,7 @@ func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeParams, resourceType 
 		return &quantity, nil
 	}
 
-	if thresholdVals.Percentage == nil {
+	if thresholdVals.Percentage == nil && thresholdVals.Value != nil {
 		quantity = resource.MustParse(*thresholdVals.Value)
 		return &quantity, nil
 	}

@@ -18,14 +18,16 @@ limitations under the License.
 package validation
 
 import (
-	"k8s.io/apimachinery/pkg/util/validation/field"
+	"time"
 
 	"github.com/gardener/hvpa-controller/api/v1alpha1"
 	"github.com/gardener/hvpa-controller/utils"
+	"k8s.io/apimachinery/pkg/api/resource"
 	apimachineryvalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
 // ValidateHvpa validates a HVPA and returns a list of errors.
@@ -87,12 +89,74 @@ func validateHpaSpec(hpaSpec *v1alpha1.HpaSpec, fldPath *field.Path) field.Error
 		}
 	}
 
+	allErrs = append(allErrs, validateScaleType(&hpaSpec.ScaleUp, fldPath.Child("scaleUp"))...)
+	allErrs = append(allErrs, validateScaleType(&hpaSpec.ScaleDown, fldPath.Child("scaleDown"))...)
+
 	selector, err := metav1.LabelSelectorAsSelector(hpaSpec.Selector)
 	if err != nil {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("selector"), hpaSpec.Selector, "invalid label selector"))
 	} else {
 		allErrs = append(allErrs, validateHpaSpecTemplate(&hpaSpec.Template, selector, fldPath.Child("template"))...)
 	}
+
+	return allErrs
+}
+
+func validateScaleParams(scaleParams *v1alpha1.ScaleParams, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if scaleParams == nil {
+		return allErrs
+	}
+
+	if scaleParams.CPU.Value != nil {
+		if _, err := resource.ParseQuantity(*scaleParams.CPU.Value); err != nil {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("cpu", "value"), *scaleParams.CPU.Value, "Invalid min CPU change"))
+		}
+	}
+	if scaleParams.CPU.Percentage != nil {
+		if *scaleParams.CPU.Percentage < 0 {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("cpu", "percentage"), *scaleParams.CPU.Percentage, "Invalid min CPU change"))
+		}
+	}
+	if scaleParams.Memory.Value != nil {
+		if _, err := resource.ParseQuantity(*scaleParams.Memory.Value); err != nil {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("memory", "value"), *scaleParams.Memory.Value, "Invalid min memory change"))
+		}
+	}
+	if scaleParams.Memory.Percentage != nil {
+		if *scaleParams.Memory.Percentage < 0 {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("memory", "percentage"), *scaleParams.Memory.Percentage, "Invalid min memory change"))
+		}
+	}
+
+	return allErrs
+}
+
+func validateScaleType(scaleType *v1alpha1.ScaleType, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if scaleType == nil {
+		return allErrs
+	}
+
+	if scaleType.UpdatePolicy.UpdateMode != nil &&
+		*scaleType.UpdatePolicy.UpdateMode != v1alpha1.UpdateModeAuto &&
+		*scaleType.UpdatePolicy.UpdateMode != v1alpha1.UpdateModeOff &&
+		*scaleType.UpdatePolicy.UpdateMode != v1alpha1.UpdateModeMaintenanceWindow {
+		validVals := []string{
+			v1alpha1.UpdateModeAuto,
+			v1alpha1.UpdateModeOff,
+			v1alpha1.UpdateModeMaintenanceWindow,
+		}
+		allErrs = append(allErrs, field.NotSupported(fldPath.Child("updatePolicy", "updateMode"), *scaleType.UpdatePolicy.UpdateMode, validVals))
+	}
+
+	if scaleType.StabilizationDuration != nil {
+		if _, err := time.ParseDuration(*scaleType.StabilizationDuration); err != nil {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("stabilizationDuration"), *scaleType.StabilizationDuration, "invalid stabilization duration"))
+		}
+	}
+
+	allErrs = append(allErrs, validateScaleParams(&scaleType.MinChange, fldPath.Child("minChange"))...)
 
 	return allErrs
 }
@@ -115,6 +179,10 @@ func validateVpaSpec(vpaSpec *v1alpha1.VpaSpec, fldPath *field.Path) field.Error
 	} else {
 		allErrs = append(allErrs, validateVpaSpecTemplate(&vpaSpec.Template, selector, fldPath.Child("template"))...)
 	}
+
+	allErrs = append(allErrs, validateScaleType(&vpaSpec.ScaleUp, fldPath.Child("scaleUp"))...)
+	allErrs = append(allErrs, validateScaleType(&vpaSpec.ScaleDown, fldPath.Child("scaleDown"))...)
+	allErrs = append(allErrs, validateScaleParams(&vpaSpec.LimitsRequestsGapScaleParams, fldPath.Child("limitsRequestsGapScaleParams"))...)
 
 	return allErrs
 }

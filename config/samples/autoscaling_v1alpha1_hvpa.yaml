@@ -7,7 +7,7 @@ metadata:
   namespace: default
 spec:
   replicas: 1
-  maintenanceWindow:
+  maintenanceTimeWindow:
     begin: "220000-0000"
     end:  "230000-0000"
   hpa:
