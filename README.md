@@ -101,7 +101,7 @@ kind: Hvpa
 metadata:
   name: hvpa-sample
 spec:
-  maintenanceWindow:
+  maintenanceTimeWindow:
     begin: "220000-0000"
     end:  "230000-0000"
   hpa:
@@ -133,8 +133,6 @@ spec:
             name: cpu
             targetAverageUtilization: 50
           type: Resource
-    updatePolicy:
-      updateMode: "Auto"
  vpa:
     deploy: true
     selector:
@@ -181,8 +179,6 @@ spec:
                 memory: 400Mi
               maxAllowed:
                 memory: 3000Mi
-    updatePolicy:
-      updateMode: "scaleUp"
   weightBasedScalingIntervals:
     - vpaWeight: 0
       startReplicaCount: 1
