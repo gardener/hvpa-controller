@@ -24,9 +24,6 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -36,37 +33,9 @@ var _ = Describe("#Adopt VPA", func() {
 
 	DescribeTable("##AdoptVPA",
 		func(instance *autoscalingv1alpha1.Hvpa) {
-
-			replica := int32(1)
-			deploytest := &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "deploy-test-3",
-					Namespace: "default",
-				},
-				Spec: appsv1.DeploymentSpec{
-					Replicas: &replica,
-					Selector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"name": "testDeployment",
-						},
-					},
-					Template: v1.PodTemplateSpec{
-						ObjectMeta: metav1.ObjectMeta{
-							Labels: map[string]string{
-								"name": "testDeployment",
-							},
-						},
-						Spec: v1.PodSpec{
-							Containers: []v1.Container{
-								v1.Container{
-									Name:  "pause",
-									Image: "k8s.gcr.io/pause-amd64:3.0",
-								},
-							},
-						},
-					},
-				},
-			}
+			deploytest := target.DeepCopy()
+			// Overwrite name
+			deploytest.Name = "deploy-test-3"
 
 			c := mgr.GetClient()
 			// Create the test deployment
@@ -133,6 +102,6 @@ var _ = Describe("#Adopt VPA", func() {
 				return nil
 			}, timeout).Should(Succeed())
 		},
-		Entry("hvpa", newHvpa("hvpa-3", "deploy-test-3", "label-3")),
+		Entry("vpa", newHvpa("hvpa-3", "deploy-test-3", "label-3", minChange)),
 	)
 })

@@ -101,26 +101,22 @@ kind: Hvpa
 metadata:
   name: hvpa-sample
 spec:
-  scaleUpStabilization:
-    duration: "2m"
-    minCpuChange:
-      value: 200m
-      percentage: 70
-    minMemChange:
-      value: 200M
-      percentage: 80
-  scaleDownStabilization:
-    duration: "3m"
-    minCpuChange:
-      value: 300m
-      percentage: 80
-    minMemChange:
-      value: 400M
-      percentage: 90
+  maintenanceWindow:
+    begin: "220000-0000"
+    end:  "230000-0000"
   hpa:
+    deploy: true
     selector:
       matchLabels:
         key1: value1
+    scaleUp:
+      updatePolicy:
+        updateMode: "Auto"
+      stabilizationDuration: "2m"
+    scaleDown:
+      updatePolicy:
+        updateMode: "Auto"
+      stabilizationDuration: "3m"
     template:
       metadata:
         labels:
@@ -140,9 +136,32 @@ spec:
     updatePolicy:
       updateMode: "Auto"
  vpa:
+    deploy: true
     selector:
       matchLabels:
         key2: value2
+    scaleUp:
+      updatePolicy:
+        updateMode: "Auto"
+      stabilizationDuration: "2m"
+      minChange:
+        cpu:
+          value: "3"
+          percentage: 80
+        memory:
+          value: "3"
+          percentage: 80
+    scaleDown:
+      updatePolicy:
+        updateMode: "MaintenanceWindow"
+      stabilizationDuration: "3m"
+      minChange:
+        cpu:
+          value: "3"
+          percentage: 80
+        memory:
+          value: "3"
+          percentage: 80
     limitsRequestsGapScaleParams:
       cpu:
         percentage: 80
