@@ -78,7 +78,7 @@ func (r *HvpaReconciler) UpdateHpaWithRetries(namespace, name string, applyUpdat
 	// Ignore the precondition violated error, this machine is already updated
 	// with the desired label.
 	if retryErr == errorsutil.ErrPreconditionViolated {
-		log.V(4).Info("Hpa %s precondition doesn't hold, skip updating it.", name)
+		log.V(4).Info("Hpa %s precondition doesn't hold, skip updating it.", namespace+"/"+name)
 		retryErr = nil
 	}
 
@@ -98,7 +98,7 @@ func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutosca
 			if err != nil {
 				return fmt.Errorf("error in updating hpaTemplateSpec to hpa %q: %v", hpa.Name, err)
 			}
-			log.V(2).Info("HPA spec sync", "HPA", hpa.Name, "HVPA", hvpa.Name)
+			log.V(2).Info("HPA spec sync", "HPA", hpa.Name, "HVPA", hvpa.Namespace+"/"+hvpa.Name)
 		}
 	}
 	return nil
@@ -113,11 +113,11 @@ func getHpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodA
 	}
 
 	if generateName := metadata.GetGenerateName(); len(generateName) != 0 {
-		log.V(3).Info("Warning", "Generate name provided in the hpa template will be ignored", generateName)
+		log.V(3).Info("Warning", "Generate name provided in the hpa template will be ignored", metadata.Namespace+"/"+generateName)
 	}
 
 	if name := metadata.GetName(); len(name) != 0 {
-		log.V(3).Info("Warning", "Name provided in the hpa template will be ignored", name)
+		log.V(3).Info("Warning", "Name provided in the hpa template will be ignored", metadata.Namespace+"/"+name)
 		metadata.SetName("")
 	}
 
