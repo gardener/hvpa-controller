@@ -522,7 +522,7 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	blockedScaling := &[]*autoscalingv1alpha1.BlockedScaling{}
 
 	// Memory for newPodSpec is assigned in the function getWeightedRequests
-	newPodSpec, resourcesChanged, vpaStatus, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, podSpec, hpaScaleOutLimited, blockedScaling)
+	newPodSpec, resourcesChanged, vpaStatus, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, currentReplicas, podSpec, hpaScaleOutLimited, blockedScaling)
 	if err != nil {
 		log.Error(err, "Error in getting weight based requests in new deployment", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 	}
@@ -837,7 +837,7 @@ func appendToBlockedScaling(blockedScaling **autoscalingv1alpha1.BlockedScaling,
 // otherwise it returns nil
 // The "blockedScaling" arg is populated with the reasons for blocking vertical scaling with the following priority order:
 // Weight > UpdatePolicy > StabilizationWindow > MaintenanceWindow > MinChanged
-func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, podSpec *corev1.PodSpec, hpaScaleOutLimited bool, blockedScaling *[]*autoscalingv1alpha1.BlockedScaling) (*corev1.PodSpec, bool, *vpa_api.VerticalPodAutoscalerStatus, error) {
+func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, currentReplicas int32, podSpec *corev1.PodSpec, hpaScaleOutLimited bool, blockedScaling *[]*autoscalingv1alpha1.BlockedScaling) (*corev1.PodSpec, bool, *vpa_api.VerticalPodAutoscalerStatus, error) {
 	log.V(2).Info("Checking if need to scale vertically", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 	if vpaStatus == nil || vpaStatus.Recommendation == nil {
 		log.V(2).Info("VPA: Nothing to do", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
@@ -973,8 +973,32 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				log.V(3).Info("VPA scale up", "minimum CPU delta", scaleUpMinDeltaCPU.String(), "minimum memory delta", scaleUpMinDeltaMem, "HPA condition ScalingLimited", hpaScaleOutLimited, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 
 				if vpaWeight == 0 {
-					outTargetWeight[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-					blockedByWeight = true
+					weightedMem.Sub(*rec.Target.Memory())
+					if currentReplicas == *hvpa.Spec.Hpa.Template.Spec.MinReplicas &&
+						scaleDownMinDeltaMem.Cmp(weightedMem) < 0 &&
+						(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeAuto ||
+							(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow && maintenanceTimeWindow.Contains(time.Now()))) {
+						// Scale down is forcefully done even if vpaWeight == 0 when:
+						// 1. currentReplicas == minReplicas
+						// 2. VPA has lower recommendations and minChange supports it
+						// 3. UpdateMode supports it
+						// TODO: This is a temporary fix to enable scale down when vpaWeight == 0. Needs to be revisited via spec
+						log.V(2).Info("VPA", "Forcefully scaling down", "memory", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+						newLimits := getScaledLimits(container.Resources.Limits, currReq, rec.Target, hvpa.Spec.Vpa.LimitsRequestsGapScaleParams)
+						if val, ok := (newLimits)[corev1.ResourceMemory]; ok {
+							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = val
+						}
+						// Override VPA status in outVpaStatus with weighted value
+						outTarget[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+						resourceChange = true
+					} else if weightedMem.Value() < 1000 {
+						// Round off 1KB of delta.
+						log.V(4).Info("VPA", "No change recommended in", "Memory", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+					} else {
+						outTargetWeight[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+						blockedByWeight = true
+					}
 
 				} else if diffMem.Sign() > 0 {
 					if hpaScaleOutLimited == false || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
@@ -1035,8 +1059,31 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				}
 
 				if vpaWeight == 0 {
-					outTargetWeight[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-					blockedByWeight = true
+					weightedCPU.Sub(*rec.Target.Cpu())
+					if currentReplicas == *hvpa.Spec.Hpa.Template.Spec.MinReplicas &&
+						scaleDownMinDeltaCPU.Cmp(weightedCPU) < 0 &&
+						(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeAuto ||
+							(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow && maintenanceTimeWindow.Contains(time.Now()))) {
+						// Scale down is forcefully done even if vpaWeight == 0 when:
+						// 1. currentReplicas == minReplicas
+						// 2. VPA has lower recommendations and minChange supports it
+						// 3. UpdateMode supports it
+						// TODO: This is a temporary fix to enable scale down when vpaWeight == 0. Needs to be revisited via spec
+						log.V(2).Info("VPA", "ForceFully scaling down", "CPU", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+						newLimits := getScaledLimits(container.Resources.Limits, currReq, rec.Target, hvpa.Spec.Vpa.LimitsRequestsGapScaleParams)
+						if val, ok := (newLimits)[corev1.ResourceCPU]; ok {
+							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = val
+						}
+						// Override VPA status in outVpaStatus with weighted value
+						outTarget[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+						resourceChange = true
+					} else if weightedCPU.Value() == 0 {
+						log.V(4).Info("VPA", "No change recommended in", "CPU", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+					} else {
+						outTargetWeight[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+						blockedByWeight = true
+					}
 
 				} else if diffCPU.Sign() > 0 {
 					if hpaScaleOutLimited == false || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
