@@ -977,7 +977,8 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					if currentReplicas == *hvpa.Spec.Hpa.Template.Spec.MinReplicas &&
 						scaleDownMinDeltaMem.Cmp(weightedMem) < 0 &&
 						(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeAuto ||
-							(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow && maintenanceTimeWindow.Contains(time.Now()))) {
+							(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+								maintenanceTimeWindow != nil && maintenanceTimeWindow.Contains(time.Now()))) {
 						// Scale down is forcefully done even if vpaWeight == 0 when:
 						// 1. currentReplicas == minReplicas
 						// 2. VPA has lower recommendations and minChange supports it
@@ -1010,7 +1011,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						blockedByStabilizationWindow = true
 
 					} else if scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
-						!maintenanceTimeWindow.Contains(time.Now()) {
+						(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
 						outTargetMaintenanceWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByMaintenanceWindow = true
 
@@ -1038,7 +1039,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						blockedByStabilizationWindow = true
 
 					} else if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
-						!maintenanceTimeWindow.Contains(time.Now()) {
+						(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
 						outTargetMaintenanceWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByMaintenanceWindow = true
 
@@ -1063,7 +1064,8 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 					if currentReplicas == *hvpa.Spec.Hpa.Template.Spec.MinReplicas &&
 						scaleDownMinDeltaCPU.Cmp(weightedCPU) < 0 &&
 						(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeAuto ||
-							(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow && maintenanceTimeWindow.Contains(time.Now()))) {
+							(scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+								maintenanceTimeWindow != nil && maintenanceTimeWindow.Contains(time.Now()))) {
 						// Scale down is forcefully done even if vpaWeight == 0 when:
 						// 1. currentReplicas == minReplicas
 						// 2. VPA has lower recommendations and minChange supports it
@@ -1095,7 +1097,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						blockedByStabilizationWindow = true
 
 					} else if scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
-						!maintenanceTimeWindow.Contains(time.Now()) {
+						(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
 						outTargetMaintenanceWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByMaintenanceWindow = true
 
@@ -1123,7 +1125,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						blockedByStabilizationWindow = true
 
 					} else if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
-						!maintenanceTimeWindow.Contains(time.Now()) {
+						(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
 						outTargetMaintenanceWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByMaintenanceWindow = true
 
