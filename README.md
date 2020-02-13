@@ -1,5 +1,8 @@
 # hvpa-controller
 
+[![CI Build status](https://concourse.ci.infra.gardener.cloud/api/v1/teams/gardener/pipelines/hvpa-controller-master/jobs/master-head-update-job/badge)](https://concourse.ci.infra.gardener.cloud/teams/gardener/pipelines/hvpa-controller-master/jobs/master-head-update-job)
+[![Go Report Card](https://goreportcard.com/badge/github.com/gardener/hvpa-controller)](https://goreportcard.com/report/github.com/gardener/hvpa-controller)
+
 ### Goals
 1. The goal of HVPA is to re-use the upstream components [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler) as much as possible for scaling components horizontally and vertically respectively.
    1. HPA for recommendation and scaling horizontally.
