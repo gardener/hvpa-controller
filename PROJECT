@@ -1,7 +1,0 @@
-version: "2"
-domain: k8s.io
-repo: github.com/gardener/hvpa-controller
-resources:
-- group: autoscaling
-  version: v1alpha1
-  kind: Hvpa
