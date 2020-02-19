@@ -866,6 +866,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 		log.V(2).Info("VPA", "will override last scale time in case of scale up", overrideScaleUpStabilization, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 		if vpaWeight == 0 {
 			log.V(2).Info("VPA", "will override vpaWeight from 0 to 1", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+			hpaScaleOutLimited = true
 			vpaWeight = 1
 		}
 	}
