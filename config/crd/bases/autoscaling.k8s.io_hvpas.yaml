@@ -1030,7 +1030,7 @@ spec:
                 type: object
               type: array
             lastError:
-              description: LastError has details of any errors that occured
+              description: LastError has details of any errors that occurred
               properties:
                 description:
                   description: Description of the error
