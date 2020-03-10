@@ -863,10 +863,11 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	lastScaleTime := hvpa.Status.LastScaling.LastScaleTime
 	overrideScaleUpStabilization := hvpa.Status.OverrideScaleUpStabilization
 	if overrideScaleUpStabilization {
+		// Consider HPA to be limited if we have seen oomkill or liveness probe fails already.
+		hpaScaleOutLimited = true
 		log.V(2).Info("VPA", "will override last scale time in case of scale up", overrideScaleUpStabilization, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 		if vpaWeight == 0 {
 			log.V(2).Info("VPA", "will override vpaWeight from 0 to 1", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-			hpaScaleOutLimited = true
 			vpaWeight = 1
 		}
 	}
