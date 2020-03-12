@@ -385,8 +385,8 @@ var _ = Describe("#TestReconcile", func() {
 				},
 				action: action{
 					maintenanceWindow: &autoscalingv1alpha1.MaintenanceTimeWindow{
-						Begin: utils.NewMaintenanceTime(time.Now().UTC().Hour()+3, 0, 0).Formatted(),
-						End:   utils.NewMaintenanceTime(time.Now().UTC().Hour()+4, 0, 0).Formatted(),
+						Begin: utils.NewMaintenanceTime((time.Now().UTC().Hour()+3)%24, 0, 0).Formatted(),
+						End:   utils.NewMaintenanceTime((time.Now().UTC().Hour()+4)%24, 0, 0).Formatted(),
 					},
 					updateMode: autoscalingv1alpha1.UpdateModeMaintenanceWindow,
 				},
