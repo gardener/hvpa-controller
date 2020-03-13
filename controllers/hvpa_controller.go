@@ -1017,7 +1017,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						outTargetMaintenanceWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByMaintenanceWindow = true
 
-					} else if diffMem.Cmp(*scaleUpMinDeltaMem) < 0 {
+					} else if overrideScaleUpStabilization == false && diffMem.Cmp(*scaleUpMinDeltaMem) < 0 {
 						outTargetMinChanged[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByMinChange = true
 
@@ -1103,7 +1103,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 						outTargetMaintenanceWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByMaintenanceWindow = true
 
-					} else if diffCPU.Cmp(*scaleUpMinDeltaCPU) < 0 {
+					} else if overrideScaleUpStabilization == false && diffCPU.Cmp(*scaleUpMinDeltaCPU) < 0 {
 						outTargetMinChanged[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByMinChange = true
 
