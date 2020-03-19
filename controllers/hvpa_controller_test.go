@@ -291,7 +291,7 @@ var _ = Describe("#TestReconcile", func() {
 				Expect(scaleOutLimited).To(Equal(data.expect.scaleOutLimited))
 
 				blockedScaling := &[]*autoscalingv1alpha1.BlockedScaling{}
-				podSpec, resourceChanged, vpaStatus, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, *target.Spec.Replicas, &target.Spec.Template.Spec, scaleOutLimited, blockedScaling)
+				podSpec, resourceChanged, vpaStatus, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, &target.Spec.Template.Spec, scaleOutLimited, blockedScaling)
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resourceChanged).To(Equal(data.expect.resourceChange))
