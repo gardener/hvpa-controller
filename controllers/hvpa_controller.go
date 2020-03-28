@@ -461,8 +461,7 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	vpaStatus *vpa_api.VerticalPodAutoscalerStatus,
 	hvpa *autoscalingv1alpha1.Hvpa,
 	target runtime.Object,
-) (*autoscaling.HorizontalPodAutoscalerStatus,
-	*vpa_api.VerticalPodAutoscalerStatus,
+) (*autoscalingv1alpha1.ScalingStatus,
 	bool, bool,
 	autoscalingv1alpha1.VpaWeight,
 	*[]*autoscalingv1alpha1.BlockedScaling,
@@ -503,14 +502,14 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	default:
 		err := fmt.Errorf("TargetRef kind not supported %v in hvpa %v", kind, hvpa.Namespace+"/"+hvpa.Name)
 		log.Error(err, "Error")
-		return nil, nil, false, false, 0, nil, err
+		return nil, false, false, 0, nil, err
 	}
 
 	var desiredReplicas int32
-	if hpaStatus == nil {
+	if hvpa.Spec.Replicas == nil {
 		desiredReplicas = currentReplicas
 	} else {
-		desiredReplicas = hpaStatus.DesiredReplicas
+		desiredReplicas = *hvpa.Spec.Replicas
 	}
 
 	vpaWeight := getVpaWeightFromIntervals(hvpa, desiredReplicas, currentReplicas)
@@ -541,12 +540,14 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	if currentReplicas == weightedReplicas &&
 		(newPodSpec == nil || reflect.DeepEqual(podSpec, newPodSpec)) {
 		log.V(3).Info("Scaling not required", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-		return nil, nil, false, false, vpaWeight, blockedScaling, nil
+		return nil, false, false, vpaWeight, blockedScaling, nil
 	}
+
+	weightedScaling := getScalingStatusFrom(hpaStatus, vpaStatus, newPodSpec)
 
 	if isScalingOff(hvpa) {
 		log.V(4).Info("Update policy on HPA and VPA is set to Off", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-		return hpaStatus, vpaStatus, false, false, vpaWeight, blockedScaling, nil
+		return weightedScaling, false, false, vpaWeight, blockedScaling, nil
 	}
 
 	switch kind {
@@ -582,11 +583,11 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	default:
 		err := fmt.Errorf("TargetRef kind not supported %v", kind)
 		log.Error(err, "Error")
-		return nil, nil, false, false, 0, nil, err
+		return nil, false, false, 0, nil, err
 	}
 
 	log.V(3).Info("Scaling required", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-	return hpaStatus, vpaStatus,
+	return weightedScaling,
 		weightedReplicas != currentReplicas, resourcesChanged,
 		vpaWeight, blockedScaling, r.Update(context.TODO(), newObj)
 }
@@ -655,7 +656,7 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	}
 
 	log.V(2).Info("Calculating weighted replicas", "hpaWeight", hpaWeight)
-	if hpaStatus == nil || hpaStatus.DesiredReplicas == 0 {
+	if hpaStatus == nil || hvpa.Spec.Replicas == nil || *hvpa.Spec.Replicas == 0 || currentReplicas == 0 {
 		log.V(2).Info("HPA: Nothing to do", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 		return nil, nil
 	}
@@ -664,7 +665,7 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	var maintenanceWindow *utils.MaintenanceTimeWindow
 	var err error
 	var weightedReplicas int32
-	desiredReplicas := hpaStatus.DesiredReplicas
+	desiredReplicas := *hvpa.Spec.Replicas
 
 	// Initialize output hpa status
 	outHpaStatus := &autoscaling.HorizontalPodAutoscalerStatus{
@@ -693,7 +694,7 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 		return outHpaStatus, err
 	}
 
-	lastScaleTime := hvpa.Status.LastScaling.LastScaleTime.DeepCopy()
+	lastScaleTime := hvpa.Status.LastScaling.LastUpdated.DeepCopy()
 	overrideScaleUpStabilization := hvpa.Status.OverrideScaleUpStabilization
 	if overrideScaleUpStabilization {
 		log.V(2).Info("HPA", "will override last scale time in case of scale out", overrideScaleUpStabilization, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
@@ -809,10 +810,8 @@ func newBlockedScaling(reason autoscalingv1alpha1.BlockingReason) *autoscalingv1
 	blockedScaling := autoscalingv1alpha1.BlockedScaling{
 		Reason: reason,
 		ScalingStatus: autoscalingv1alpha1.ScalingStatus{
-			VpaStatus: vpa_api.VerticalPodAutoscalerStatus{
-				Recommendation: &vpa_api.RecommendedPodResources{
-					ContainerRecommendations: make([]vpa_api.RecommendedContainerResources, 0, 0),
-				},
+			VpaStatus: autoscalingv1alpha1.VpaStatus{
+				ContainerResources: make([]autoscalingv1alpha1.ContainerResources, 0, 0),
 			},
 		},
 	}
@@ -824,11 +823,14 @@ func appendToBlockedScaling(blockedScaling **autoscalingv1alpha1.BlockedScaling,
 		if *blockedScaling == nil {
 			*blockedScaling = newBlockedScaling(reason)
 		}
-		(*blockedScaling).VpaStatus.Recommendation.ContainerRecommendations = append(
-			(*blockedScaling).VpaStatus.Recommendation.ContainerRecommendations,
-			vpa_api.RecommendedContainerResources{
-				Target:        target,
+
+		(*blockedScaling).VpaStatus.ContainerResources = append(
+			(*blockedScaling).VpaStatus.ContainerResources,
+			autoscalingv1alpha1.ContainerResources{
 				ContainerName: container,
+				Resources: corev1.ResourceRequirements{
+					Requests: target,
+				},
 			})
 	}
 }
@@ -860,7 +862,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	}
 	recommendations := vpaStatus.Recommendation
 
-	lastScaleTime := hvpa.Status.LastScaling.LastScaleTime
+	lastScaleTime := hvpa.Status.LastScaling.LastUpdated
 	overrideScaleUpStabilization := hvpa.Status.OverrideScaleUpStabilization
 	if overrideScaleUpStabilization {
 		// Consider HPA to be limited if we have seen oomkill or liveness probe fails already.
@@ -1281,6 +1283,150 @@ func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeParams, resourceType 
 	return &absoluteQuantity, nil
 }
 
+func (r *HvpaReconciler) applyLastApplied(lastApplied *autoscalingv1alpha1.ScalingStatus, target runtime.Object, hvpa string) error {
+	var newObj runtime.Object
+	var deploy *appsv1.Deployment
+	var ss *appsv1.StatefulSet
+	var ds *appsv1.DaemonSet
+	var rs *appsv1.ReplicaSet
+	var rc *corev1.ReplicationController
+	var replicas int32
+	var podSpec *corev1.PodSpec
+	var hpaScaled, vpaScaled bool
+
+	kind := target.GetObjectKind().GroupVersionKind().Kind
+	targetCopy := target.DeepCopyObject()
+
+	switch kind {
+	case "Deployment":
+		deploy = targetCopy.(*appsv1.Deployment)
+		replicas = *deploy.Spec.Replicas
+		podSpec = &deploy.Spec.Template.Spec
+	case "StatefulSet":
+		ss = targetCopy.(*appsv1.StatefulSet)
+		replicas = *ss.Spec.Replicas
+		podSpec = &ss.Spec.Template.Spec
+	case "DaemonSet":
+		ds = targetCopy.(*appsv1.DaemonSet)
+		podSpec = &ds.Spec.Template.Spec
+	case "ReplicaSet":
+		rs = targetCopy.(*appsv1.ReplicaSet)
+		replicas = *rs.Spec.Replicas
+		podSpec = &rs.Spec.Template.Spec
+	case "ReplicationController":
+		rc = targetCopy.(*corev1.ReplicationController)
+		replicas = *rc.Spec.Replicas
+		podSpec = &rc.Spec.Template.Spec
+	default:
+		err := fmt.Errorf("TargetRef kind not supported %v in hvpa %v", kind, hvpa)
+		log.Error(err, "Error")
+		return err
+	}
+
+	// If currentReplicas is 0, then don't change
+	if replicas > 0 && lastApplied.HpaStatus.DesiredReplicas > 0 && replicas != lastApplied.HpaStatus.DesiredReplicas {
+		hpaScaled = true
+		replicas = lastApplied.HpaStatus.DesiredReplicas
+	}
+
+	newPodSpec := podSpec.DeepCopy()
+	for i := range podSpec.Containers {
+		container := &newPodSpec.Containers[i]
+		for j := range lastApplied.VpaStatus.ContainerResources {
+			applied := lastApplied.VpaStatus.ContainerResources[j]
+
+			if container.Name == applied.ContainerName && !reflect.DeepEqual(container.Resources, applied.Resources) {
+				vpaScaled = true
+				container.Resources = applied.Resources
+			}
+		}
+	}
+
+	switch kind {
+	case "Deployment":
+		deploy.Spec.Replicas = &replicas
+		if vpaScaled {
+			newPodSpec.DeepCopyInto(&deploy.Spec.Template.Spec)
+		}
+		newObj = deploy
+	case "StatefulSet":
+		ss.Spec.Replicas = &replicas
+		if vpaScaled {
+			newPodSpec.DeepCopyInto(&ss.Spec.Template.Spec)
+		}
+		newObj = ss
+	case "DaemonSet":
+		if vpaScaled {
+			newPodSpec.DeepCopyInto(&ds.Spec.Template.Spec)
+		}
+		newObj = ds
+	case "ReplicaSet":
+		rs.Spec.Replicas = &replicas
+		if vpaScaled {
+			newPodSpec.DeepCopyInto(&rs.Spec.Template.Spec)
+		}
+		newObj = rs
+	case "ReplicationController":
+		rc.Spec.Replicas = &replicas
+		if vpaScaled {
+			newPodSpec.DeepCopyInto(&rc.Spec.Template.Spec)
+		}
+		newObj = rc
+	default:
+		err := fmt.Errorf("TargetRef kind not supported %v", kind)
+		log.Error(err, "Error")
+		return err
+	}
+
+	if hpaScaled || vpaScaled {
+		log.V(2).Info("Scaling required. Applying last applied", "hvpa", hvpa)
+		return r.Update(context.TODO(), newObj)
+	}
+	log.V(2).Info("Scaling not required", "hvpa", hvpa)
+	return nil
+}
+
+func getScalingStatusFrom(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, podSpec *corev1.PodSpec) *autoscalingv1alpha1.ScalingStatus {
+	scalingStatus := &autoscalingv1alpha1.ScalingStatus{}
+
+	if hpaStatus != nil {
+		scalingStatus.HpaStatus = autoscalingv1alpha1.HpaStatus{
+			CurrentReplicas: hpaStatus.CurrentReplicas,
+			DesiredReplicas: hpaStatus.DesiredReplicas,
+		}
+	}
+
+	if vpaStatus != nil && vpaStatus.Recommendation != nil {
+		podResources := autoscalingv1alpha1.VpaStatus{
+			ContainerResources: make([]autoscalingv1alpha1.ContainerResources, len(vpaStatus.Recommendation.ContainerRecommendations)),
+		}
+		for idx := range vpaStatus.Recommendation.ContainerRecommendations {
+			recommendation := &vpaStatus.Recommendation.ContainerRecommendations[idx]
+			podResources.ContainerResources[idx].ContainerName = recommendation.ContainerName
+			podResources.ContainerResources[idx].Resources = corev1.ResourceRequirements{
+				Requests: recommendation.Target,
+			}
+		}
+		scalingStatus.VpaStatus = podResources
+
+		if podSpec != nil {
+			// If podSpec is passed, we want to capture "Resources" fully for containers for which VPA taget is available.
+			// The podResources.ContainerResources[i] is populated here only for the container for which VPA target is available.
+			for i := range scalingStatus.VpaStatus.ContainerResources {
+				for j := range podSpec.Containers {
+					container := podSpec.Containers[j]
+					if scalingStatus.VpaStatus.ContainerResources[i].ContainerName == container.Name {
+						scalingStatus.VpaStatus.ContainerResources[i].Resources = container.Resources
+					}
+				}
+			}
+		}
+	}
+
+	log.V(4).Info("HVPA", "scaling status:", scalingStatus)
+	return scalingStatus
+}
+
 // Reconcile reads that state of the cluster for a Hvpa object and makes changes based on the state read
 // and what is in the Hvpa.Spec
 // Automatically generate RBAC rules to allow the Controller to read and write HPAs and VPAs
@@ -1295,9 +1441,15 @@ func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeParams, resourceType 
 func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	ctx := context.Background()
 
-	// Fetch the Hvpa instance
+	// Fetch the Hvpa instance using unstructured object so that it is fetched using clientReader, and not the cacheReader
+	hvpaObj := &unstructured.Unstructured{}
+	hvpaObj.SetGroupVersionKind(controllerKindHvpa)
+
+	err := r.Get(ctx, req.NamespacedName, hvpaObj)
 	instance := &autoscalingv1alpha1.Hvpa{}
-	err := r.Get(ctx, req.NamespacedName, instance)
+	if errInt := runtime.DefaultUnstructuredConverter.FromUnstructured(hvpaObj.Object, instance); errInt != nil {
+		return ctrl.Result{}, errInt
+	}
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Object not found, return.  Created objects are automatically garbage collected.
@@ -1368,7 +1520,19 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, err
 	}
 
-	weightedHpaStatus, weightedVpaStatus, hpaScaled, vpaScaled, vpaWeight, blockedScaling, err := r.scaleIfRequired(hpaStatus, vpaStatus, instance, obj)
+	processingStatus := getScalingStatusFrom(hpaStatus, vpaStatus, nil)
+	// Prune currentReplicas, because it tends to change in hpa.Status if we end up scaling
+	processingStatus.HpaStatus.CurrentReplicas = 0
+
+	log.V(2).Info("HVPA", "Processing recommendations", processingStatus)
+
+	if !instance.Status.OverrideScaleUpStabilization && reflect.DeepEqual(*processingStatus, instance.Status.LastProcessedRecommendations) {
+		log.V(2).Info("HVPA", "No new recommendations for", "hvpa", instance.Namespace+"/"+instance.Name)
+		err = r.applyLastApplied(&instance.Status.LastScaling, obj, instance.Namespace+"/"+instance.Name)
+		return result, nil
+	}
+
+	weightedScaling, hpaScaled, vpaScaled, vpaWeight, blockedScaling, err := r.scaleIfRequired(hpaStatus, vpaStatus, instance, obj)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1393,19 +1557,24 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	hvpa.Status.VpaScaleDownUpdatePolicy = hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.DeepCopy()
 
 	if hpaScaled || vpaScaled {
-		now := metav1.Now()
-		hvpa.Status.LastScaling.LastScaleTime = &now
 		hvpa.Status.HpaWeight = 100 - vpaWeight
 		hvpa.Status.VpaWeight = vpaWeight
 
-		if hpaScaled {
-			hvpa.Status.LastScaling.HpaStatus.DesiredReplicas = weightedHpaStatus.DesiredReplicas
-			hvpa.Status.LastScaling.HpaStatus.CurrentReplicas = weightedHpaStatus.CurrentReplicas
+		now := metav1.Now()
+		lastScaling := weightedScaling
+		lastScaling.LastUpdated = &now
+
+		// Prune
+		if !hpaScaled {
+			lastScaling.HpaStatus = autoscalingv1alpha1.HpaStatus{}
+		}
+		if !vpaScaled {
+			lastScaling.VpaStatus = autoscalingv1alpha1.VpaStatus{}
 		}
 
-		if vpaScaled {
-			hvpa.Status.LastScaling.VpaStatus.Recommendation = weightedVpaStatus.Recommendation.DeepCopy()
-		}
+		hvpa.Status.LastScaling = *lastScaling
+
+		hvpa.Status.LastProcessedRecommendations = *processingStatus
 
 		hvpa.Status.OverrideScaleUpStabilization = false
 	}
@@ -1498,9 +1667,9 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 					if containerStatus.RestartCount > 0 &&
 						containerStatus.LastTerminationState.Terminated != nil &&
 						containerStatus.LastTerminationState.Terminated.Reason == "OOMKilled" &&
-						(clone.Status.LastScaling.LastScaleTime == nil ||
-							clone.Status.LastScaling.LastScaleTime != nil &&
-								containerStatus.LastTerminationState.Terminated.FinishedAt.After(clone.Status.LastScaling.LastScaleTime.Time)) {
+						(clone.Status.LastScaling.LastUpdated == nil ||
+							clone.Status.LastScaling.LastUpdated != nil &&
+								containerStatus.LastTerminationState.Terminated.FinishedAt.After(clone.Status.LastScaling.LastUpdated.Time)) {
 
 						recent = true
 						break

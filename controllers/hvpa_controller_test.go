@@ -311,6 +311,8 @@ var _ = Describe("#TestReconcile", func() {
 					Expect(podSpec).To(BeNil())
 				}
 
+				// HPA would have set hvpa.spec.replicas to hpa.status.desiredReplicas using scale sub-resource
+				hvpa.Spec.Replicas = &hpaStatus.DesiredReplicas
 				hpaStatus, err = getWeightedReplicas(hpaStatus, hvpa, *target.Spec.Replicas, 100-vpaWeight, blockedScaling)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(hpaStatus.DesiredReplicas).To(Equal(data.expect.desiredReplicas))

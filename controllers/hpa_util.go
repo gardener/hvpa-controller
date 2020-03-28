@@ -54,10 +54,12 @@ func (r *HvpaReconciler) claimHpas(hvpa *autoscalingv1alpha1.Hvpa, selector labe
 
 // The returned bool value can be used to tell if the hpa is actually updated.
 func hpaSpecNeedChange(hvpa *autoscalingv1alpha1.Hvpa, hpa *autoscaling.HorizontalPodAutoscaler) bool {
-	return *hvpa.Spec.Hpa.Template.Spec.MinReplicas != *hpa.Spec.MinReplicas ||
-		hvpa.Spec.Hpa.Template.Spec.MaxReplicas != hpa.Spec.MaxReplicas ||
-		!reflect.DeepEqual(hvpa.Spec.Hpa.Template.Spec.Metrics, hpa.Spec.Metrics) ||
-		!reflect.DeepEqual(hvpa.Spec.TargetRef, &hpa.Spec.ScaleTargetRef)
+	desiredHpa, _ := getHpaFromHvpa(hvpa)
+
+	return *desiredHpa.Spec.MinReplicas != *hpa.Spec.MinReplicas ||
+		desiredHpa.Spec.MaxReplicas != hpa.Spec.MaxReplicas ||
+		!reflect.DeepEqual(desiredHpa.Spec.Metrics, hpa.Spec.Metrics) ||
+		!reflect.DeepEqual(desiredHpa.Spec.ScaleTargetRef, hpa.Spec.ScaleTargetRef)
 }
 
 // UpdateHpaWithRetries updates a hpa with given applyUpdate function. Note that hpa not found error is ignored.
@@ -90,10 +92,8 @@ func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutosca
 		if hpaChanged := hpaSpecNeedChange(hvpa, hpa); hpaChanged {
 			_, err := r.UpdateHpaWithRetries(hpa.Namespace, hpa.Name,
 				func(hpaToUpdate *autoscaling.HorizontalPodAutoscaler) {
-					hpaToUpdate.Spec.MinReplicas = hvpa.Spec.Hpa.Template.Spec.MinReplicas
-					hpaToUpdate.Spec.MaxReplicas = hvpa.Spec.Hpa.Template.Spec.MaxReplicas
-					hpaToUpdate.Spec.Metrics = hvpa.Spec.Hpa.Template.Spec.Metrics
-					hpaToUpdate.Spec.ScaleTargetRef = *hvpa.Spec.TargetRef
+					desiredHpa, _ := getHpaFromHvpa(hvpa)
+					hpaToUpdate.Spec = desiredHpa.Spec
 				})
 			if err != nil {
 				return fmt.Errorf("error in updating hpaTemplateSpec to hpa %q: %v", hpa.Name, err)
@@ -127,10 +127,14 @@ func getHpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodA
 	return &autoscaling.HorizontalPodAutoscaler{
 		ObjectMeta: *metadata,
 		Spec: autoscaling.HorizontalPodAutoscalerSpec{
-			MaxReplicas:    hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
-			MinReplicas:    hvpa.Spec.Hpa.Template.Spec.MinReplicas,
-			ScaleTargetRef: *hvpa.Spec.TargetRef.DeepCopy(),
-			Metrics:        hvpa.Spec.Hpa.Template.Spec.Metrics,
+			MaxReplicas: hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
+			MinReplicas: hvpa.Spec.Hpa.Template.Spec.MinReplicas,
+			ScaleTargetRef: autoscaling.CrossVersionObjectReference{
+				APIVersion: "autoscaling.k8s.io/v1alpha1",
+				Kind:       "Hvpa",
+				Name:       hvpa.Name,
+			},
+			Metrics: hvpa.Spec.Hpa.Template.Spec.Metrics,
 		},
 	}, nil
 }

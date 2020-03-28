@@ -25,7 +25,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -251,8 +250,8 @@ func basicBlockedLabels(hvpa *hvpav1alpha1.Hvpa, reason hvpav1alpha1.BlockingRea
 	return l
 }
 
-func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, baseLabelsFn func() prometheus.Labels) {
-	if gv == nil || vpaStatus == nil || vpaStatus.Recommendation == nil {
+func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaStatus *hvpav1alpha1.VpaStatus, baseLabelsFn func() prometheus.Labels) {
+	if gv == nil || vpaStatus == nil || vpaStatus.ContainerResources == nil {
 		return
 	}
 
@@ -277,15 +276,15 @@ func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaS
 		}
 	}
 
-	recoMap := make(map[string]*vpa_api.RecommendedContainerResources)
-	for i := range vpaStatus.Recommendation.ContainerRecommendations {
-		cr := &vpaStatus.Recommendation.ContainerRecommendations[i]
+	recoMap := make(map[string]*hvpav1alpha1.ContainerResources)
+	for i := range vpaStatus.ContainerResources {
+		cr := &vpaStatus.ContainerResources[i]
 		recoMap[cr.ContainerName] = cr
 	}
 
 	for _, c := range containers {
 		if cr, ok := recoMap[c]; ok {
-			updateReco(c, recoTarget, cr.Target)
+			updateReco(c, recoTarget, cr.Resources.Requests)
 		} else {
 			updateReco(c, recoTarget, nil)
 		}
@@ -451,14 +450,12 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 			return err
 		}
 
-		if hvpa.Status.LastScaling.VpaStatus.Recommendation != nil {
+		if hvpa.Status.LastScaling.VpaStatus.ContainerResources != nil {
 			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &hvpa.Status.LastScaling.VpaStatus, func() prometheus.Labels {
 				return basicDetailedLabels(hvpa)
 			})
 		} else {
-			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &vpa_api.VerticalPodAutoscalerStatus{
-				Recommendation: &vpa_api.RecommendedPodResources{},
-			}, func() prometheus.Labels {
+			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &hvpav1alpha1.VpaStatus{}, func() prometheus.Labels {
 				return basicDetailedLabels(hvpa)
 			})
 		}
@@ -488,14 +485,12 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 				}
 			}
 			if m.statusBlockedVPARecommendation != nil {
-				if ok && blocked.VpaStatus.Recommendation != nil {
+				if ok && blocked.VpaStatus.ContainerResources != nil {
 					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &blocked.VpaStatus, func() prometheus.Labels {
 						return basicBlockedLabels(hvpa, blockingReason)
 					})
 				} else {
-					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &vpa_api.VerticalPodAutoscalerStatus{
-						Recommendation: &vpa_api.RecommendedPodResources{},
-					}, func() prometheus.Labels {
+					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &hvpav1alpha1.VpaStatus{}, func() prometheus.Labels {
 						return basicBlockedLabels(hvpa, blockingReason)
 					})
 				}

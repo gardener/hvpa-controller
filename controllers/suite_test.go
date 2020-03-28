@@ -150,6 +150,7 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 			},
 		},
 		Spec: autoscalingv1alpha1.HvpaSpec{
+			Replicas: &replica,
 			TargetRef: &autoscaling.CrossVersionObjectReference{
 				Kind:       "Deployment",
 				Name:       target,

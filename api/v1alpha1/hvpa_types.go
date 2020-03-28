@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 )
@@ -273,11 +274,12 @@ type HvpaStatus struct {
 	HpaWeight VpaWeight `json:"hpaWeight,omitempty"`
 	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
 
-	// Override scale up stabilization window
+	// Override scale up stabilization
 	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
 
-	LastBlockedScaling []*BlockedScaling `json:"lastBlockedScaling,omitempty"`
-	LastScaling        ScalingStatus     `json:"lastScaling,omitempty"`
+	LastBlockedScaling           []*BlockedScaling `json:"lastBlockedScaling,omitempty"`
+	LastScaling                  ScalingStatus     `json:"lastScaling,omitempty"`
+	LastProcessedRecommendations ScalingStatus     `json:"lastProcessedRecommendations,omitempty"`
 
 	// LastError has details of any errors that occurred
 	LastError *LastError `json:"lastError,omitempty"`
@@ -316,15 +318,27 @@ type BlockedScaling struct {
 
 // ScalingStatus defines the status of scaling
 type ScalingStatus struct {
-	LastScaleTime *metav1.Time                        `json:"lastScaleTime,omitempty"`
-	HpaStatus     HpaStatus                           `json:"hpaStatus,omitempty" protobuf:"bytes,1,opt,name=hpaStatus"`
-	VpaStatus     vpa_api.VerticalPodAutoscalerStatus `json:"vpaStatus,omitempty" protobuf:"bytes,2,opt,name=vpaStatus"`
+	LastUpdated *metav1.Time `json:"lastUpdated,omitempty"`
+	HpaStatus   HpaStatus    `json:"hpaStatus,omitempty" protobuf:"bytes,1,opt,name=hpaStatus"`
+	VpaStatus   VpaStatus    `json:"vpaStatus,omitempty" protobuf:"bytes,2,opt,name=vpaStatus"`
 }
 
 // HpaStatus defines the status of HPA
 type HpaStatus struct {
 	CurrentReplicas int32 `json:"currentReplicas,omitempty"`
 	DesiredReplicas int32 `json:"desiredReplicas,omitempty"`
+}
+
+// VpaStatus defines the status of VPA
+type VpaStatus struct {
+	ContainerResources []ContainerResources `json:"containerResources,omitempty"`
+}
+
+// ContainerResources has the details of the container resources
+type ContainerResources struct {
+	// Name of the container.
+	ContainerName string                      `json:"containerName,omitempty" protobuf:"bytes,1,opt,name=containerName"`
+	Resources     corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // Hvpa is the Schema for the hvpas API

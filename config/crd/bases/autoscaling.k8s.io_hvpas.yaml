@@ -920,111 +920,43 @@ spec:
                             format: int32
                             type: integer
                         type: object
-                      lastScaleTime:
+                      lastUpdated:
                         format: date-time
                         type: string
                       vpaStatus:
-                        description: VerticalPodAutoscalerStatus describes the runtime
-                          state of the autoscaler.
+                        description: VpaStatus defines the status of VPA
                         properties:
-                          conditions:
-                            description: Conditions is the set of conditions required
-                              for this autoscaler to scale its target, and indicates
-                              whether or not those conditions are met.
+                          containerResources:
                             items:
-                              description: VerticalPodAutoscalerCondition describes
-                                the state of a VerticalPodAutoscaler at a certain
-                                point.
+                              description: ContainerResources has the details of the
+                                container resources
                               properties:
-                                lastTransitionTime:
-                                  description: lastTransitionTime is the last time
-                                    the condition transitioned from one status to
-                                    another
-                                  format: date-time
+                                containerName:
+                                  description: Name of the container.
                                   type: string
-                                message:
-                                  description: message is a human-readable explanation
-                                    containing details about the transition
-                                  type: string
-                                reason:
-                                  description: reason is the reason for the condition's
-                                    last transition.
-                                  type: string
-                                status:
-                                  description: status is the status of the condition
-                                    (True, False, Unknown)
-                                  type: string
-                                type:
-                                  description: type describes the current condition
-                                  type: string
-                              required:
-                              - status
-                              - type
+                                resources:
+                                  description: ResourceRequirements describes the
+                                    compute resource requirements.
+                                  properties:
+                                    limits:
+                                      additionalProperties:
+                                        type: string
+                                      description: 'Limits describes the maximum amount
+                                        of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                      type: object
+                                    requests:
+                                      additionalProperties:
+                                        type: string
+                                      description: 'Requests describes the minimum
+                                        amount of compute resources required. If Requests
+                                        is omitted for a container, it defaults to
+                                        Limits if that is explicitly specified, otherwise
+                                        to an implementation-defined value. More info:
+                                        https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                      type: object
+                                  type: object
                               type: object
                             type: array
-                          recommendation:
-                            description: The most recently computed amount of resources
-                              recommended by the autoscaler for the controlled pods.
-                            properties:
-                              containerRecommendations:
-                                description: Resources recommended by the autoscaler
-                                  for each container.
-                                items:
-                                  description: RecommendedContainerResources is the
-                                    recommendation of resources computed by autoscaler
-                                    for a specific container. Respects the container
-                                    resource policy if present in the spec. In particular
-                                    the recommendation is not produced for containers
-                                    with `ContainerScalingMode` set to 'Off'.
-                                  properties:
-                                    containerName:
-                                      description: Name of the container.
-                                      type: string
-                                    lowerBound:
-                                      additionalProperties:
-                                        type: string
-                                      description: Minimum recommended amount of resources.
-                                        Observes ContainerResourcePolicy. This amount
-                                        is not guaranteed to be sufficient for the
-                                        application to operate in a stable way, however
-                                        running with less resources is likely to have
-                                        significant impact on performance/availability.
-                                      type: object
-                                    target:
-                                      additionalProperties:
-                                        type: string
-                                      description: Recommended amount of resources.
-                                        Observes ContainerResourcePolicy.
-                                      type: object
-                                    uncappedTarget:
-                                      additionalProperties:
-                                        type: string
-                                      description: The most recent recommended resources
-                                        target computed by the autoscaler for the
-                                        controlled pods, based only on actual resource
-                                        usage, not taking into account the ContainerResourcePolicy.
-                                        May differ from the Recommendation if the
-                                        actual resource usage causes the target to
-                                        violate the ContainerResourcePolicy (lower
-                                        than MinAllowed or higher that MaxAllowed).
-                                        Used only as status indication, will not affect
-                                        actual resource assignment.
-                                      type: object
-                                    upperBound:
-                                      additionalProperties:
-                                        type: string
-                                      description: Maximum recommended amount of resources.
-                                        Observes ContainerResourcePolicy. Any resources
-                                        allocated beyond this value are likely wasted.
-                                        This value may be larger than the maximum
-                                        amount of application is actually capable
-                                        of consuming.
-                                      type: object
-                                  required:
-                                  - target
-                                  type: object
-                                type: array
-                            type: object
                         type: object
                     type: object
                 type: object
@@ -1044,6 +976,57 @@ spec:
                   format: date-time
                   type: string
               type: object
+            lastProcessedRecommendations:
+              description: ScalingStatus defines the status of scaling
+              properties:
+                hpaStatus:
+                  description: HpaStatus defines the status of HPA
+                  properties:
+                    currentReplicas:
+                      format: int32
+                      type: integer
+                    desiredReplicas:
+                      format: int32
+                      type: integer
+                  type: object
+                lastUpdated:
+                  format: date-time
+                  type: string
+                vpaStatus:
+                  description: VpaStatus defines the status of VPA
+                  properties:
+                    containerResources:
+                      items:
+                        description: ContainerResources has the details of the container
+                          resources
+                        properties:
+                          containerName:
+                            description: Name of the container.
+                            type: string
+                          resources:
+                            description: ResourceRequirements describes the compute
+                              resource requirements.
+                            properties:
+                              limits:
+                                additionalProperties:
+                                  type: string
+                                description: 'Limits describes the maximum amount
+                                  of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                type: object
+                              requests:
+                                additionalProperties:
+                                  type: string
+                                description: 'Requests describes the minimum amount
+                                  of compute resources required. If Requests is omitted
+                                  for a container, it defaults to Limits if that is
+                                  explicitly specified, otherwise to an implementation-defined
+                                  value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                type: object
+                            type: object
+                        type: object
+                      type: array
+                  type: object
+              type: object
             lastScaling:
               description: ScalingStatus defines the status of scaling
               properties:
@@ -1057,110 +1040,46 @@ spec:
                       format: int32
                       type: integer
                   type: object
-                lastScaleTime:
+                lastUpdated:
                   format: date-time
                   type: string
                 vpaStatus:
-                  description: VerticalPodAutoscalerStatus describes the runtime state
-                    of the autoscaler.
+                  description: VpaStatus defines the status of VPA
                   properties:
-                    conditions:
-                      description: Conditions is the set of conditions required for
-                        this autoscaler to scale its target, and indicates whether
-                        or not those conditions are met.
+                    containerResources:
                       items:
-                        description: VerticalPodAutoscalerCondition describes the
-                          state of a VerticalPodAutoscaler at a certain point.
+                        description: ContainerResources has the details of the container
+                          resources
                         properties:
-                          lastTransitionTime:
-                            description: lastTransitionTime is the last time the condition
-                              transitioned from one status to another
-                            format: date-time
+                          containerName:
+                            description: Name of the container.
                             type: string
-                          message:
-                            description: message is a human-readable explanation containing
-                              details about the transition
-                            type: string
-                          reason:
-                            description: reason is the reason for the condition's
-                              last transition.
-                            type: string
-                          status:
-                            description: status is the status of the condition (True,
-                              False, Unknown)
-                            type: string
-                          type:
-                            description: type describes the current condition
-                            type: string
-                        required:
-                        - status
-                        - type
+                          resources:
+                            description: ResourceRequirements describes the compute
+                              resource requirements.
+                            properties:
+                              limits:
+                                additionalProperties:
+                                  type: string
+                                description: 'Limits describes the maximum amount
+                                  of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                type: object
+                              requests:
+                                additionalProperties:
+                                  type: string
+                                description: 'Requests describes the minimum amount
+                                  of compute resources required. If Requests is omitted
+                                  for a container, it defaults to Limits if that is
+                                  explicitly specified, otherwise to an implementation-defined
+                                  value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                type: object
+                            type: object
                         type: object
                       type: array
-                    recommendation:
-                      description: The most recently computed amount of resources
-                        recommended by the autoscaler for the controlled pods.
-                      properties:
-                        containerRecommendations:
-                          description: Resources recommended by the autoscaler for
-                            each container.
-                          items:
-                            description: RecommendedContainerResources is the recommendation
-                              of resources computed by autoscaler for a specific container.
-                              Respects the container resource policy if present in
-                              the spec. In particular the recommendation is not produced
-                              for containers with `ContainerScalingMode` set to 'Off'.
-                            properties:
-                              containerName:
-                                description: Name of the container.
-                                type: string
-                              lowerBound:
-                                additionalProperties:
-                                  type: string
-                                description: Minimum recommended amount of resources.
-                                  Observes ContainerResourcePolicy. This amount is
-                                  not guaranteed to be sufficient for the application
-                                  to operate in a stable way, however running with
-                                  less resources is likely to have significant impact
-                                  on performance/availability.
-                                type: object
-                              target:
-                                additionalProperties:
-                                  type: string
-                                description: Recommended amount of resources. Observes
-                                  ContainerResourcePolicy.
-                                type: object
-                              uncappedTarget:
-                                additionalProperties:
-                                  type: string
-                                description: The most recent recommended resources
-                                  target computed by the autoscaler for the controlled
-                                  pods, based only on actual resource usage, not taking
-                                  into account the ContainerResourcePolicy. May differ
-                                  from the Recommendation if the actual resource usage
-                                  causes the target to violate the ContainerResourcePolicy
-                                  (lower than MinAllowed or higher that MaxAllowed).
-                                  Used only as status indication, will not affect
-                                  actual resource assignment.
-                                type: object
-                              upperBound:
-                                additionalProperties:
-                                  type: string
-                                description: Maximum recommended amount of resources.
-                                  Observes ContainerResourcePolicy. Any resources
-                                  allocated beyond this value are likely wasted. This
-                                  value may be larger than the maximum amount of application
-                                  is actually capable of consuming.
-                                type: object
-                            required:
-                            - target
-                            type: object
-                          type: array
-                      type: object
                   type: object
               type: object
             overrideScaleUpStabilization:
-              description: Override scale up stabilization window
+              description: Override scale up stabilization
               type: boolean
             replicas:
               description: Replicas is the number of replicas of the target resource.
