@@ -88,8 +88,9 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).NotTo(HaveOccurred())
 
 	reconciler := HvpaReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:                mgr.GetClient(),
+		Scheme:                mgr.GetScheme(),
+		EnableDetailedMetrics: true,
 	}
 
 	err = reconciler.SetupWithManager(mgr)

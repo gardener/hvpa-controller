@@ -513,7 +513,7 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	}
 
 	vpaWeight := getVpaWeightFromIntervals(hvpa, desiredReplicas, currentReplicas)
-	hpaWeight := autoscalingv1alpha1.MaxWeight
+	hpaWeight := autoscalingv1alpha1.MaxWeight - vpaWeight
 
 	upUpdateMode := hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode
 

@@ -54,9 +54,9 @@ func (r *HvpaReconciler) claimVpas(hvpa *hvpav1alpha1.Hvpa, selector labels.Sele
 }
 
 // The returned bool value can be used to tell if the vpa is actually updated.
-func vpaSpecNeedChange(hvpa *hvpav1alpha1.Hvpa, vpa *vpa_api.VerticalPodAutoscaler) bool {
-	return !reflect.DeepEqual(hvpa.Spec.Vpa.Template.Spec.ResourcePolicy, vpa.Spec.ResourcePolicy) ||
-		*vpa.Spec.UpdatePolicy.UpdateMode != vpa_api.UpdateModeOff
+func vpaSpecNeedChange(hvpa *hvpav1alpha1.Hvpa, vpa *vpa_api.VerticalPodAutoscaler) (*vpa_api.VerticalPodAutoscaler, bool) {
+	desiredVpa, _ := getVpaFromHvpa(hvpa)
+	return desiredVpa, !reflect.DeepEqual(desiredVpa.Spec, vpa.Spec)
 }
 
 // UpdateVpaWithRetries updates a vpa with given applyUpdate function. Note that vpa not found error is ignored.
@@ -86,11 +86,10 @@ func (r *HvpaReconciler) UpdateVpaWithRetries(namespace, name string, applyUpdat
 
 func (r *HvpaReconciler) syncVpaSpec(vpaList []*vpa_api.VerticalPodAutoscaler, hvpa *hvpav1alpha1.Hvpa) error {
 	for _, vpa := range vpaList {
-		if vpaChanged := vpaSpecNeedChange(hvpa, vpa); vpaChanged {
+		if desiredVpa, vpaChanged := vpaSpecNeedChange(hvpa, vpa); vpaChanged {
 			_, err := r.UpdateVpaWithRetries(vpa.Namespace, vpa.Name,
 				func(vpaToUpdate *vpa_api.VerticalPodAutoscaler) {
-					vpaToUpdate.Spec.ResourcePolicy = hvpa.Spec.Vpa.Template.Spec.ResourcePolicy
-					*vpaToUpdate.Spec.UpdatePolicy.UpdateMode = vpa_api.UpdateModeOff
+					vpaToUpdate.Spec = desiredVpa.Spec
 				})
 			if err != nil {
 				return fmt.Errorf("error in updating vpaTemplateSpec to vpa %q: %v", vpa.Name, err)

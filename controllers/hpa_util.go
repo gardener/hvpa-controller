@@ -53,10 +53,10 @@ func (r *HvpaReconciler) claimHpas(hvpa *hvpav1alpha1.Hvpa, selector labels.Sele
 }
 
 // The returned bool value can be used to tell if the hpa is actually updated.
-func hpaSpecNeedChange(hvpa *hvpav1alpha1.Hvpa, hpa *autoscaling.HorizontalPodAutoscaler) bool {
+func hpaSpecNeedChange(hvpa *hvpav1alpha1.Hvpa, hpa *autoscaling.HorizontalPodAutoscaler) (*autoscaling.HorizontalPodAutoscaler, bool) {
 	desiredHpa, _ := getHpaFromHvpa(hvpa)
 
-	return *desiredHpa.Spec.MinReplicas != *hpa.Spec.MinReplicas ||
+	return desiredHpa, *desiredHpa.Spec.MinReplicas != *hpa.Spec.MinReplicas ||
 		desiredHpa.Spec.MaxReplicas != hpa.Spec.MaxReplicas ||
 		!reflect.DeepEqual(desiredHpa.Spec.Metrics, hpa.Spec.Metrics) ||
 		!reflect.DeepEqual(desiredHpa.Spec.ScaleTargetRef, hpa.Spec.ScaleTargetRef)
@@ -89,10 +89,9 @@ func (r *HvpaReconciler) UpdateHpaWithRetries(namespace, name string, applyUpdat
 
 func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutoscaler, hvpa *hvpav1alpha1.Hvpa) error {
 	for _, hpa := range hpaList {
-		if hpaChanged := hpaSpecNeedChange(hvpa, hpa); hpaChanged {
+		if desiredHpa, hpaChanged := hpaSpecNeedChange(hvpa, hpa); hpaChanged {
 			_, err := r.UpdateHpaWithRetries(hpa.Namespace, hpa.Name,
 				func(hpaToUpdate *autoscaling.HorizontalPodAutoscaler) {
-					desiredHpa, _ := getHpaFromHvpa(hvpa)
 					hpaToUpdate.Spec = desiredHpa.Spec
 				})
 			if err != nil {
@@ -134,7 +133,7 @@ func getHpaFromHvpa(hvpa *hvpav1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscal
 				Kind:       "Hvpa",
 				Name:       hvpa.Name,
 			},
-			Metrics: hvpa.Spec.Hpa.Template.Spec.Metrics,
+			Metrics: append([]autoscaling.MetricSpec{}, hvpa.Spec.Hpa.Template.Spec.Metrics...),
 		},
 	}, nil
 }

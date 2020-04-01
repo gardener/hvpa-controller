@@ -166,6 +166,7 @@ var _ = Describe("#TestReconcile", func() {
 			// Delete the HPA and expect Reconcile to be called for HPA deletion
 			Expect(c.Delete(context.TODO(), hpa)).NotTo(HaveOccurred())
 			Eventually(func() error {
+				oldHpa := hpa.Name
 				num := 0
 				c.List(context.TODO(), hpaList)
 				for _, obj := range hpaList.Items {
@@ -174,10 +175,10 @@ var _ = Describe("#TestReconcile", func() {
 						hpa = obj.DeepCopy()
 					}
 				}
-				if num == 1 {
+				if num == 1 && hpa.Name != oldHpa {
 					return nil
 				}
-				return fmt.Errorf("Error: Expected 1 HPA; found %v", len(hpaList.Items))
+				return fmt.Errorf("Error: Expected 1 new HPA; found %v", len(hpaList.Items))
 			}, timeout).Should(Succeed())
 
 			// Create a pod for the target deployment, and update status to "OOMKilled".
@@ -221,6 +222,29 @@ var _ = Describe("#TestReconcile", func() {
 				c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, h)
 				return h.Status.OverrideScaleUpStabilization
 			}, timeout).Should(BeTrue())
+
+			// Update VPA status, let HVPA scale
+			hvpa := &hvpav1alpha1.Hvpa{}
+			Expect(c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa)).To(Succeed())
+			Expect(hvpa.Status.LastScaling.LastUpdated).To(BeNil())
+			Eventually(func() error {
+				if err := c.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, vpa); err != nil {
+					return err
+				}
+				vpa.Status = *newVpaStatus("deployment", "3G", "500m")
+				return c.Update(context.TODO(), vpa)
+			}, timeout).Should(Succeed())
+
+			Eventually(func() error {
+				hvpa = &hvpav1alpha1.Hvpa{}
+				if err := c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
+					return err
+				}
+				if hvpa.Status.LastScaling.LastUpdated == nil {
+					return fmt.Errorf("HVPA did not scale")
+				}
+				return nil
+			}, timeout).Should(Succeed())
 
 			// Manually delete HPA & VPA since GC isn't enabled in the test control plane
 			Eventually(func() error { return c.Delete(context.TODO(), hpa) }, timeout).
