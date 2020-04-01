@@ -238,10 +238,10 @@ type ChangeParams struct {
 type VpaWeight int32
 
 const (
-	// VpaOnly - only vertical scaling
-	VpaOnly VpaWeight = 100
-	// HpaOnly - only horizontal scaling
-	HpaOnly VpaWeight = 0
+	// MaxWeight - only vertical scaling
+	MaxWeight VpaWeight = 100
+	// MinWeight - only horizontal scaling
+	MinWeight VpaWeight = 0
 )
 
 // LastError has detailed information of the error

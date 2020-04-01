@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
@@ -74,7 +74,7 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 	Expect(cfg).ToNot(BeNil())
 
-	err = autoscalingv1alpha1.AddToScheme(scheme.Scheme)
+	err = hvpav1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme
@@ -133,15 +133,15 @@ func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync
 	return stop, wg
 }
 
-func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleParams) *autoscalingv1alpha1.Hvpa {
+func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) *hvpav1alpha1.Hvpa {
 	replica := int32(1)
 	util := int32(70)
 
 	stabilizationDur := "3m"
 
-	updateMode := autoscalingv1alpha1.UpdateModeAuto
+	updateMode := hvpav1alpha1.UpdateModeAuto
 
-	instance := &autoscalingv1alpha1.Hvpa{
+	instance := &hvpav1alpha1.Hvpa{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
@@ -149,40 +149,40 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 				"hpa-controller": "hvpa",
 			},
 		},
-		Spec: autoscalingv1alpha1.HvpaSpec{
+		Spec: hvpav1alpha1.HvpaSpec{
 			Replicas: &replica,
 			TargetRef: &autoscaling.CrossVersionObjectReference{
 				Kind:       "Deployment",
 				Name:       target,
 				APIVersion: "apps/v1",
 			},
-			Hpa: autoscalingv1alpha1.HpaSpec{
+			Hpa: hvpav1alpha1.HpaSpec{
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"hpaKey": labelVal,
 					},
 				},
 				Deploy: true,
-				ScaleUp: autoscalingv1alpha1.ScaleType{
-					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
+				ScaleUp: hvpav1alpha1.ScaleType{
+					UpdatePolicy: hvpav1alpha1.UpdatePolicy{
 						UpdateMode: &updateMode,
 					},
 					StabilizationDuration: &stabilizationDur,
 				},
-				ScaleDown: autoscalingv1alpha1.ScaleType{
-					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
+				ScaleDown: hvpav1alpha1.ScaleType{
+					UpdatePolicy: hvpav1alpha1.UpdatePolicy{
 						UpdateMode: &updateMode,
 					},
 					StabilizationDuration: &stabilizationDur,
 				},
 
-				Template: autoscalingv1alpha1.HpaTemplate{
+				Template: hvpav1alpha1.HpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							"hpaKey": labelVal,
 						},
 					},
-					Spec: autoscalingv1alpha1.HpaTemplateSpec{
+					Spec: hvpav1alpha1.HpaTemplateSpec{
 						MinReplicas: &replica,
 						MaxReplicas: 3,
 						Metrics: []autoscaling.MetricSpec{
@@ -197,36 +197,45 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 					},
 				},
 			},
-			Vpa: autoscalingv1alpha1.VpaSpec{
+			Vpa: hvpav1alpha1.VpaSpec{
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"vpaKey": labelVal,
 					},
 				},
 				Deploy: true,
-				ScaleUp: autoscalingv1alpha1.ScaleType{
-					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
+				ScaleUp: hvpav1alpha1.ScaleType{
+					UpdatePolicy: hvpav1alpha1.UpdatePolicy{
 						UpdateMode: &updateMode,
 					},
 					StabilizationDuration: &stabilizationDur,
 					MinChange:             minChange,
 				},
-				ScaleDown: autoscalingv1alpha1.ScaleType{
-					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
+				ScaleDown: hvpav1alpha1.ScaleType{
+					UpdatePolicy: hvpav1alpha1.UpdatePolicy{
 						UpdateMode: &updateMode,
 					},
 					StabilizationDuration: &stabilizationDur,
 					MinChange:             minChange,
 				},
-				Template: autoscalingv1alpha1.VpaTemplate{
+				Template: hvpav1alpha1.VpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							"vpaKey": labelVal,
 						},
 					},
+					Spec: hvpav1alpha1.VpaTemplateSpec{
+						ResourcePolicy: &vpa_api.PodResourcePolicy{
+							ContainerPolicies: []vpa_api.ContainerResourcePolicy{
+								{
+									ContainerName: "test-container",
+								},
+							},
+						},
+					},
 				},
 			},
-			WeightBasedScalingIntervals: []autoscalingv1alpha1.WeightBasedScalingInterval{
+			WeightBasedScalingIntervals: []hvpav1alpha1.WeightBasedScalingInterval{
 				{
 					StartReplicaCount: 1,
 					LastReplicaCount:  2,

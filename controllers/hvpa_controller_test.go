@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	"github.com/gardener/hvpa-controller/utils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
@@ -88,23 +88,23 @@ var (
 	limPercMem = int32(80)
 	limPercCPU = int32(80)
 
-	minChange = autoscalingv1alpha1.ScaleParams{
-		CPU: autoscalingv1alpha1.ChangeParams{
+	minChange = hvpav1alpha1.ScaleParams{
+		CPU: hvpav1alpha1.ChangeParams{
 			Value:      &valCPU,
 			Percentage: &percCPU,
 		},
-		Memory: autoscalingv1alpha1.ChangeParams{
+		Memory: hvpav1alpha1.ChangeParams{
 			Value:      &valMem,
 			Percentage: &percMem,
 		},
 	}
 
-	limitScale = autoscalingv1alpha1.ScaleParams{
-		CPU: autoscalingv1alpha1.ChangeParams{
+	limitScale = hvpav1alpha1.ScaleParams{
+		CPU: hvpav1alpha1.ChangeParams{
 			Value:      &limValCPU,
 			Percentage: &limPercCPU,
 		},
-		Memory: autoscalingv1alpha1.ChangeParams{
+		Memory: hvpav1alpha1.ChangeParams{
 			Value:      &limValMem,
 			Percentage: &limPercMem,
 		},
@@ -114,7 +114,7 @@ var (
 var _ = Describe("#TestReconcile", func() {
 
 	DescribeTable("##ReconcileHPAandVPA",
-		func(instance *autoscalingv1alpha1.Hvpa) {
+		func(instance *hvpav1alpha1.Hvpa) {
 			deploytest := target.DeepCopy()
 			// Overwrite name
 			deploytest.Name = "deploy-test-1"
@@ -217,7 +217,7 @@ var _ = Describe("#TestReconcile", func() {
 			Expect(c.Status().Update(context.TODO(), &p)).To(Succeed())
 
 			Eventually(func() bool {
-				h := &autoscalingv1alpha1.Hvpa{}
+				h := &hvpav1alpha1.Hvpa{}
 				c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, h)
 				return h.Status.OverrideScaleUpStabilization
 			}, timeout).Should(BeTrue())
@@ -236,11 +236,11 @@ var _ = Describe("#TestReconcile", func() {
 
 	Describe("#ScaleTests", func() {
 		type setup struct {
-			hvpa      *autoscalingv1alpha1.Hvpa
+			hvpa      *hvpav1alpha1.Hvpa
 			hpaStatus *autoscaling.HorizontalPodAutoscalerStatus
 			vpaStatus *vpa_api.VerticalPodAutoscalerStatus
 			target    *appsv1.Deployment
-			vpaWeight autoscalingv1alpha1.VpaWeight
+			vpaWeight hvpav1alpha1.VpaWeight
 		}
 		type expect struct {
 			scalingOff      bool
@@ -248,12 +248,12 @@ var _ = Describe("#TestReconcile", func() {
 			resourceChange  bool
 			scaleOutLimited bool
 			resources       v1.ResourceRequirements
-			blockedReasons  []autoscalingv1alpha1.BlockingReason
+			blockedReasons  []hvpav1alpha1.BlockingReason
 		}
 		type action struct {
-			maintenanceWindow *autoscalingv1alpha1.MaintenanceTimeWindow
+			maintenanceWindow *hvpav1alpha1.MaintenanceTimeWindow
 			updateMode        string
-			limitScaling      autoscalingv1alpha1.ScaleParams
+			limitScaling      hvpav1alpha1.ScaleParams
 		}
 		type data struct {
 			setup  setup
@@ -282,6 +282,7 @@ var _ = Describe("#TestReconcile", func() {
 
 				scaleOutLimited := isHpaScaleOutLimited(
 					data.setup.hpaStatus,
+					hvpav1alpha1.MaxWeight-vpaWeight,
 					data.setup.hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
 					hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode,
 					hvpa.Spec.MaintenanceTimeWindow,
@@ -290,7 +291,7 @@ var _ = Describe("#TestReconcile", func() {
 				Expect(isScalingOff(data.setup.hvpa)).To(Equal(data.expect.scalingOff))
 				Expect(scaleOutLimited).To(Equal(data.expect.scaleOutLimited))
 
-				blockedScaling := &[]*autoscalingv1alpha1.BlockedScaling{}
+				blockedScaling := &[]*hvpav1alpha1.BlockedScaling{}
 				podSpec, resourceChanged, vpaStatus, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, &target.Spec.Template.Spec, scaleOutLimited, blockedScaling)
 
 				Expect(err).ToNot(HaveOccurred())
@@ -313,7 +314,7 @@ var _ = Describe("#TestReconcile", func() {
 
 				// HPA would have set hvpa.spec.replicas to hpa.status.desiredReplicas using scale sub-resource
 				hvpa.Spec.Replicas = &hpaStatus.DesiredReplicas
-				hpaStatus, err = getWeightedReplicas(hpaStatus, hvpa, *target.Spec.Replicas, 100-vpaWeight, blockedScaling)
+				hpaStatus, err = getWeightedReplicas(hpaStatus, hvpa, *target.Spec.Replicas, hvpav1alpha1.MaxWeight-vpaWeight, blockedScaling)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(hpaStatus.DesiredReplicas).To(Equal(data.expect.desiredReplicas))
 			},
@@ -330,7 +331,7 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: hvpav1alpha1.VpaWeight(40),
 				},
 				action: action{
 					limitScaling: limitScale,
@@ -341,8 +342,8 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       scaledByWeight40,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMinChange,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMinChange,
 					},
 				},
 			}),
@@ -358,7 +359,7 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "250M", "350m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(90),
+					vpaWeight: hvpav1alpha1.VpaWeight(90),
 				},
 				expect: expect{
 					scalingOff:      false,
@@ -366,8 +367,8 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  false,
 					scaleOutLimited: true,
 					resources:       unscaled,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMinChange,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMinChange,
 					},
 				},
 			}),
@@ -383,14 +384,14 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "50M", "50m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(90),
+					vpaWeight: hvpav1alpha1.VpaWeight(90),
 				},
 				action: action{
-					maintenanceWindow: &autoscalingv1alpha1.MaintenanceTimeWindow{
+					maintenanceWindow: &hvpav1alpha1.MaintenanceTimeWindow{
 						Begin: utils.NewMaintenanceTime((time.Now().UTC().Hour()+3)%24, 0, 0).Formatted(),
 						End:   utils.NewMaintenanceTime((time.Now().UTC().Hour()+4)%24, 0, 0).Formatted(),
 					},
-					updateMode: autoscalingv1alpha1.UpdateModeMaintenanceWindow,
+					updateMode: hvpav1alpha1.UpdateModeMaintenanceWindow,
 				},
 				expect: expect{
 					scalingOff:      true,
@@ -398,8 +399,8 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  false,
 					scaleOutLimited: true, // Scale out is limited due to HPA update mode: MaintenanceMode
 					resources:       unscaled,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMaintenanceWindow,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMaintenanceWindow,
 					},
 				},
 			}),
@@ -415,14 +416,14 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "3G", "200m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: hvpav1alpha1.VpaWeight(40),
 				},
 				action: action{
-					maintenanceWindow: &autoscalingv1alpha1.MaintenanceTimeWindow{
+					maintenanceWindow: &hvpav1alpha1.MaintenanceTimeWindow{
 						Begin: utils.NewMaintenanceTime(time.Now().UTC().Hour()-1, 0, 0).Formatted(),
 						End:   utils.NewMaintenanceTime(time.Now().UTC().Hour()+1, 0, 0).Formatted(),
 					},
-					updateMode:   autoscalingv1alpha1.UpdateModeMaintenanceWindow,
+					updateMode:   hvpav1alpha1.UpdateModeMaintenanceWindow,
 					limitScaling: limitScale,
 				},
 				expect: expect{
@@ -431,8 +432,8 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       scaledByWeight40,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMinChange,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMinChange,
 					},
 				},
 			}),
@@ -448,16 +449,16 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: hvpav1alpha1.VpaWeight(40),
 				},
 				expect: expect{
 					scalingOff:      false,
 					desiredReplicas: 3,
-					resourceChange:  false,
+					resourceChange:  true,
 					scaleOutLimited: false,
-					resources:       unscaled,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonUpdatePolicy,
+					resources:       proportionalScaled,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMinChange,
 					},
 				},
 			}),
@@ -473,10 +474,10 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: hvpav1alpha1.VpaWeight(40),
 				},
 				action: action{
-					limitScaling: autoscalingv1alpha1.ScaleParams{},
+					limitScaling: hvpav1alpha1.ScaleParams{},
 				},
 				expect: expect{
 					scalingOff:      false,
@@ -484,8 +485,8 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       proportionalScaled,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMinChange,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMinChange,
 					},
 				},
 			}),
@@ -510,10 +511,10 @@ var _ = Describe("#TestReconcile", func() {
 							},
 						},
 						2),
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: hvpav1alpha1.VpaWeight(40),
 				},
 				action: action{
-					limitScaling: autoscalingv1alpha1.ScaleParams{},
+					limitScaling: hvpav1alpha1.ScaleParams{},
 				},
 				expect: expect{
 					scalingOff:      false,
@@ -521,7 +522,7 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       limitEquallyScaled,
-					blockedReasons:  []autoscalingv1alpha1.BlockingReason{},
+					blockedReasons:  []hvpav1alpha1.BlockingReason{},
 				},
 			}),
 		)

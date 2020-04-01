@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
@@ -32,7 +32,7 @@ import (
 var _ = Describe("#Adopt VPA", func() {
 
 	DescribeTable("##AdoptVPA",
-		func(instance *autoscalingv1alpha1.Hvpa) {
+		func(instance *hvpav1alpha1.Hvpa) {
 			deploytest := target.DeepCopy()
 			// Overwrite name
 			deploytest.Name = "deploy-test-3"
