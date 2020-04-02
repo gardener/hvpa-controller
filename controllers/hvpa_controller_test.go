@@ -340,7 +340,11 @@ var _ = Describe("#TestReconcile", func() {
 				hvpa.Spec.Replicas = &hpaStatus.DesiredReplicas
 				hpaStatus, err = getWeightedReplicas(hpaStatus, hvpa, *target.Spec.Replicas, hvpav1alpha1.MaxWeight-vpaWeight, blockedScaling)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(hpaStatus.DesiredReplicas).To(Equal(data.expect.desiredReplicas))
+				if data.expect.desiredReplicas != 0 {
+					Expect(hpaStatus.DesiredReplicas).To(Equal(data.expect.desiredReplicas))
+				} else {
+					Expect(hpaStatus).To(BeNil())
+				}
 			},
 
 			Entry("UpdateMode Auto, Should Scale only memory", &data{
@@ -547,6 +551,31 @@ var _ = Describe("#TestReconcile", func() {
 					scaleOutLimited: true,
 					resources:       limitEquallyScaled,
 					blockedReasons:  []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Update Mode Auto, Target Replicas 0. Should not scale horizontally", &data{
+				setup: setup{
+					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: newHpaStatus(
+						0, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+							{
+								Type:   autoscaling.ScalingLimited,
+								Status: v1.ConditionFalse,
+							},
+						}),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    newTarget("deployment", unscaled, 0),
+					vpaWeight: hvpav1alpha1.VpaWeight(40),
+				},
+				expect: expect{
+					scalingOff:      false,
+					desiredReplicas: 0,
+					resourceChange:  true,
+					scaleOutLimited: false,
+					resources:       proportionalScaled,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMinChange,
+					},
 				},
 			}),
 		)
