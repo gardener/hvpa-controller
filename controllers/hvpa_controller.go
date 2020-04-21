@@ -844,6 +844,13 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 		return nil, false, nil, nil
 	}
 	for k, v := range vpaStatus.Conditions {
+		if v.Type == vpa_api.ConfigUnsupported || v.Type == vpa_api.ConfigDeprecated || v.Type == vpa_api.LowConfidence {
+			if v.Status == "True" {
+				// VPA recommendations not valid
+				log.V(3).Info("VPA recommendations not valid because the following condition is true", "condition", v.Type, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+				return nil, false, nil, nil
+			}
+		}
 		if v.Type == vpa_api.RecommendationProvided {
 			if v.Status == "True" {
 				// VPA recommendations are provided, we can do further processing
