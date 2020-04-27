@@ -251,9 +251,10 @@ var _ = Describe("#TestReconcile", func() {
 			blockedReasons  []autoscalingv1alpha1.BlockingReason
 		}
 		type action struct {
-			maintenanceWindow *autoscalingv1alpha1.MaintenanceTimeWindow
-			updateMode        string
-			limitScaling      autoscalingv1alpha1.ScaleParams
+			maintenanceWindow  *autoscalingv1alpha1.MaintenanceTimeWindow
+			updateMode         string
+			limitScaling       autoscalingv1alpha1.ScaleParams
+			vpaStatusCondition []vpa_api.VerticalPodAutoscalerCondition
 		}
 		type data struct {
 			setup  setup
@@ -278,6 +279,9 @@ var _ = Describe("#TestReconcile", func() {
 					hvpa.Spec.Hpa.ScaleDown.UpdatePolicy.UpdateMode = &data.action.updateMode
 					hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode = &data.action.updateMode
 					hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode = &data.action.updateMode
+				}
+				if data.action.vpaStatusCondition != nil {
+					vpaStatus.Conditions = append(data.action.vpaStatusCondition, vpaStatus.Conditions...)
 				}
 
 				scaleOutLimited := isHpaScaleOutLimited(
@@ -519,6 +523,37 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       limitEquallyScaled,
+					blockedReasons:  []autoscalingv1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("VPA unsupported condition", &data{
+				setup: setup{
+					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: newHpaStatus(
+						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+							{
+								Type:   autoscaling.ScalingLimited,
+								Status: v1.ConditionTrue,
+							},
+						}),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    target,
+					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+				},
+				action: action{
+					vpaStatusCondition: []vpa_api.VerticalPodAutoscalerCondition{
+						{
+							Type:   vpa_api.ConfigUnsupported,
+							Status: v1.ConditionTrue,
+						},
+					},
+				},
+				expect: expect{
+					scalingOff:      false,
+					desiredReplicas: 3,
+					resourceChange:  false,
+					scaleOutLimited: true,
+					resources:       unscaled,
 					blockedReasons:  []autoscalingv1alpha1.BlockingReason{},
 				},
 			}),
