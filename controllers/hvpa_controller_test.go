@@ -77,6 +77,16 @@ var (
 			v1.ResourceMemory: resource.MustParse("200M"),
 		},
 	}
+	scaledByWeight100 = v1.ResourceRequirements{
+		Limits: v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("3333m"),
+			v1.ResourceMemory: resource.MustParse("75000000k"),
+		},
+		Requests: v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("500m"),
+			v1.ResourceMemory: resource.MustParse("3000000k"),
+		},
+	}
 	target  = newTarget("deployment", unscaled, 2)
 	valMem  = "100M"
 	valCPU  = "100m"
@@ -195,7 +205,7 @@ var _ = Describe("#TestReconcile", func() {
 					NodeName: "test-node",
 					Containers: []v1.Container{
 						{
-							Name:  "test-container",
+							Name:  "deploy-test-1",
 							Image: "k8s.gcr.io/pause-amd64:3.0",
 						},
 					},
@@ -267,6 +277,7 @@ var _ = Describe("#TestReconcile", func() {
 			vpaWeight hvpav1alpha1.VpaWeight
 		}
 		type expect struct {
+			vpaWeight       hvpav1alpha1.VpaWeight
 			scalingOff      bool
 			desiredReplicas int32
 			resourceChange  bool
@@ -278,6 +289,7 @@ var _ = Describe("#TestReconcile", func() {
 			maintenanceWindow *hvpav1alpha1.MaintenanceTimeWindow
 			updateMode        string
 			limitScaling      hvpav1alpha1.ScaleParams
+			weightIntervals   []hvpav1alpha1.WeightBasedScalingInterval
 		}
 		type data struct {
 			setup  setup
@@ -303,6 +315,11 @@ var _ = Describe("#TestReconcile", func() {
 					hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode = &data.action.updateMode
 					hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode = &data.action.updateMode
 				}
+				if data.action.weightIntervals != nil {
+					hvpa.Spec.WeightBasedScalingIntervals = data.action.weightIntervals
+					vpaWeight = getVpaWeightFromIntervals(hvpa, hpaStatus.CurrentReplicas, vpaStatus)
+					Expect(vpaWeight).To(Equal(data.expect.vpaWeight))
+				}
 
 				scaleOutLimited := isHpaScaleOutLimited(
 					data.setup.hpaStatus,
@@ -312,7 +329,7 @@ var _ = Describe("#TestReconcile", func() {
 					hvpa.Spec.MaintenanceTimeWindow,
 				)
 
-				Expect(isScalingOff(data.setup.hvpa)).To(Equal(data.expect.scalingOff))
+				Expect(isScalingOff(hvpa)).To(Equal(data.expect.scalingOff))
 				Expect(scaleOutLimited).To(Equal(data.expect.scaleOutLimited))
 
 				blockedScaling := &[]*hvpav1alpha1.BlockedScaling{}
@@ -576,6 +593,215 @@ var _ = Describe("#TestReconcile", func() {
 					blockedReasons: []hvpav1alpha1.BlockingReason{
 						hvpav1alpha1.BlockingReasonMinChange,
 					},
+				},
+			}),
+			Entry("UpdateMode Auto, Initial VPA scaling", &data{
+				setup: setup{
+					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: newHpaStatus(
+						1, 2, []autoscaling.HorizontalPodAutoscalerCondition{
+							{
+								Type:   autoscaling.ScalingLimited,
+								Status: v1.ConditionFalse,
+							},
+						}),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    newTarget("deployment", unscaled, 1),
+				},
+				action: action{
+					weightIntervals: []hvpav1alpha1.WeightBasedScalingInterval{
+						{
+							StartReplicaCount:                       1,
+							LastReplicaCount:                        1,
+							VpaWeight:                               100,
+							UpTransitionResourceThresholdPercentage: int64Ptr(90),
+						},
+						{
+							StartReplicaCount: 2,
+							LastReplicaCount:  4,
+							VpaWeight:         40,
+						},
+					},
+				},
+				expect: expect{
+					vpaWeight:       hvpav1alpha1.VpaWeight(100),
+					scalingOff:      false,
+					desiredReplicas: 1,
+					resourceChange:  true,
+					scaleOutLimited: true,
+					resources:       scaledByWeight100,
+					blockedReasons:  []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("UpdateMode Auto, Initial VPA scaling, upper threshold crossed", &data{
+				setup: setup{
+					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: newHpaStatus(
+						1, 2, []autoscaling.HorizontalPodAutoscalerCondition{
+							{
+								Type:   autoscaling.ScalingLimited,
+								Status: v1.ConditionFalse,
+							},
+						}),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    newTarget("deployment", unscaled, 1),
+				},
+				action: action{
+					weightIntervals: []hvpav1alpha1.WeightBasedScalingInterval{
+						{
+							StartReplicaCount:                       1,
+							LastReplicaCount:                        1,
+							VpaWeight:                               100,
+							UpTransitionResourceThresholdPercentage: int64Ptr(30),
+						},
+						{
+							StartReplicaCount: 2,
+							LastReplicaCount:  4,
+							VpaWeight:         40,
+						},
+					},
+					limitScaling: limitScale,
+				},
+				expect: expect{
+					vpaWeight:       hvpav1alpha1.VpaWeight(40),
+					scalingOff:      false,
+					desiredReplicas: 2,
+					resourceChange:  true,
+					scaleOutLimited: false,
+					resources:       scaledByWeight40,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMinChange,
+					},
+				},
+			}),
+			Entry("UpdateMode Auto, Initial HPA scaling", &data{
+				setup: setup{
+					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: newHpaStatus(
+						1, 2, []autoscaling.HorizontalPodAutoscalerCondition{
+							{
+								Type:   autoscaling.ScalingLimited,
+								Status: v1.ConditionFalse,
+							},
+						}),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    newTarget("deployment", unscaled, 1),
+				},
+				action: action{
+					weightIntervals: []hvpav1alpha1.WeightBasedScalingInterval{
+						{
+							StartReplicaCount: 1,
+							LastReplicaCount:  1,
+							VpaWeight:         0,
+						},
+						{
+							StartReplicaCount: 2,
+							LastReplicaCount:  2,
+							VpaWeight:         100,
+						},
+						{
+							StartReplicaCount: 3,
+							LastReplicaCount:  4,
+							VpaWeight:         0,
+						},
+					},
+				},
+				expect: expect{
+					vpaWeight:       hvpav1alpha1.VpaWeight(0),
+					scalingOff:      false,
+					desiredReplicas: 2,
+					resourceChange:  false,
+					scaleOutLimited: false,
+					resources:       unscaled,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonWeight,
+					},
+				},
+			}),
+			Entry("UpdateMode Auto, Middle VPA scaling", &data{
+				setup: setup{
+					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: newHpaStatus(
+						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+							{
+								Type:   autoscaling.ScalingLimited,
+								Status: v1.ConditionFalse,
+							},
+						}),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    newTarget("deployment", unscaled, 2),
+				},
+				action: action{
+					weightIntervals: []hvpav1alpha1.WeightBasedScalingInterval{
+						{
+							StartReplicaCount: 1,
+							LastReplicaCount:  1,
+							VpaWeight:         40,
+						},
+						{
+							StartReplicaCount: 2,
+							LastReplicaCount:  2,
+							VpaWeight:         100,
+							DownTransitionResourceThresholdPercentage: int64Ptr(70),
+							UpTransitionResourceThresholdPercentage:   int64Ptr(90),
+						},
+						{
+							StartReplicaCount: 3,
+							LastReplicaCount:  4,
+							VpaWeight:         0,
+						},
+					},
+					limitScaling: limitScale,
+				},
+				expect: expect{
+					vpaWeight:       hvpav1alpha1.VpaWeight(40),
+					scalingOff:      false,
+					desiredReplicas: 3,
+					resourceChange:  true,
+					scaleOutLimited: false,
+					resources:       scaledByWeight40,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMinChange,
+					},
+				},
+			}),
+			Entry("UpdateMode Auto, VPA recommendation does not belong to any interval", &data{
+				setup: setup{
+					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: newHpaStatus(
+						1, 2, []autoscaling.HorizontalPodAutoscalerCondition{
+							{
+								Type:   autoscaling.ScalingLimited,
+								Status: v1.ConditionFalse,
+							},
+						}),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    newTarget("deployment", unscaled, 1),
+				},
+				action: action{
+					weightIntervals: []hvpav1alpha1.WeightBasedScalingInterval{
+						{
+							StartReplicaCount:                       1,
+							LastReplicaCount:                        1,
+							VpaWeight:                               100,
+							UpTransitionResourceThresholdPercentage: int64Ptr(30),
+						},
+						{
+							StartReplicaCount: 2,
+							LastReplicaCount:  2,
+							VpaWeight:         100,
+							DownTransitionResourceThresholdPercentage: int64Ptr(70),
+						},
+					},
+				},
+				expect: expect{
+					vpaWeight:       hvpav1alpha1.VpaWeight(100),
+					scalingOff:      false,
+					desiredReplicas: 1,
+					resourceChange:  true,
+					scaleOutLimited: true,
+					resources:       scaledByWeight100,
+					blockedReasons:  []hvpav1alpha1.BlockingReason{},
 				},
 			}),
 		)

@@ -229,7 +229,11 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 						ResourcePolicy: &vpa_api.PodResourcePolicy{
 							ContainerPolicies: []vpa_api.ContainerResourcePolicy{
 								{
-									ContainerName: "test-container",
+									ContainerName: target,
+									MaxAllowed: v1.ResourceList{
+										v1.ResourceCPU:    resource.MustParse("2"),
+										v1.ResourceMemory: resource.MustParse("5G"),
+									},
 								},
 							},
 						},
@@ -316,4 +320,8 @@ func newTarget(name string, resources v1.ResourceRequirements, replicas int32) *
 			},
 		},
 	}
+}
+
+func int64Ptr(i int64) *int64 {
+	return &i
 }

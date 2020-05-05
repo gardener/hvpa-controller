@@ -101,6 +101,14 @@ type WeightBasedScalingInterval struct {
 	// If this field is not provided, it will default to maxReplicas of HPA
 	// +optional
 	LastReplicaCount int32 `json:"lastReplicaCount,omitempty"`
+	// UpTransitionResourceThresholdPercentage Percentage of VPA's maxAllowed. If vpaWeight is 100, and if the resource request is above this percentage,
+	// then next bucket's vpaWeight is used for scaling
+	// +optional
+	UpTransitionResourceThresholdPercentage *int64 `json:"upTransitionResourceThresholdPercentage,omitempty"`
+	// DownTransitionResourceThresholdPercentage Percentage of VPA's maxAllowed. If vpaWeight is 100, and if the resource request is below this percentage,
+	// then previous bucket's vpaWeight is used for scaling
+	// +optional
+	DownTransitionResourceThresholdPercentage *int64 `json:"downTransitionResourceThresholdPercentage,omitempty"`
 }
 
 // VpaSpec defines spec for VPA
