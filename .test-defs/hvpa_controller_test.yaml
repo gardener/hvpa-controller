@@ -6,7 +6,7 @@ spec:
   description: Tests Hvpa controller
 
   activeDeadlineSeconds: 900
-  labels: ["hvpa-controller"]
+  labels: ["hvpa-controller", "beta"]
 
   config:
   - name: GO111MODULE
