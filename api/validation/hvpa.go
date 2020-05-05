@@ -56,8 +56,27 @@ func validateHvpaSpec(spec *v1alpha1.HvpaSpec, fldPath *field.Path) field.ErrorL
 	allErrs = append(allErrs, validateMaintenanceWindow(spec.MaintenanceTimeWindow, field.NewPath("spec.maintenanceTimeWindow"))...)
 	allErrs = append(allErrs, validateHpaSpec(&spec.Hpa, field.NewPath("spec.hpa"))...)
 	allErrs = append(allErrs, validateVpaSpec(&spec.Vpa, field.NewPath("spec.vpa"))...)
+	allErrs = append(allErrs, validateWeightIntervals(spec.WeightBasedScalingIntervals, field.NewPath("spec.weightBasedScalingIntervals"))...)
 
 	// TODO: More validations
+
+	return allErrs
+}
+
+func validateWeightIntervals(weightIntervals []v1alpha1.WeightBasedScalingInterval, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	for _, interval := range weightIntervals {
+		if interval.StartReplicaCount < 1 || interval.LastReplicaCount < 1 {
+			allErrs = append(allErrs, field.Required(fldPath.Child("startReplicaCount|LastReplicaCount"), "replica count should be more than 0"))
+		}
+		if interval.StartReplicaCount > interval.LastReplicaCount {
+			allErrs = append(allErrs, field.Required(fldPath.Child("startReplicaCount|LastReplicaCount"), "startReplicaCount should not be more than lastReplicaCount"))
+		}
+		if interval.VpaWeight > v1alpha1.MaxWeight || interval.VpaWeight < 0 {
+			allErrs = append(allErrs, field.Invalid(fldPath.Child("vpaWeight"), interval.VpaWeight, "Valid values: 0 to 100"))
+		}
+	}
 
 	return allErrs
 }

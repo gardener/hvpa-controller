@@ -413,48 +413,140 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 	return hpa.Status.DeepCopy(), err
 }
 
-func getVpaWeightFromIntervals(hvpa *autoscalingv1alpha1.Hvpa, desiredReplicas, currentReplicas int32) autoscalingv1alpha1.VpaWeight {
+func getVpaWeightFromIntervals(hvpa *autoscalingv1alpha1.Hvpa, currentReplicas int32, vpaStatus *vpa_api.VerticalPodAutoscalerStatus,
+) autoscalingv1alpha1.VpaWeight {
 	var vpaWeight autoscalingv1alpha1.VpaWeight
-	// lastFraction is set to default MaxWeight to handle the case when vpaWeight is MaxWeight in the matching interval,
-	// and there are no fractional vpaWeights in the previous intervals. So we need to default to this value
-	lastFraction := autoscalingv1alpha1.VpaWeight(autoscalingv1alpha1.MaxWeight)
-	lookupNextFraction := false
-	for _, interval := range hvpa.Spec.WeightBasedScalingIntervals {
-		if lookupNextFraction {
-			if interval.VpaWeight < autoscalingv1alpha1.MaxWeight {
-				vpaWeight = interval.VpaWeight
-				break
-			}
-			continue
-		}
-		// TODO: Following 2 if checks need to be done as part of verification process
-		if interval.StartReplicaCount == 0 {
-			interval.StartReplicaCount = *hvpa.Spec.Hpa.Template.Spec.MinReplicas
-		}
-		if interval.LastReplicaCount == 0 {
-			interval.LastReplicaCount = hvpa.Spec.Hpa.Template.Spec.MaxReplicas
-		}
-		if interval.VpaWeight < autoscalingv1alpha1.MaxWeight {
-			lastFraction = interval.VpaWeight
-		}
-		if currentReplicas >= interval.StartReplicaCount && currentReplicas <= interval.LastReplicaCount {
-			vpaWeight = interval.VpaWeight
-			if vpaWeight == autoscalingv1alpha1.MaxWeight {
-				if desiredReplicas < currentReplicas {
-					// If HPA wants to scale in, use last seen fractional value as vpaWeight
-					// If there is no such value, we cannot scale in anyway, so keep it default MaxWeight
-					vpaWeight = lastFraction
-				} else if desiredReplicas > currentReplicas {
-					// If HPA wants to scale out, use next fractional value as vpaWeight
-					// If there is no such value, we can not scale out anyway, so we will end up with vpaWeight = MaxWeight
-					lookupNextFraction = true
-					continue
-				}
-			}
+
+	for i := range hvpa.Spec.WeightBasedScalingIntervals {
+		interval := &hvpa.Spec.WeightBasedScalingIntervals[i]
+		if interval.StartReplicaCount <= currentReplicas && interval.LastReplicaCount >= currentReplicas {
+			vpaWeight = getVpaWeight(hvpa, vpaStatus, i, 1)
 			break
 		}
 	}
+
+	log.V(3).Info("HVPA", "VpaWeight", vpaWeight, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 	return vpaWeight
+}
+
+func getVpaWeight(hvpa *autoscalingv1alpha1.Hvpa, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, index int, recursionDepth int) autoscalingv1alpha1.VpaWeight {
+	if recursionDepth > len(hvpa.Spec.WeightBasedScalingIntervals) {
+		// break the recursion, we would have definitely covered all the intervals possible by now.
+		// To handle cases when vpa recommendation is 60% of maxAllowed and spec is like this:
+		/*
+			weightIntervals: []hvpav1alpha1.WeightBasedScalingInterval{
+				{
+					StartReplicaCount: 1,
+					LastReplicaCount:  1,
+					VpaWeight:         100,
+					upThresholdPercentage: 40,
+				},
+				{
+					StartReplicaCount: 2,
+					LastReplicaCount:  2,
+					VpaWeight:         100,
+					DownThresholdPercentage: 70,
+				},
+		*/
+		log.Error(fmt.Errorf("Did not fit in any interval in WeightBasedScalingInterval, Recheck spec. Will use maxWeight"), "Warning", "HVPA", hvpa.Namespace+"/"+hvpa.Name)
+		return autoscalingv1alpha1.MaxWeight
+	}
+
+	interval := hvpa.Spec.WeightBasedScalingIntervals[index]
+	if interval.VpaWeight < autoscalingv1alpha1.MaxWeight {
+		return interval.VpaWeight
+	}
+
+	// vpaWeight == maxWeight
+	// We need to check if we are crossing UpTransitionResourceThresholdPercentage or DownTransitionResourceThresholdPercentage
+	if vpaStatus == nil || vpaStatus.Recommendation == nil {
+		return interval.VpaWeight
+	}
+
+	nextBucket, preBucket, thisBucket := false, false, false
+	scaleUpThreshold := interval.UpTransitionResourceThresholdPercentage
+	scaleDownThreshold := interval.DownTransitionResourceThresholdPercentage
+
+	if scaleUpThreshold == nil && scaleDownThreshold == nil {
+		log.V(2).Info("hvpa", "Cannot switch bucket without UpTransitionResourceThresholdPercentage or DownTransitionResourceThresholdPercentage")
+		return interval.VpaWeight
+	}
+
+	// maxAllowedMap: { Key: containerName, Value: maxAllowed } - For easy lookup
+	maxAllowedMap := make(map[string]*corev1.ResourceList)
+	for i := range hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies {
+		policy := hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies[i]
+		maxAllowedMap[policy.ContainerName] = &policy.MaxAllowed
+	}
+
+	if len(maxAllowedMap) == 0 {
+		log.V(2).Info("hvpa", "cannot switch bucket without maxAllowed from VPA", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+		return interval.VpaWeight
+	}
+
+	for i := range vpaStatus.Recommendation.ContainerRecommendations {
+		containerReco := vpaStatus.Recommendation.ContainerRecommendations[i].DeepCopy()
+		maxAllowed := maxAllowedMap[containerReco.ContainerName]
+		target := containerReco.Target
+
+		if maxAllowed == nil {
+			// Skip for this container
+			continue
+		}
+
+		if maxAllowed.Cpu().MilliValue() != 0 {
+			percentVal := target.Cpu().MilliValue() * 100 / maxAllowed.Cpu().MilliValue()
+			if scaleUpThreshold != nil && percentVal > *scaleUpThreshold {
+				// TODO: Consider the current bucket if it's a scale down, otherwise next bucket
+				// But is this really required if next bucket's downThreshold is lower than current bucket's upThreshold?
+				nextBucket = true
+			} else if scaleDownThreshold != nil && percentVal < *scaleDownThreshold {
+				// Should we consider requests for comparison with threshold when switching to previous bucket?
+				preBucket = true
+			} else {
+				thisBucket = true
+			}
+		}
+		if maxAllowed.Memory().MilliValue() != 0 {
+			percentVal := target.Memory().MilliValue() * 100 / maxAllowed.Memory().MilliValue()
+			if scaleUpThreshold != nil && percentVal > *scaleUpThreshold {
+				nextBucket = true
+			} else if scaleDownThreshold != nil && percentVal < *scaleDownThreshold {
+				preBucket = true
+			} else {
+				thisBucket = true
+			}
+		}
+
+		if nextBucket && preBucket {
+			// We have both situations, stay in this bucket. No need to process other containers.
+			return interval.VpaWeight
+		}
+	}
+
+	if nextBucket == false && preBucket == false && thisBucket == false {
+		log.V(3).Info("HVPA", "maxAllowed is not set for any container for VPA, will scale only vertically", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+		return interval.VpaWeight
+	}
+
+	if nextBucket {
+		// Atleast 1 recommendation crossed the upper threshold
+		if index < len(hvpa.Spec.WeightBasedScalingIntervals)-1 {
+			// Make recursive call to check if we fit in next bucket, as that bucket could also have vpaWeight == 100
+			return getVpaWeight(hvpa, vpaStatus, index+1, recursionDepth+1)
+		}
+		log.Error(fmt.Errorf("UpTransitionResourceThresholdPercentage is lower than 100 for the last interval in WeightBasedScalingInterval. Recheck spec. Will use maxWeight"), "Warning", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+		return interval.VpaWeight
+	} else if thisBucket {
+		// Not all recommendations are below the lower threshold
+		return interval.VpaWeight
+	}
+
+	// all recommendations are below lower threshold, check previous bucket
+	if index > 0 {
+		return getVpaWeight(hvpa, vpaStatus, index-1, recursionDepth+1)
+	}
+	return interval.VpaWeight
 }
 
 func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus,
@@ -505,14 +597,7 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 		return nil, false, false, 0, nil, err
 	}
 
-	var desiredReplicas int32
-	if hvpa.Spec.Replicas == nil {
-		desiredReplicas = currentReplicas
-	} else {
-		desiredReplicas = *hvpa.Spec.Replicas
-	}
-
-	vpaWeight := getVpaWeightFromIntervals(hvpa, desiredReplicas, currentReplicas)
+	vpaWeight := getVpaWeightFromIntervals(hvpa, currentReplicas, vpaStatus)
 	hpaWeight := autoscalingv1alpha1.MaxWeight - vpaWeight
 
 	upUpdateMode := hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode
@@ -793,7 +878,8 @@ func isHpaScaleOutLimited(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, 
 	}
 
 	if hpaStatus == nil || hpaStatus.Conditions == nil {
-		return false
+		// Either HPA is not deployed, or is not yet ready
+		return true
 	}
 	if hpaStatus.DesiredReplicas > hpaStatus.CurrentReplicas && hpaWeight == 0 {
 		// Since we are not going to scale horizontally in this case
@@ -870,12 +956,10 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	lastScaleTime := hvpa.Status.LastScaling.LastUpdated
 	overrideScaleUpStabilization := hvpa.Status.OverrideScaleUpStabilization
 	if overrideScaleUpStabilization {
-		// Consider HPA to be limited if we have seen oomkill or liveness probe fails already.
-		hpaScaleOutLimited = true
 		log.V(2).Info("VPA", "will override last scale time in case of scale up", overrideScaleUpStabilization, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-		if vpaWeight == 0 {
-			log.V(2).Info("VPA", "will override vpaWeight from 0 to 1", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-			vpaWeight = 1
+		if hpaScaleOutLimited {
+			log.V(2).Info("VPA", "will override vpaWeight to max as horizontal scaling is limited", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+			vpaWeight = autoscalingv1alpha1.MaxWeight
 		}
 	}
 	if lastScaleTime == nil {
@@ -988,7 +1072,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				} else if diffMem.Sign() > 0 {
 					// Optimization: If we are fully dependent on VPA, then let's wait for HPA scale out to be limited before scaling up
 					// TODO: Should we have a dedicated BlockingReason for this case?
-					if (hpaScaleOutLimited == false && vpaWeight == autoscalingv1alpha1.MaxWeight) || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
+					if (overrideScaleUpStabilization == false && hpaScaleOutLimited == false && vpaWeight == autoscalingv1alpha1.MaxWeight) || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
 						outTargetUpdatePolicy[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
 						blockedByUpdatePolicy = true
 
@@ -1052,7 +1136,7 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 				} else if diffCPU.Sign() > 0 {
 					// Optimization: If we are fully dependent on VPA, then let's wait for HPA scale out to be limited before scaling up
 					// TODO: Should we have a dedicated BlockingReason for this case?
-					if (hpaScaleOutLimited == false && vpaWeight == autoscalingv1alpha1.MaxWeight) || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
+					if (overrideScaleUpStabilization == false && hpaScaleOutLimited == false && vpaWeight == autoscalingv1alpha1.MaxWeight) || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
 						outTargetUpdatePolicy[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
 						blockedByUpdatePolicy = true
 
