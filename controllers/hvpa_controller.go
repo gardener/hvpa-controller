@@ -1407,15 +1407,13 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	if hpaScaled || vpaScaled {
 		now := metav1.Now()
 		hvpa.Status.LastScaling.LastScaleTime = &now
-		hvpa.Status.HpaWeight = 100 - vpaWeight
-		hvpa.Status.VpaWeight = vpaWeight
 
-		if hpaScaled {
-			hvpa.Status.LastScaling.HpaStatus.DesiredReplicas = weightedHpaStatus.DesiredReplicas
-			hvpa.Status.LastScaling.HpaStatus.CurrentReplicas = weightedHpaStatus.CurrentReplicas
+		if hpascaled {
+			hvpa.status.lastscaling.hpastatus.desiredreplicas = weightedhpastatus.desiredreplicas
+			hvpa.status.lastscaling.hpastatus.currentreplicas = weightedhpastatus.currentreplicas
 		}
 
-		if vpaScaled {
+		if vpascaled {
 			hvpa.Status.LastScaling.VpaStatus.Recommendation = weightedVpaStatus.Recommendation.DeepCopy()
 		}
 

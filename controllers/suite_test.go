@@ -185,7 +185,7 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 						MinReplicas: &replica,
 						MaxReplicas: 3,
 						Metrics: []autoscaling.MetricSpec{
-							autoscaling.MetricSpec{
+							{
 								Type: autoscaling.ResourceMetricSourceType,
 								Resource: &autoscaling.ResourceMetricSource{
 									Name:                     v1.ResourceCPU,
@@ -225,7 +225,7 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 					},
 				},
 			},
-			WeightBasedScalingIntervals: []autoscalingv1alpha1.WeightBasedScalingInterval{
+			ScaleIntervals: []autoscalingv1alpha1.ScaleIntervals{
 				{
 					StartReplicaCount: 1,
 					LastReplicaCount:  2,
@@ -295,7 +295,7 @@ func newTarget(name string, resources v1.ResourceRequirements, replicas int32) *
 				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
-						v1.Container{
+						{
 							Name:      name,
 							Image:     "k8s.gcr.io/pause-amd64:3.0",
 							Resources: resources,

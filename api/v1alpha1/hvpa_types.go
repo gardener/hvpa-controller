@@ -86,22 +86,6 @@ type HpaTemplateSpec struct {
 	Metrics []autoscaling.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,rep,name=metrics"`
 }
 
-// WeightBasedScalingInterval defines the interval of replica counts in which VpaWeight is applied to VPA scaling
-type WeightBasedScalingInterval struct {
-	// VpaWeight defines the weight (in percentage) to be given to VPA's recommendationd for the interval of number of replicas provided
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=100
-	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
-	// StartReplicaCount is the number of replicas from which VpaWeight is applied to VPA scaling
-	// If this field is not provided, it will default to minReplicas of HPA
-	// +optional
-	StartReplicaCount int32 `json:"startReplicaCount,omitempty"`
-	// LastReplicaCount is the number of replicas till which VpaWeight is applied to VPA scaling
-	// If this field is not provided, it will default to maxReplicas of HPA
-	// +optional
-	LastReplicaCount int32 `json:"lastReplicaCount,omitempty"`
-}
-
 // VpaSpec defines spec for VPA
 type VpaSpec struct {
 	// Selector is a label query that should match VPA.
@@ -153,6 +137,27 @@ type ScaleParams struct {
 	Memory ChangeParams `json:"memory,omitempty"`
 	// Scale patameters for replicas
 	Replicas ChangeParams `json:"replicas,omitempty"`
+}
+
+// Interval is the quantity interval
+type Interval struct {
+	MinValue *string `json:"minValue,omitempty"`
+	MaxValue *string `json:"maxValue,omitempty"`
+	// Delta defines quantum of value in the interval. It is used to iterate over the interval
+	// Default: 1 millicore for CPU
+	// Default: 1 byte for memory
+	// Default: 1 for replicas
+	Delta *string `json:"delta,omitempty"`
+}
+
+// ScaleIntervals defines the scaling interval for resources
+type ScaleIntervals struct {
+	// Scale parameters for CPU
+	CPU Interval `json:"cpu,omitempty"`
+	// Scale parameters for memory
+	Memory Interval `json:"memory,omitempty"`
+	// Scale patameters for replicas
+	Replicas Interval `json:"replicas,omitempty"`
 }
 
 // VpaTemplate defines the template for VPA
@@ -211,9 +216,8 @@ type HvpaSpec struct {
 	// Vpa defines the spec of VPA
 	Vpa VpaSpec `json:"vpa,omitempty"`
 
-	// WeightBasedScalingIntervals defines the intervals of replica counts, and the weights for scaling a deployment vertically
-	// If there are overlapping intervals, then the vpaWeight will be taken from the first matching interval
-	WeightBasedScalingIntervals []WeightBasedScalingInterval `json:"weightBasedScalingIntervals,omitempty"`
+	// ScaleIntervals defines the intervals of resources
+	ScaleIntervals []ScaleIntervals `json:"scaleIntervals,omitempty"`
 
 	// TargetRef points to the controller managing the set of pods for the autoscaler to control
 	TargetRef *autoscaling.CrossVersionObjectReference `json:"targetRef"`
@@ -232,16 +236,6 @@ type ChangeParams struct {
 	// +optional
 	Percentage *int32 `json:"percentage,omitempty"`
 }
-
-// VpaWeight - weight to provide to VPA scaling
-type VpaWeight int32
-
-const (
-	// VpaOnly - only vertical scaling
-	VpaOnly VpaWeight = 100
-	// HpaOnly - only horizontal scaling
-	HpaOnly VpaWeight = 0
-)
 
 // LastError has detailed information of the error
 type LastError struct {
@@ -270,9 +264,6 @@ type HvpaStatus struct {
 	// Current VPA UpdatePolicy set in the spec
 	VpaScaleDownUpdatePolicy *UpdatePolicy `json:"vpaScaleDownUpdatePolicy,omitempty"`
 
-	HpaWeight VpaWeight `json:"hpaWeight,omitempty"`
-	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
-
 	// Override scale up stabilization window
 	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
 
@@ -293,8 +284,6 @@ const (
 	BlockingReasonMaintenanceWindow BlockingReason = "MaintenanceWindow"
 	// BlockingReasonUpdatePolicy - Update policy doesn't support scaling
 	BlockingReasonUpdatePolicy BlockingReason = "UpdatePolicy"
-	// BlockingReasonWeight  - VpaWeight doesn't support scaling
-	BlockingReasonWeight BlockingReason = "Weight"
 	// BlockingReasonMinChange - Min change doesn't support scaling
 	BlockingReasonMinChange BlockingReason = "MinChange"
 )
@@ -305,7 +294,6 @@ var BlockingReasons = [...]BlockingReason{
 	BlockingReasonMinChange,
 	BlockingReasonStabilizationWindow,
 	BlockingReasonUpdatePolicy,
-	BlockingReasonWeight,
 }
 
 // BlockedScaling defines the details for blocked scaling
