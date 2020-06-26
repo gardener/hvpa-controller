@@ -4,9 +4,9 @@ apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
   creationTimestamp: null
-  name: hvpas.autoscaling.k8s.io
+  name: hvpas.autoscaling.gardener.cloud
 spec:
-  group: autoscaling.k8s.io
+  group: autoscaling.gardener.cloud
   names:
     kind: Hvpa
     plural: hvpas
@@ -42,128 +42,6 @@ spec:
                 deploy:
                   description: Deploy defines whether the HPA is deployed or not
                   type: boolean
-                scaleDown:
-                  description: ScaleDown defines the parameters for scale down
-                  properties:
-                    minChange:
-                      description: MinChange is the minimum change in the resource
-                        on which HVPA acts HVPA uses minimum of the Value and Percentage
-                        value
-                      properties:
-                        cpu:
-                          description: Scale parameters for CPU
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                        memory:
-                          description: Scale parameters for memory
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                        replicas:
-                          description: Scale patameters for replicas
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                      type: object
-                    stabilizationDuration:
-                      description: StabilizationDuration defines the minimum delay
-                        in minutes between 2 consecutive scale operations Valid time
-                        units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-                      type: string
-                    updatePolicy:
-                      description: Describes the rules on when changes are applied.
-                        If not specified, all fields in the `UpdatePolicy` are set
-                        to their default values.
-                      properties:
-                        updateMode:
-                          description: Controls when autoscaler applies changes to
-                            the resources. The default is 'Auto'.
-                          type: string
-                      type: object
-                  type: object
-                scaleUp:
-                  description: ScaleUp defines the parameters for scale up
-                  properties:
-                    minChange:
-                      description: MinChange is the minimum change in the resource
-                        on which HVPA acts HVPA uses minimum of the Value and Percentage
-                        value
-                      properties:
-                        cpu:
-                          description: Scale parameters for CPU
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                        memory:
-                          description: Scale parameters for memory
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                        replicas:
-                          description: Scale patameters for replicas
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                      type: object
-                    stabilizationDuration:
-                      description: StabilizationDuration defines the minimum delay
-                        in minutes between 2 consecutive scale operations Valid time
-                        units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-                      type: string
-                    updatePolicy:
-                      description: Describes the rules on when changes are applied.
-                        If not specified, all fields in the `UpdatePolicy` are set
-                        to their default values.
-                      properties:
-                        updateMode:
-                          description: Controls when autoscaler applies changes to
-                            the resources. The default is 'Auto'.
-                          type: string
-                      type: object
-                  type: object
                 selector:
                   description: 'Selector is a label query that should match HPA. Must
                     match in order to be controlled. If empty, defaulted to labels
@@ -560,6 +438,145 @@ spec:
               description: Replicas is the number of replicas of target resource
               format: int32
               type: integer
+            scaleDown:
+              description: ScaleDown defines the parameters for scale down
+              properties:
+                minChange:
+                  description: MinChange is the minimum change in the resource on
+                    which HVPA acts HVPA uses minimum of the Value and Percentage
+                    value
+                  properties:
+                    cpu:
+                      description: Scale parameters for CPU
+                      properties:
+                        percentage:
+                          description: Percentage is the percentage of currently allocated
+                            value to be used for scaling
+                          format: int32
+                          type: integer
+                        value:
+                          description: Value is the absolute value of the scaling
+                          type: string
+                      type: object
+                    memory:
+                      description: Scale parameters for memory
+                      properties:
+                        percentage:
+                          description: Percentage is the percentage of currently allocated
+                            value to be used for scaling
+                          format: int32
+                          type: integer
+                        value:
+                          description: Value is the absolute value of the scaling
+                          type: string
+                      type: object
+                    replicas:
+                      description: Scale patameters for replicas
+                      properties:
+                        percentage:
+                          description: Percentage is the percentage of currently allocated
+                            value to be used for scaling
+                          format: int32
+                          type: integer
+                        value:
+                          description: Value is the absolute value of the scaling
+                          type: string
+                      type: object
+                  type: object
+                stabilizationDuration:
+                  description: StabilizationDuration defines the minimum delay in
+                    minutes between 2 consecutive scale operations Valid time units
+                    are "ns", "us" (or "µs"), "ms", "s", "m", "h"
+                  type: string
+                updatePolicy:
+                  description: Describes the rules on when changes are applied. If
+                    not specified, all fields in the `UpdatePolicy` are set to their
+                    default values.
+                  properties:
+                    updateMode:
+                      description: Controls when autoscaler applies changes to the
+                        resources. The default is 'Auto'.
+                      type: string
+                  type: object
+              type: object
+            scaleIntervals:
+              description: ScaleIntervals defines the intervals of resources
+              items:
+                description: ScaleIntervals defines the scaling interval for resources
+                properties:
+                  maxCpu:
+                    description: Scale parameters for CPU
+                    type: string
+                  maxMemory:
+                    description: Scale parameters for memory
+                    type: string
+                  maxReplicas:
+                    description: Scale patameters for replicas
+                    format: int32
+                    type: integer
+                type: object
+              type: array
+            scaleUp:
+              description: ScaleUp defines the parameters for scale up
+              properties:
+                minChange:
+                  description: MinChange is the minimum change in the resource on
+                    which HVPA acts HVPA uses minimum of the Value and Percentage
+                    value
+                  properties:
+                    cpu:
+                      description: Scale parameters for CPU
+                      properties:
+                        percentage:
+                          description: Percentage is the percentage of currently allocated
+                            value to be used for scaling
+                          format: int32
+                          type: integer
+                        value:
+                          description: Value is the absolute value of the scaling
+                          type: string
+                      type: object
+                    memory:
+                      description: Scale parameters for memory
+                      properties:
+                        percentage:
+                          description: Percentage is the percentage of currently allocated
+                            value to be used for scaling
+                          format: int32
+                          type: integer
+                        value:
+                          description: Value is the absolute value of the scaling
+                          type: string
+                      type: object
+                    replicas:
+                      description: Scale patameters for replicas
+                      properties:
+                        percentage:
+                          description: Percentage is the percentage of currently allocated
+                            value to be used for scaling
+                          format: int32
+                          type: integer
+                        value:
+                          description: Value is the absolute value of the scaling
+                          type: string
+                      type: object
+                  type: object
+                stabilizationDuration:
+                  description: StabilizationDuration defines the minimum delay in
+                    minutes between 2 consecutive scale operations Valid time units
+                    are "ns", "us" (or "µs"), "ms", "s", "m", "h"
+                  type: string
+                updatePolicy:
+                  description: Describes the rules on when changes are applied. If
+                    not specified, all fields in the `UpdatePolicy` are set to their
+                    default values.
+                  properties:
+                    updateMode:
+                      description: Controls when autoscaler applies changes to the
+                        resources. The default is 'Auto'.
+                      type: string
+                  type: object
+              type: object
             targetRef:
               description: TargetRef points to the controller managing the set of
                 pods for the autoscaler to control
@@ -621,128 +638,6 @@ spec:
                           type: integer
                         value:
                           description: Value is the absolute value of the scaling
-                          type: string
-                      type: object
-                  type: object
-                scaleDown:
-                  description: ScaleDown defines the parameters for scale down
-                  properties:
-                    minChange:
-                      description: MinChange is the minimum change in the resource
-                        on which HVPA acts HVPA uses minimum of the Value and Percentage
-                        value
-                      properties:
-                        cpu:
-                          description: Scale parameters for CPU
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                        memory:
-                          description: Scale parameters for memory
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                        replicas:
-                          description: Scale patameters for replicas
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                      type: object
-                    stabilizationDuration:
-                      description: StabilizationDuration defines the minimum delay
-                        in minutes between 2 consecutive scale operations Valid time
-                        units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-                      type: string
-                    updatePolicy:
-                      description: Describes the rules on when changes are applied.
-                        If not specified, all fields in the `UpdatePolicy` are set
-                        to their default values.
-                      properties:
-                        updateMode:
-                          description: Controls when autoscaler applies changes to
-                            the resources. The default is 'Auto'.
-                          type: string
-                      type: object
-                  type: object
-                scaleUp:
-                  description: ScaleUp defines the parameters for scale up
-                  properties:
-                    minChange:
-                      description: MinChange is the minimum change in the resource
-                        on which HVPA acts HVPA uses minimum of the Value and Percentage
-                        value
-                      properties:
-                        cpu:
-                          description: Scale parameters for CPU
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                        memory:
-                          description: Scale parameters for memory
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                        replicas:
-                          description: Scale patameters for replicas
-                          properties:
-                            percentage:
-                              description: Percentage is the percentage of currently
-                                allocated value to be used for scaling
-                              format: int32
-                              type: integer
-                            value:
-                              description: Value is the absolute value of the scaling
-                              type: string
-                          type: object
-                      type: object
-                    stabilizationDuration:
-                      description: StabilizationDuration defines the minimum delay
-                        in minutes between 2 consecutive scale operations Valid time
-                        units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
-                      type: string
-                    updatePolicy:
-                      description: Describes the rules on when changes are applied.
-                        If not specified, all fields in the `UpdatePolicy` are set
-                        to their default values.
-                      properties:
-                        updateMode:
-                          description: Controls when autoscaler applies changes to
-                            the resources. The default is 'Auto'.
                           type: string
                       type: object
                   type: object
@@ -845,122 +740,71 @@ spec:
                       type: object
                   type: object
               type: object
-            weightBasedScalingIntervals:
-              description: WeightBasedScalingIntervals defines the intervals of replica
-                counts, and the weights for scaling a deployment vertically If there
-                are overlapping intervals, then the vpaWeight will be taken from the
-                first matching interval
-              items:
-                description: WeightBasedScalingInterval defines the interval of replica
-                  counts in which VpaWeight is applied to VPA scaling
-                properties:
-                  lastReplicaCount:
-                    description: LastReplicaCount is the number of replicas till which
-                      VpaWeight is applied to VPA scaling If this field is not provided,
-                      it will default to maxReplicas of HPA
-                    format: int32
-                    type: integer
-                  startReplicaCount:
-                    description: StartReplicaCount is the number of replicas from
-                      which VpaWeight is applied to VPA scaling If this field is not
-                      provided, it will default to minReplicas of HPA
-                    format: int32
-                    type: integer
-                  vpaWeight:
-                    description: VpaWeight defines the weight (in percentage) to be
-                      given to VPA's recommendationd for the interval of number of
-                      replicas provided
-                    format: int32
-                    type: integer
-                type: object
-              type: array
           required:
           - targetRef
           type: object
         status:
           description: HvpaStatus defines the observed state of Hvpa
           properties:
-            hpaScaleDownUpdatePolicy:
-              description: Current HPA UpdatePolicy set in the spec
-              properties:
-                updateMode:
-                  description: Controls when autoscaler applies changes to the resources.
-                    The default is 'Auto'.
-                  type: string
-              type: object
-            hpaScaleUpUpdatePolicy:
-              description: Current HPA UpdatePolicy set in the spec
-              properties:
-                updateMode:
-                  description: Controls when autoscaler applies changes to the resources.
-                    The default is 'Auto'.
-                  type: string
-              type: object
-            hpaWeight:
-              description: VpaWeight - weight to provide to VPA scaling
-              format: int32
-              type: integer
             lastBlockedScaling:
-              items:
-                description: BlockedScaling defines the details for blocked scaling
-                properties:
-                  reason:
-                    description: BlockingReason defines the reason for blocking.
-                    type: string
-                  scalingStatus:
-                    description: ScalingStatus defines the status of scaling
-                    properties:
-                      hpaStatus:
-                        description: HpaStatus defines the status of HPA
-                        properties:
-                          currentReplicas:
-                            format: int32
-                            type: integer
-                          desiredReplicas:
-                            format: int32
-                            type: integer
-                        type: object
-                      lastUpdated:
-                        format: date-time
-                        type: string
-                      vpaStatus:
-                        description: VpaStatus defines the status of VPA
-                        properties:
-                          containerResources:
-                            items:
-                              description: ContainerResources has the details of the
-                                container resources
-                              properties:
-                                containerName:
-                                  description: Name of the container.
-                                  type: string
-                                resources:
-                                  description: ResourceRequirements describes the
-                                    compute resource requirements.
-                                  properties:
-                                    limits:
-                                      additionalProperties:
-                                        type: string
-                                      description: 'Limits describes the maximum amount
-                                        of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
-                                      type: object
-                                    requests:
-                                      additionalProperties:
-                                        type: string
-                                      description: 'Requests describes the minimum
-                                        amount of compute resources required. If Requests
-                                        is omitted for a container, it defaults to
-                                        Limits if that is explicitly specified, otherwise
-                                        to an implementation-defined value. More info:
-                                        https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
-                                      type: object
-                                  type: object
-                              type: object
-                            type: array
-                        type: object
-                    type: object
-                type: object
-              type: array
+              description: BlockedScaling defines the details for blocked scaling
+              properties:
+                reason:
+                  description: BlockingReason defines the reason for blocking.
+                  type: string
+                scalingStatus:
+                  description: ScalingStatus defines the status of scaling
+                  properties:
+                    hpaStatus:
+                      description: HpaStatus defines the status of HPA
+                      properties:
+                        currentReplicas:
+                          format: int32
+                          type: integer
+                        desiredReplicas:
+                          format: int32
+                          type: integer
+                      type: object
+                    lastUpdated:
+                      format: date-time
+                      type: string
+                    vpaStatus:
+                      description: VpaStatus defines the status of VPA
+                      properties:
+                        containerResources:
+                          items:
+                            description: ContainerResources has the details of the
+                              container resources
+                            properties:
+                              containerName:
+                                description: Name of the container.
+                                type: string
+                              resources:
+                                description: ResourceRequirements describes the compute
+                                  resource requirements.
+                                properties:
+                                  limits:
+                                    additionalProperties:
+                                      type: string
+                                    description: 'Limits describes the maximum amount
+                                      of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                    type: object
+                                  requests:
+                                    additionalProperties:
+                                      type: string
+                                    description: 'Requests describes the minimum amount
+                                      of compute resources required. If Requests is
+                                      omitted for a container, it defaults to Limits
+                                      if that is explicitly specified, otherwise to
+                                      an implementation-defined value. More info:
+                                      https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                    type: object
+                                type: object
+                            type: object
+                          type: array
+                      type: object
+                  type: object
+              type: object
             lastError:
               description: LastError has details of any errors that occurred
               properties:
@@ -1085,30 +929,26 @@ spec:
               description: Replicas is the number of replicas of the target resource.
               format: int32
               type: integer
+            scaleDownUpdatePolicy:
+              description: Current UpdatePolicy set in the spec
+              properties:
+                updateMode:
+                  description: Controls when autoscaler applies changes to the resources.
+                    The default is 'Auto'.
+                  type: string
+              type: object
+            scaleUpUpdatePolicy:
+              description: Current UpdatePolicy set in the spec
+              properties:
+                updateMode:
+                  description: Controls when autoscaler applies changes to the resources.
+                    The default is 'Auto'.
+                  type: string
+              type: object
             targetSelector:
               description: TargetSelector is the string form of the label selector
                 of HPA. This is required for HPA to work with scale subresource.
               type: string
-            vpaScaleDownUpdatePolicy:
-              description: Current VPA UpdatePolicy set in the spec
-              properties:
-                updateMode:
-                  description: Controls when autoscaler applies changes to the resources.
-                    The default is 'Auto'.
-                  type: string
-              type: object
-            vpaScaleUpUpdatePolicy:
-              description: Current VPA UpdatePolicy set in the spec
-              properties:
-                updateMode:
-                  description: Controls when autoscaler applies changes to the resources.
-                    The default is 'Auto'.
-                  type: string
-              type: object
-            vpaWeight:
-              description: VpaWeight - weight to provide to VPA scaling
-              format: int32
-              type: integer
           type: object
       type: object
   versions:

@@ -51,7 +51,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - autoscaling.k8s.io
+  - autoscaling.gardener.cloud
   resources:
   - hvpas
   verbs:
@@ -63,7 +63,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - autoscaling.k8s.io
+  - autoscaling.gardener.cloud
   resources:
   - hvpas/status
   verbs:

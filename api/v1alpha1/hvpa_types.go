@@ -87,30 +87,6 @@ type HpaTemplateSpec struct {
 	Metrics []autoscaling.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,rep,name=metrics"`
 }
 
-// WeightBasedScalingInterval defines the interval of replica counts in which VpaWeight is applied to VPA scaling
-type WeightBasedScalingInterval struct {
-	// VpaWeight defines the weight (in percentage) to be given to VPA's recommendationd for the interval of number of replicas provided
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=100
-	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
-	// StartReplicaCount is the number of replicas from which VpaWeight is applied to VPA scaling
-	// If this field is not provided, it will default to minReplicas of HPA
-	// +optional
-	StartReplicaCount int32 `json:"startReplicaCount,omitempty"`
-	// LastReplicaCount is the number of replicas till which VpaWeight is applied to VPA scaling
-	// If this field is not provided, it will default to maxReplicas of HPA
-	// +optional
-	LastReplicaCount int32 `json:"lastReplicaCount,omitempty"`
-	// UpTransitionResourceThresholdPercentage Percentage of VPA's maxAllowed. If vpaWeight is 100, and if the resource request is above this percentage,
-	// then next bucket's vpaWeight is used for scaling
-	// +optional
-	UpTransitionResourceThresholdPercentage *int64 `json:"upTransitionResourceThresholdPercentage,omitempty"`
-	// DownTransitionResourceThresholdPercentage Percentage of VPA's maxAllowed. If vpaWeight is 100, and if the resource request is below this percentage,
-	// then previous bucket's vpaWeight is used for scaling
-	// +optional
-	DownTransitionResourceThresholdPercentage *int64 `json:"downTransitionResourceThresholdPercentage,omitempty"`
-}
-
 // VpaSpec defines spec for VPA
 type VpaSpec struct {
 	// Selector is a label query that should match VPA.
@@ -122,12 +98,6 @@ type VpaSpec struct {
 
 	// Deploy defines whether the VPA is deployed or not
 	Deploy bool `json:"deploy,omitempty"`
-
-	// ScaleUp defines the parameters for scale up
-	ScaleUp ScaleType `json:"scaleUp,omitempty"`
-
-	// ScaleDown defines the parameters for scale down
-	ScaleDown ScaleType `json:"scaleDown,omitempty"`
 
 	// Template is the object that describes the VPA that will be created.
 	// +optional
@@ -164,6 +134,16 @@ type ScaleParams struct {
 	Replicas ChangeParams `json:"replicas,omitempty"`
 }
 
+// ScaleIntervals defines the scaling interval for resources
+type ScaleIntervals struct {
+	// Scale parameters for CPU
+	MaxCPU string `json:"maxCpu,omitempty"`
+	// Scale parameters for memory
+	MaxMemory string `json:"maxMemory,omitempty"`
+	// Scale patameters for replicas
+	MaxReplicas int32 `json:"maxReplicas,omitempty"`
+}
+
 // VpaTemplate defines the template for VPA
 type VpaTemplate struct {
 	// Metadata of the pods created from this template.
@@ -198,12 +178,6 @@ type HpaSpec struct {
 	// Deploy defines whether the HPA is deployed or not
 	Deploy bool `json:"deploy,omitempty"`
 
-	// ScaleUp defines the parameters for scale up
-	ScaleUp ScaleType `json:"scaleUp,omitempty"`
-
-	// ScaleDown defines the parameters for scale down
-	ScaleDown ScaleType `json:"scaleDown,omitempty"`
-
 	// Template is the object that describes the HPA that will be created.
 	// +optional
 	Template HpaTemplate `json:"template,omitempty"`
@@ -220,9 +194,14 @@ type HvpaSpec struct {
 	// Vpa defines the spec of VPA
 	Vpa VpaSpec `json:"vpa,omitempty"`
 
-	// WeightBasedScalingIntervals defines the intervals of replica counts, and the weights for scaling a deployment vertically
-	// If there are overlapping intervals, then the vpaWeight will be taken from the first matching interval
-	WeightBasedScalingIntervals []WeightBasedScalingInterval `json:"weightBasedScalingIntervals,omitempty"`
+	// ScaleUp defines the parameters for scale up
+	ScaleUp ScaleType `json:"scaleUp,omitempty"`
+
+	// ScaleDown defines the parameters for scale down
+	ScaleDown ScaleType `json:"scaleDown,omitempty"`
+
+	// ScaleIntervals defines the intervals of resources
+	ScaleIntervals []ScaleIntervals `json:"scaleIntervals,omitempty"`
 
 	// TargetRef points to the controller managing the set of pods for the autoscaler to control
 	TargetRef *autoscaling.CrossVersionObjectReference `json:"targetRef"`
@@ -242,16 +221,6 @@ type ChangeParams struct {
 	Percentage *int32 `json:"percentage,omitempty"`
 }
 
-// VpaWeight - weight to provide to VPA scaling
-type VpaWeight int32
-
-const (
-	// MaxWeight - only vertical scaling
-	MaxWeight VpaWeight = 100
-	// MinWeight - only horizontal scaling
-	MinWeight VpaWeight = 0
-)
-
 // LastError has detailed information of the error
 type LastError struct {
 	// Description of the error
@@ -270,24 +239,17 @@ type HvpaStatus struct {
 	Replicas *int32 `json:"replicas,omitempty"`
 	// TargetSelector is the string form of the label selector of HPA. This is required for HPA to work with scale subresource.
 	TargetSelector *string `json:"targetSelector,omitempty"`
-	// Current HPA UpdatePolicy set in the spec
-	HpaScaleUpUpdatePolicy *UpdatePolicy `json:"hpaScaleUpUpdatePolicy,omitempty"`
-	// Current HPA UpdatePolicy set in the spec
-	HpaScaleDownUpdatePolicy *UpdatePolicy `json:"hpaScaleDownUpdatePolicy,omitempty"`
-	// Current VPA UpdatePolicy set in the spec
-	VpaScaleUpUpdatePolicy *UpdatePolicy `json:"vpaScaleUpUpdatePolicy,omitempty"`
-	// Current VPA UpdatePolicy set in the spec
-	VpaScaleDownUpdatePolicy *UpdatePolicy `json:"vpaScaleDownUpdatePolicy,omitempty"`
-
-	HpaWeight VpaWeight `json:"hpaWeight,omitempty"`
-	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
+	// Current UpdatePolicy set in the spec
+	ScaleUpUpdatePolicy *UpdatePolicy `json:"scaleUpUpdatePolicy,omitempty"`
+	// Current UpdatePolicy set in the spec
+	ScaleDownUpdatePolicy *UpdatePolicy `json:"scaleDownUpdatePolicy,omitempty"`
 
 	// Override scale up stabilization
 	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
 
-	LastBlockedScaling           []*BlockedScaling `json:"lastBlockedScaling,omitempty"`
-	LastScaling                  ScalingStatus     `json:"lastScaling,omitempty"`
-	LastProcessedRecommendations ScalingStatus     `json:"lastProcessedRecommendations,omitempty"`
+	LastBlockedScaling           *BlockedScaling `json:"lastBlockedScaling,omitempty"`
+	LastScaling                  ScalingStatus   `json:"lastScaling,omitempty"`
+	LastProcessedRecommendations ScalingStatus   `json:"lastProcessedRecommendations,omitempty"`
 
 	// LastError has details of any errors that occurred
 	LastError *LastError `json:"lastError,omitempty"`
@@ -303,8 +265,6 @@ const (
 	BlockingReasonMaintenanceWindow BlockingReason = "MaintenanceWindow"
 	// BlockingReasonUpdatePolicy - Update policy doesn't support scaling
 	BlockingReasonUpdatePolicy BlockingReason = "UpdatePolicy"
-	// BlockingReasonWeight  - VpaWeight doesn't support scaling
-	BlockingReasonWeight BlockingReason = "Weight"
 	// BlockingReasonMinChange - Min change doesn't support scaling
 	BlockingReasonMinChange BlockingReason = "MinChange"
 )
@@ -315,7 +275,6 @@ var BlockingReasons = [...]BlockingReason{
 	BlockingReasonMinChange,
 	BlockingReasonStabilizationWindow,
 	BlockingReasonUpdatePolicy,
-	BlockingReasonWeight,
 }
 
 // BlockedScaling defines the details for blocked scaling

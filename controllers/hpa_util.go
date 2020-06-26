@@ -129,7 +129,7 @@ func getHpaFromHvpa(hvpa *hvpav1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscal
 			MaxReplicas: hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
 			MinReplicas: hvpa.Spec.Hpa.Template.Spec.MinReplicas,
 			ScaleTargetRef: autoscaling.CrossVersionObjectReference{
-				APIVersion: "autoscaling.k8s.io/v1alpha1",
+				APIVersion: hvpav1alpha1.SchemeGroupVersionHvpa.String(),
 				Kind:       "Hvpa",
 				Name:       hvpa.Name,
 			},

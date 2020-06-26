@@ -135,11 +135,6 @@ func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync
 }
 
 func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) *hvpav1alpha1.Hvpa {
-	replica := int32(1)
-	util := int32(70)
-
-	stabilizationDur := "3m"
-
 	updateMode := hvpav1alpha1.UpdateModeAuto
 
 	instance := &hvpav1alpha1.Hvpa{
@@ -151,7 +146,7 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 			},
 		},
 		Spec: hvpav1alpha1.HvpaSpec{
-			Replicas: &replica,
+			Replicas: int32Ptr(1),
 			TargetRef: &autoscaling.CrossVersionObjectReference{
 				Kind:       "Deployment",
 				Name:       target,
@@ -164,19 +159,6 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 					},
 				},
 				Deploy: true,
-				ScaleUp: hvpav1alpha1.ScaleType{
-					UpdatePolicy: hvpav1alpha1.UpdatePolicy{
-						UpdateMode: &updateMode,
-					},
-					StabilizationDuration: &stabilizationDur,
-				},
-				ScaleDown: hvpav1alpha1.ScaleType{
-					UpdatePolicy: hvpav1alpha1.UpdatePolicy{
-						UpdateMode: &updateMode,
-					},
-					StabilizationDuration: &stabilizationDur,
-				},
-
 				Template: hvpav1alpha1.HpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
@@ -184,14 +166,14 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 						},
 					},
 					Spec: hvpav1alpha1.HpaTemplateSpec{
-						MinReplicas: &replica,
+						MinReplicas: int32Ptr(1),
 						MaxReplicas: 3,
 						Metrics: []autoscaling.MetricSpec{
-							autoscaling.MetricSpec{
+							{
 								Type: autoscaling.ResourceMetricSourceType,
 								Resource: &autoscaling.ResourceMetricSource{
 									Name:                     v1.ResourceCPU,
-									TargetAverageUtilization: &util,
+									TargetAverageUtilization: int32Ptr(70),
 								},
 							},
 						},
@@ -205,20 +187,6 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 					},
 				},
 				Deploy: true,
-				ScaleUp: hvpav1alpha1.ScaleType{
-					UpdatePolicy: hvpav1alpha1.UpdatePolicy{
-						UpdateMode: &updateMode,
-					},
-					StabilizationDuration: &stabilizationDur,
-					MinChange:             minChange,
-				},
-				ScaleDown: hvpav1alpha1.ScaleType{
-					UpdatePolicy: hvpav1alpha1.UpdatePolicy{
-						UpdateMode: &updateMode,
-					},
-					StabilizationDuration: &stabilizationDur,
-					MinChange:             minChange,
-				},
 				Template: hvpav1alpha1.VpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
@@ -240,16 +208,35 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 					},
 				},
 			},
-			WeightBasedScalingIntervals: []hvpav1alpha1.WeightBasedScalingInterval{
+			ScaleUp: hvpav1alpha1.ScaleType{
+				UpdatePolicy: hvpav1alpha1.UpdatePolicy{
+					UpdateMode: &updateMode,
+				},
+				StabilizationDuration: stringPtr("3m"),
+				MinChange:             minChange,
+			},
+			ScaleDown: hvpav1alpha1.ScaleType{
+				UpdatePolicy: hvpav1alpha1.UpdatePolicy{
+					UpdateMode: &updateMode,
+				},
+				StabilizationDuration: stringPtr("3m"),
+				MinChange:             minChange,
+			},
+			ScaleIntervals: []hvpav1alpha1.ScaleIntervals{
 				{
-					StartReplicaCount: 1,
-					LastReplicaCount:  2,
-					VpaWeight:         30,
+					MaxCPU:      "1",
+					MaxMemory:   "2G",
+					MaxReplicas: 1,
 				},
 				{
-					StartReplicaCount: 2,
-					LastReplicaCount:  3,
-					VpaWeight:         80,
+					MaxCPU:      "20",
+					MaxMemory:   "30G",
+					MaxReplicas: 5,
+				},
+				{
+					MaxCPU:      "30",
+					MaxMemory:   "40G",
+					MaxReplicas: 6,
 				},
 			},
 		},
@@ -285,6 +272,10 @@ func newVpaStatus(containerName, mem, cpu string) *vpa_api.VerticalPodAutoscaler
 				Status: "True",
 				Type:   vpa_api.RecommendationProvided,
 			},
+			{
+				Status: "False",
+				Type:   vpa_api.ConfigUnsupported,
+			},
 		},
 	}
 }
@@ -310,7 +301,7 @@ func newTarget(name string, resources v1.ResourceRequirements, replicas int32) *
 				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
-						v1.Container{
+						{
 							Name:      name,
 							Image:     "k8s.gcr.io/pause-amd64:3.0",
 							Resources: resources,
@@ -323,5 +314,13 @@ func newTarget(name string, resources v1.ResourceRequirements, replicas int32) *
 }
 
 func int64Ptr(i int64) *int64 {
+	return &i
+}
+
+func int32Ptr(i int32) *int32 {
+	return &i
+}
+
+func stringPtr(i string) *string {
 	return &i
 }

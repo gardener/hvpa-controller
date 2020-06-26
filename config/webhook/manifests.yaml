@@ -16,7 +16,7 @@ webhooks:
   name: mhvpa.kb.io
   rules:
   - apiGroups:
-    - autoscaling.k8s.io
+    - autoscaling.gardener.cloud
     apiVersions:
     - v1alpha1
     operations:
@@ -42,7 +42,7 @@ webhooks:
   name: vhvpa.kb.io
   rules:
   - apiGroups:
-    - autoscaling.k8s.io
+    - autoscaling.gardener.cloud
     apiVersions:
     - v1alpha1
     operations:

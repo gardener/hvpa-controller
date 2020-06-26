@@ -29,26 +29,24 @@ import (
 )
 
 const (
-	metricsNamespace              = "hvpa"
-	metricsSubsystemAggregate     = "aggregate"
-	metricsSubsystemSpec          = "spec"
-	metricsSubsystemStatus        = "status"
-	labelNamespace                = "namespace"
-	labelName                     = "name"
-	labelReason                   = "reason"
-	labelHpaScaleUpUpdatePolicy   = "hpaScaleUpUpdatePolicy"
-	labelHpaScaleDownUpdatePolicy = "hpaScaleDownUpdatePolicy"
-	labelVpaScaleUpUpdatePolicy   = "vpaScaleUpUpdatePolicy"
-	labelVpaScaleDownUpdatePolicy = "vpaScaleDownUpdatePolicy"
-	labelTargetRefName            = "targetName"
-	labelTargetRefKind            = "targetKind"
-	labelContainer                = "container"
-	labelResource                 = "resource"
-	labelRecommendation           = "recommendation"
-	recoTarget                    = "target"
-	recoLowerBound                = "lowerBound"
-	recoUpperBound                = "upperBound"
-	recoUncappedTarget            = "uncappedTarget"
+	metricsNamespace           = "hvpa"
+	metricsSubsystemAggregate  = "aggregate"
+	metricsSubsystemSpec       = "spec"
+	metricsSubsystemStatus     = "status"
+	labelNamespace             = "namespace"
+	labelName                  = "name"
+	labelReason                = "reason"
+	labelScaleUpUpdatePolicy   = "scaleUpUpdatePolicy"
+	labelScaleDownUpdatePolicy = "scaleDownUpdatePolicy"
+	labelTargetRefName         = "targetName"
+	labelTargetRefKind         = "targetKind"
+	labelContainer             = "container"
+	labelResource              = "resource"
+	labelRecommendation        = "recommendation"
+	recoTarget                 = "target"
+	recoLowerBound             = "lowerBound"
+	recoUpperBound             = "upperBound"
+	recoUncappedTarget         = "uncappedTarget"
 )
 
 type hvpaMetrics struct {
@@ -91,7 +89,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 		},
 		[]string{labelReason},
 	)
-	for _, reason := range []hvpav1alpha1.BlockingReason{hvpav1alpha1.BlockingReasonMaintenanceWindow, hvpav1alpha1.BlockingReasonMinChange, hvpav1alpha1.BlockingReasonStabilizationWindow, hvpav1alpha1.BlockingReasonUpdatePolicy, hvpav1alpha1.BlockingReasonWeight} {
+	for _, reason := range []hvpav1alpha1.BlockingReason{hvpav1alpha1.BlockingReasonMaintenanceWindow, hvpav1alpha1.BlockingReasonMinChange, hvpav1alpha1.BlockingReasonStabilizationWindow, hvpav1alpha1.BlockingReasonUpdatePolicy} {
 		m.aggrBlockedScalingsTotal.WithLabelValues(string(reason)).Set(0)
 	}
 	allCollectors = append(allCollectors, m.aggrBlockedScalingsTotal)
@@ -104,7 +102,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "replicas",
 				Help:      "The number of replicas in the HVPA spec (part of the Scale sub-resource).",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy},
 		)
 		allCollectors = append(allCollectors, m.specReplicas)
 
@@ -115,7 +113,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "replicas",
 				Help:      "The number of replicas in the HVPA status (part of the Scale sub-resource).",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy},
 		)
 		allCollectors = append(allCollectors, m.statusReplicas)
 
@@ -126,7 +124,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "applied_hpa_current_replicas",
 				Help:      "The applied current replicas recommendation from HPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy},
 		)
 		allCollectors = append(allCollectors, m.statusAppliedHPACurrentReplicas)
 
@@ -137,7 +135,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "applied_hpa_desired_replicas",
 				Help:      "The applied desired replicas recommendation from HPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy},
 		)
 		allCollectors = append(allCollectors, m.statusAppliedHPADesiredReplicas)
 
@@ -148,7 +146,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "applied_vpa_recommendation",
 				Help:      "The applied recommendation from VPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy, labelContainer, labelRecommendation, labelResource},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy, labelContainer, labelRecommendation, labelResource},
 		)
 		allCollectors = append(allCollectors, m.statusAppliedVPARecommendation)
 
@@ -159,7 +157,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "blocked_hpa_current_replicas",
 				Help:      "The blocked current replicas recommendation from HPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy, labelReason},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy, labelReason},
 		)
 		allCollectors = append(allCollectors, m.statusBlockedHPACurrentReplicas)
 
@@ -170,7 +168,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "blocked_hpa_desired_replicas",
 				Help:      "The blocked desired replicas recommendation from HPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy, labelReason},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy, labelReason},
 		)
 		allCollectors = append(allCollectors, m.statusBlockedHPADesiredReplicas)
 
@@ -181,7 +179,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "blocked_vpa_recommendation",
 				Help:      "The blocked recommendation from VPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy, labelReason, labelContainer, labelRecommendation, labelResource},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy, labelReason, labelContainer, labelRecommendation, labelResource},
 		)
 		allCollectors = append(allCollectors, m.statusBlockedVPARecommendation)
 	}
@@ -223,24 +221,16 @@ func basicDetailedLabels(hvpa *hvpav1alpha1.Hvpa) prometheus.Labels {
 	l := basicLabels(hvpa)
 
 	// Initialise to default update mode
-	l[labelHpaScaleUpUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
-	l[labelHpaScaleDownUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
-	l[labelVpaScaleUpUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
-	l[labelVpaScaleDownUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
+	l[labelScaleUpUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
+	l[labelScaleDownUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
 
-	if hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode != nil {
-		l[labelHpaScaleUpUpdatePolicy] = *hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode
+	if hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode != nil {
+		l[labelScaleUpUpdatePolicy] = *hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode
 	}
-	if hvpa.Spec.Hpa.ScaleDown.UpdatePolicy.UpdateMode != nil {
-		l[labelHpaScaleDownUpdatePolicy] = *hvpa.Spec.Hpa.ScaleDown.UpdatePolicy.UpdateMode
+	if hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode != nil {
+		l[labelScaleDownUpdatePolicy] = *hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode
 	}
 
-	if hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode != nil {
-		l[labelVpaScaleUpUpdatePolicy] = *hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode
-	}
-	if hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode != nil {
-		l[labelVpaScaleDownUpdatePolicy] = *hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode
-	}
 	return l
 }
 
@@ -431,8 +421,8 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 	}
 
 	if m.aggrBlockedScalingsTotal != nil && (!hpaScaled || !vpaScaled) {
-		for _, blocked := range hvpa.Status.LastBlockedScaling {
-			m.aggrBlockedScalingsTotal.WithLabelValues(string(blocked.Reason)).Inc()
+		if hvpa.Status.LastBlockedScaling != nil {
+			m.aggrBlockedScalingsTotal.WithLabelValues(string(hvpa.Status.LastBlockedScaling.Reason)).Inc()
 		}
 	}
 
@@ -461,12 +451,11 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 		}
 
 		blockedMap := make(map[hvpav1alpha1.BlockingReason]*hvpav1alpha1.BlockedScaling)
-		for _, blocked := range hvpa.Status.LastBlockedScaling {
-			if blocked == nil {
-				log.V(4).Info("Invalid blocked scaling entry", "hvpa", hvpa)
-				continue
-			}
-			blockedMap[blocked.Reason] = blocked
+
+		if hvpa.Status.LastBlockedScaling == nil {
+			log.V(4).Info("Invalid blocked scaling entry", "hvpa", hvpa)
+		} else {
+			blockedMap[hvpa.Status.LastBlockedScaling.Reason] = hvpa.Status.LastBlockedScaling
 		}
 		for _, blockingReason := range hvpav1alpha1.BlockingReasons {
 			blocked, ok := blockedMap[blockingReason]
