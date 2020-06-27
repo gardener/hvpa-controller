@@ -68,11 +68,11 @@ spec:
           percentage: 80
     limitsRequestsGapScaleParams:
       cpu:
-        percentage: 80
-        value: "2"
+        percentage: 40
+        value: "1"
       memory:
-        percentage: 80
-        value: 3G
+        percentage: 40
+        value: 1G
     template:
       metadata:
         labels:

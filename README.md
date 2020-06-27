@@ -78,7 +78,7 @@ HVPA will scale `limits` also along with `requests` based on following criteria:
 1. If originalLimit is set but originalRequest not set - K8s will treat the pod as if they were equal, then set limit equal to request
 1. If originalLimit and originalRequest are set and if they are equal, recommend limit equal to request.
 1. If limit scaling parameters are not set in `hvpa.spec.vpa` then scale the limits proportionaly as done by VPA
-1. If the scaling parameters are provided, then choose the min of the 2 possible values in `hvpa.spec.vpa.limitsRequestsGapScaleParams` (percentage and value)
+1. If the scaling parameters are provided, then choose the max of the 2 possible values in `hvpa.spec.vpa.limitsRequestsGapScaleParams` (percentage and value)
 
 #### Pros
 * Works even if HPA and VPA act on different metrices
@@ -165,11 +165,11 @@ spec:
           percentage: 80
     limitsRequestsGapScaleParams:
       cpu:
-        percentage: 80
-        value: "2"
+        percentage: 30
+        value: "1"
       memory:
-        percentage: 80
-        value: 3G
+        percentage: 30
+        value: 1G
     template:
       metadata:
         labels:
