@@ -1209,8 +1209,8 @@ func getScaledResourceLimit(resourceName corev1.ResourceName, originalLimit, ori
 			"%v: failed to keep limit to request ratio; capping limit to int64", resourceName)
 	}
 
-	// Initialise to max, and return the min after all the calculations
-	var scaledPercentageVal, scaledAddedVal big.Int = *big.NewInt(math.MaxInt64), *big.NewInt(math.MaxInt64)
+	// Initialise to 0, and return the max after all the calculations
+	var scaledPercentageVal, scaledAddedVal big.Int = *big.NewInt(0), *big.NewInt(0)
 	weightedReqMilli := big.NewInt(weightedRequest.MilliValue())
 
 	if changeParams.Percentage != nil && *changeParams.Percentage != 0 {
@@ -1225,7 +1225,7 @@ func getScaledResourceLimit(resourceName corev1.ResourceName, originalLimit, ori
 		scaledAddedVal.Add(weightedReqMilli, deltaMilli)
 	}
 
-	if scaledAddedVal.Cmp(&scaledPercentageVal) == -1 {
+	if scaledAddedVal.Cmp(&scaledPercentageVal) == 1 {
 		if scaledAddedVal.IsInt64() {
 			return resource.NewMilliQuantity(scaledAddedVal.Int64(), originalLimit.Format), ""
 		}

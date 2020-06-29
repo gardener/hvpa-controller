@@ -83,8 +83,8 @@ var (
 	percMem = int32(80)
 	percCPU = int32(80)
 
-	limValMem  = "3G"
-	limValCPU  = "2"
+	limValMem  = "1G"
+	limValCPU  = "1"
 	limPercMem = int32(80)
 	limPercCPU = int32(80)
 
