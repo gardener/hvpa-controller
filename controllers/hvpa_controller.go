@@ -599,8 +599,8 @@ func isScalingOff(hvpa *autoscalingv1alpha1.Hvpa) bool {
 
 	hpaScaleUpUpdatePolicy := hvpa.Spec.Hpa.ScaleUp.UpdatePolicy
 	hpaScaleDownUpdatePolicy := hvpa.Spec.Hpa.ScaleUp.UpdatePolicy
-	vpaScaleUpUpdatePolicy := hvpa.Spec.Hpa.ScaleUp.UpdatePolicy
-	vpaScaleDownUpdatePolicy := hvpa.Spec.Hpa.ScaleUp.UpdatePolicy
+	vpaScaleUpUpdatePolicy := hvpa.Spec.Vpa.ScaleUp.UpdatePolicy
+	vpaScaleDownUpdatePolicy := hvpa.Spec.Vpa.ScaleUp.UpdatePolicy
 
 	for _, policy := range []autoscalingv1alpha1.UpdatePolicy{
 		hpaScaleUpUpdatePolicy,
