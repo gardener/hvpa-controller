@@ -70,7 +70,7 @@ var (
 	}
 	scaledLarge = v1.ResourceRequirements{
 		Limits: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("405m"),
+			v1.ResourceCPU:    resource.MustParse("1225m"),
 			v1.ResourceMemory: resource.MustParse("4860000k"),
 		},
 		Requests: v1.ResourceList{
@@ -103,11 +103,11 @@ var (
 
 	limitScale = hvpav1alpha1.ScaleParams{
 		CPU: hvpav1alpha1.ChangeParams{
-			Value:      stringPtr("2"),
+			Value:      stringPtr("1"),
 			Percentage: int32Ptr(80),
 		},
 		Memory: hvpav1alpha1.ChangeParams{
-			Value:      stringPtr("3G"),
+			Value:      stringPtr("1"),
 			Percentage: int32Ptr(80),
 		},
 	}
@@ -307,6 +307,9 @@ var _ = Describe("#TestReconcile", func() {
 				if data.action.scaleIntervals != nil {
 					hvpa.Spec.ScaleIntervals = data.action.scaleIntervals
 				}
+				if data.action.vpaStatusCondition != nil {
+					vpaStatus.Conditions = append(data.action.vpaStatusCondition, vpaStatus.Conditions...)
+				}
 
 				scaledStatus, newPodSpec, resourceChanged, blockedScaling, err := getScalingRecommendations(hpaStatus, vpaStatus, hvpa, &target.Spec.Template.Spec, *target.Spec.Replicas)
 
@@ -433,6 +436,32 @@ var _ = Describe("#TestReconcile", func() {
 				expect: expect{
 					resourceChange: false,
 					blockedReason:  "",
+				},
+			}),
+			Entry("VPA unsupported condition", &data{
+				setup: setup{
+					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: newHpaStatus(
+						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+							{
+								Type:   autoscaling.ScalingLimited,
+								Status: v1.ConditionTrue,
+							},
+						}),
+					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
+					target:    target,
+				},
+				action: action{
+					vpaStatusCondition: []vpa_api.VerticalPodAutoscalerCondition{
+						{
+							Type:   vpa_api.ConfigUnsupported,
+							Status: v1.ConditionTrue,
+						},
+					},
+				},
+				expect: expect{
+					resourceChange: false,
+					resources:      unscaled,
 				},
 			}),
 		)
