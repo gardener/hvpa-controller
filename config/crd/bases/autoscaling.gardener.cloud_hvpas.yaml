@@ -36,6 +36,22 @@ spec:
         spec:
           description: HvpaSpec defines the desired state of Hvpa
           properties:
+            baseResourcesPerReplica:
+              additionalProperties:
+                description: ChangeParams defines the parameters for scaling
+                properties:
+                  percentage:
+                    description: Percentage is the percentage of currently allocated
+                      value to be used for scaling
+                    format: int32
+                    type: integer
+                  value:
+                    description: Value is the absolute value of the scaling
+                    type: string
+                type: object
+              description: BaseResourcesPerReplica specifies base resources to be
+                budgeted per replica while scaling horizontally
+              type: object
             hpa:
               description: Hpa defines the spec of HPA
               properties:
@@ -500,10 +516,19 @@ spec:
                   type: object
               type: object
             scaleIntervals:
-              description: ScaleIntervals defines the intervals of resources
+              description: ScalingIntervals indirectly define potentially multiple
+                intervals in total resources for each of which there is a corresponding
+                well-defined single desired "replicas" value. The intervals are expected
+                not to have gaps and any overlap is determinied by explicit ScalingIntervalsOverlap
+                configuration or any other implicit form of hysteresis.
               items:
                 description: ScaleIntervals defines the scaling interval for resources
                 properties:
+                  effectiveIntervalExtrapolation:
+                    description: This field defines how to compute multiple effective
+                      scaling intervals from the total resource interval defined by
+                      this interval. Default is 'linear'
+                    type: string
                   maxCpu:
                     description: Scale parameters for CPU
                     type: string
@@ -576,6 +601,22 @@ spec:
                         resources. The default is 'Auto'.
                       type: string
                   type: object
+              type: object
+            scalingIntervalsOverlap:
+              additionalProperties:
+                description: ChangeParams defines the parameters for scaling
+                properties:
+                  percentage:
+                    description: Percentage is the percentage of currently allocated
+                      value to be used for scaling
+                    format: int32
+                    type: integer
+                  value:
+                    description: Value is the absolute value of the scaling
+                    type: string
+                type: object
+              description: ScalingIntervalsOverlap is used to compute the effective
+                scaling intervals
               type: object
             targetRef:
               description: TargetRef points to the controller managing the set of

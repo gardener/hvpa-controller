@@ -325,7 +325,7 @@ var _ = Describe("#TestReconcile", func() {
 				}
 			},
 
-			Entry("UpdateMode Auto, scale up", &data{
+			Entry("UpdateMode Auto, scale up, paradoxical scaling", &data{
 				setup: setup{
 					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: nil,
@@ -337,8 +337,8 @@ var _ = Describe("#TestReconcile", func() {
 				},
 				expect: expect{
 					desiredReplicas: 2,
-					resourceChange:  true,
-					resources:       scaledSmall,
+					resourceChange:  false,
+					resources:       unscaledSmall,
 					blockedReason:   "",
 				},
 			}),

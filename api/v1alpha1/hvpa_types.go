@@ -142,6 +142,37 @@ type ScaleIntervals struct {
 	MaxMemory string `json:"maxMemory,omitempty"`
 	// Scale patameters for replicas
 	MaxReplicas int32 `json:"maxReplicas,omitempty"`
+	// This field defines how to compute multiple effective scaling intervals from the total
+	// resource interval defined by this interval.
+	// Default is 'linear'
+	// +optional
+	EffectiveIntervalExtrapolation *EffectiveIntervalExtrapolationType `json:"effectiveIntervalExtrapolation,omitempty"`
+}
+
+// EffectiveIntervalExtrapolationType - Defines type of interval
+type EffectiveIntervalExtrapolationType string
+
+const (
+	// EffectiveIntervalExtrapolicationLinear - Linearly divide the specified wider scaling interval into effective scaling
+	// intervals per replica possible by dividing the range of the total resources
+	// specified in the interval linearly (equally) among each possible replica.
+	EffectiveIntervalExtrapolicationLinear = "linear"
+	// EffectiveIntervalExtrapolicationHorizontalOnly - Special case of `linear` extrapolation which also indicates that only
+	// horizontal scaling is to be done using the computed `EffectiveScalingInterval`s.
+	EffectiveIntervalExtrapolicationHorizontalOnly = "horizontalOnly"
+)
+
+// EffectiveScalingInterval explicitly defines a single effective scaling interval
+// with a fixed single desired `replicas` value and the corresponding allowed range
+// (maximum while scaling up and minimum while scaling down) for total as well as
+// per-pod resources for the given desired `replicas`.
+type EffectiveScalingInterval struct {
+	// The desired replicas for this effective scaling interval
+	Replicas int32
+	// Applicable while scaling down
+	MinResources corev1.ResourceList
+	// Applicable while scaling up
+	MaxResources corev1.ResourceList
 }
 
 // VpaTemplate defines the template for VPA
@@ -183,10 +214,17 @@ type HpaSpec struct {
 	Template HpaTemplate `json:"template,omitempty"`
 }
 
+// ResourceChangeParams specifies resource-wise ChangeParams
+type ResourceChangeParams map[corev1.ResourceName]ChangeParams
+
 // HvpaSpec defines the desired state of Hvpa
 type HvpaSpec struct {
 	// Replicas is the number of replicas of target resource
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// BaseResourcesPerReplica specifies base resources to be budgeted per replica
+	// while scaling horizontally
+	BaseResourcesPerReplica ResourceChangeParams `json:"baseResourcesPerReplica,omitempty"`
 
 	// Hpa defines the spec of HPA
 	Hpa HpaSpec `json:"hpa,omitempty"`
@@ -200,8 +238,16 @@ type HvpaSpec struct {
 	// ScaleDown defines the parameters for scale down
 	ScaleDown ScaleType `json:"scaleDown,omitempty"`
 
-	// ScaleIntervals defines the intervals of resources
+	// ScalingIntervals indirectly define potentially multiple intervals in total
+	// resources for each of which there is a corresponding well-defined single desired
+	// "replicas" value.
+	// The intervals are expected not to have gaps and any overlap is determinied by
+	// explicit ScalingIntervalsOverlap configuration or any other implicit form of
+	// hysteresis.
 	ScaleIntervals []ScaleIntervals `json:"scaleIntervals,omitempty"`
+
+	// ScalingIntervalsOverlap is used to compute the effective scaling intervals
+	ScalingIntervalsOverlap ResourceChangeParams `json:"scalingIntervalsOverlap,omitempty"`
 
 	// TargetRef points to the controller managing the set of pods for the autoscaler to control
 	TargetRef *autoscaling.CrossVersionObjectReference `json:"targetRef"`

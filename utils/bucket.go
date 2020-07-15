@@ -56,13 +56,10 @@ type Bucket interface {
 }
 
 func newInterval(axis AxisName, minValue, maxValue, delta int64) (Interval, error) {
-	if minValue < 0 || maxValue < minValue || (maxValue > minValue && delta > maxValue-minValue) {
+	if minValue < 0 || maxValue < minValue {
 		return Interval{}, errors.New("minValue must both be positive, and maxValue should be greater than minValue")
 	}
-	if delta == 0 {
-		// Default delta to 1 unit
-		delta = 1
-	}
+
 	return Interval{
 		MinValue: minValue,
 		MaxValue: maxValue,
@@ -233,15 +230,16 @@ func (o *linearBucket) FindXValue(value int64, xAxis, yAxis AxisName) (int64, *B
 	yDelta := (o.Intervals[yAxis].MaxValue - o.Intervals[yAxis].MinValue) / int64(numberOfXIntervals)
 
 	x := o.Intervals[xAxis].MinValue
-	i, y := int64(1), int64(0)
+	i := int64(1)
 	for ; x <= o.Intervals[xAxis].MaxValue; x += o.Intervals[xAxis].Delta {
-		y = o.Intervals[yAxis].MinValue + i*yDelta
-		if value < x*y {
+		yMaxForX := o.Intervals[yAxis].MinValue + i*yDelta
+		if value < x*yMaxForX {
 			break
 		}
 		i++
 	}
-	return x, nil, nil
+	b := Bucket(o)
+	return x, &b, nil
 }
 
 func (o *linearBucket) FindYValue(value int64, xAxis, yAxis AxisName) (int64, error) {
