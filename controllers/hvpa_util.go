@@ -21,7 +21,7 @@ import (
 	"math"
 	"time"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	"github.com/gardener/hvpa-controller/utils"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -39,26 +39,26 @@ const (
 	ResourceReplicas utils.AxisName = "replicas"
 )
 
-func getLinearBucket(scaleInterval *autoscalingv1alpha1.ScaleIntervals, minCPU, minMemory int64, minReplicas int32) (utils.Bucket, error) {
+func getLinearBucket(scaleInterval *hvpav1alpha1.EffectiveScalingInterval) (utils.Bucket, error) {
 	linearBucket := utils.NewLinearBucket()
 
-	maxReplicas := scaleInterval.MaxReplicas
-	delta := int64(1) // Because we iterate over replicas in steps of 1
-	err := linearBucket.AddAxis(ResourceReplicas, int64(minReplicas), int64(maxReplicas), delta)
+	maxReplicas := scaleInterval.Replicas
+	minReplicas := scaleInterval.Replicas
+	err := linearBucket.AddAxis(ResourceReplicas, int64(minReplicas), int64(maxReplicas))
 	if err != nil {
 		return nil, err
 	}
 
-	maxCPU := resource.MustParse(scaleInterval.MaxCPU)
-	delta = maxCPU.MilliValue() - minCPU // Because we don't iterate over this axis anyway
-	err = linearBucket.AddAxis(ResourceCPU, minCPU, maxCPU.MilliValue(), delta)
+	maxCPU := scaleInterval.MaxResources[hvpav1alpha1.ResourceCPU]
+	minCPU := scaleInterval.MinResources[hvpav1alpha1.ResourceCPU]
+	err = linearBucket.AddAxis(ResourceCPU, minCPU, maxCPU)
 	if err != nil {
 		return nil, err
 	}
 
-	maxMemory := resource.MustParse(scaleInterval.MaxMemory)
-	delta = maxMemory.MilliValue() - minMemory // Because we don't iterate over this axis anyway
-	err = linearBucket.AddAxis(ResourceMemory, minMemory, maxMemory.MilliValue(), delta)
+	maxMemory := scaleInterval.MaxResources[hvpav1alpha1.ResourceMemory]
+	minMemory := scaleInterval.MinResources[hvpav1alpha1.ResourceMemory]
+	err = linearBucket.AddAxis(ResourceMemory, minMemory, maxMemory)
 	if err != nil {
 		return nil, err
 	}
@@ -84,64 +84,88 @@ func getMinAllowed(containerPolicies []vpa_api.ContainerResourcePolicy) (minCPU,
 	return cpu, memory
 }
 
-func getBuckets(hvpa *autoscalingv1alpha1.Hvpa, currentReplicas int32) (bucketList, currentBucket utils.Bucket, err error) {
+func getBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList, currentBucket utils.Bucket, err error) {
 	var (
-		buckets             []utils.Bucket
-		bucket              utils.Bucket
-		currBucket          utils.Bucket
-		deltaPerc, deltaVal int64
-		currMin             *int64
+		buckets    []utils.Bucket
+		bucket     utils.Bucket
+		currBucket utils.Bucket
+		currMin    *int64
+		replicas   int32 = 1
 	)
 	scalingOverlap := hvpa.Spec.ScalingIntervalsOverlap
 
-	minReplicas := *hvpa.Spec.Hpa.Template.Spec.MinReplicas
+	if hvpa.Spec.Hpa.Template.Spec.MinReplicas != nil {
+		replicas = *hvpa.Spec.Hpa.Template.Spec.MinReplicas
+	}
 	minCPU, minMemory := getMinAllowed(hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies)
 
 	for _, scaleInterval := range hvpa.Spec.ScaleIntervals {
-		maxCPU := resource.MustParse(scaleInterval.MaxCPU)
-		maxMemory := resource.MustParse(scaleInterval.MaxMemory)
+		intervalMaxCPU := resource.MustParse(scaleInterval.MaxCPU)
+		intervalMaxMemory := resource.MustParse(scaleInterval.MaxMemory)
+		intervalMinCPU := minCPU
+		intervalMinMemory := minMemory
 
-		if scaleInterval.EffectiveIntervalExtrapolation != nil && *scaleInterval.EffectiveIntervalExtrapolation == autoscalingv1alpha1.EffectiveIntervalExtrapolicationHorizontalOnly {
-			bucket, err = getLinearBucket(&scaleInterval, maxCPU.MilliValue(), maxMemory.MilliValue(), minReplicas)
-		} else {
-			bucket, err = getLinearBucket(&scaleInterval, minCPU, minMemory, minReplicas)
-		}
-		if err != nil {
-			return nil, nil, err
-		}
+		numOfSubIntervals := int64(scaleInterval.MaxReplicas - replicas + 1)
+		cpuDelta := (intervalMaxCPU.MilliValue() - intervalMinCPU) / numOfSubIntervals
+		memDelta := (intervalMaxMemory.MilliValue() - intervalMinMemory) / numOfSubIntervals
 
-		if currentReplicas <= scaleInterval.MaxReplicas && currentReplicas >= minReplicas {
-			currBucket = bucket
-		}
+		for i := int64(1); i <= numOfSubIntervals; i++ {
+			localMaxCPU := intervalMinCPU + i*cpuDelta
+			localMaxMem := intervalMinMemory + i*memDelta
+			subInterval := hvpav1alpha1.EffectiveScalingInterval{
+				Replicas: replicas,
+				MinResources: hvpav1alpha1.ResourceList{
+					hvpav1alpha1.ResourceCPU:    minCPU,
+					hvpav1alpha1.ResourceMemory: minMemory,
+				},
+				MaxResources: hvpav1alpha1.ResourceList{
+					hvpav1alpha1.ResourceCPU:    localMaxCPU,
+					hvpav1alpha1.ResourceMemory: localMaxMem,
+				},
+			}
 
-		buckets = append(buckets, bucket)
+			bucket, err = getLinearBucket(&subInterval)
+			if err != nil {
+				return nil, nil, err
+			}
 
-		// Prepare for next iteration
-		minReplicas = scaleInterval.MaxReplicas + 1
-		minCPU = maxCPU.MilliValue() * int64(scaleInterval.MaxReplicas) / int64(minReplicas)
-		minMemory = maxMemory.MilliValue() * int64(scaleInterval.MaxReplicas) / int64(minReplicas)
+			if currentReplicas == replicas {
+				currBucket = bucket
+			}
 
-		if scalingOverlap != nil {
-			// Adjust min values for overlap
-			for resourceName, params := range scalingOverlap {
-				if resourceName == corev1.ResourceCPU {
-					currMin = &minCPU
-				} else if resourceName == corev1.ResourceMemory {
-					currMin = &minMemory
-				} else {
-					log.V(3).Info("WARNING:", "unsupported resource in ScalingIntervalsOverlap", resourceName, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-					continue
+			log.V(4).Info("hvpa intervals", "interval", bucket.GetIntervals(), "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+			buckets = append(buckets, bucket)
+
+			// Prepare for next iteration - total max of current bucket is equal to total min of next bucket
+			prevReplicas := replicas
+			replicas = replicas + 1
+			minCPU = localMaxCPU * int64(prevReplicas) / int64(replicas)
+			minMemory = localMaxMem * int64(prevReplicas) / int64(replicas)
+
+			if scalingOverlap != nil {
+				// Adjust min values for overlap
+				for resourceName, params := range scalingOverlap {
+					deltaPerc := int64(0)
+					deltaVal := int64(0)
+					if resourceName == corev1.ResourceCPU {
+						currMin = &minCPU
+					} else if resourceName == corev1.ResourceMemory {
+						currMin = &minMemory
+					} else {
+						log.V(3).Info("WARNING:", "unsupported resource in ScalingIntervalsOverlap", resourceName, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+						continue
+					}
+					perc := params.Percentage
+					if perc != nil {
+						deltaPerc = *currMin * int64(*perc) / 100
+					}
+					if params.Value != nil {
+						val := resource.MustParse(*params.Value)
+						deltaVal = val.MilliValue()
+					}
+					// Following statement will update minCPU/minMemory value
+					*currMin = *currMin - int64(math.Max(float64(deltaPerc), float64(deltaVal)))
 				}
-				perc := params.Percentage
-				if perc != nil {
-					deltaPerc = *currMin * int64(*perc) / 100
-				}
-				if params.Value != nil {
-					val := resource.MustParse(*params.Value)
-					deltaVal = val.MilliValue()
-				}
-				// Following statement will update minCPU/minMemory value
-				*currMin = *currMin - int64(math.Max(float64(deltaPerc), float64(deltaVal)))
 			}
 		}
 	}
@@ -149,257 +173,81 @@ func getBuckets(hvpa *autoscalingv1alpha1.Hvpa, currentReplicas int32) (bucketLi
 	return utils.NewGenericBucket(buckets), currBucket, nil
 }
 
-func getRecommendations(hvpa *autoscalingv1alpha1.Hvpa, currentReplicas int32, cpu, memory, currPodCPU, currPodMem int64, isScaleDown bool) (int64, int64, int64, error) {
-	buckets, currentBucket, err := getBuckets(hvpa, currentReplicas)
-	if err != nil {
-		return 0, 0, 0, err
+func adjustForBaseUsage(newCPUPerReplica, currentperReplicaCPU, newMemPerReplica, currentperReplicaMem int64, finalReplica, currentReplicas int32, hvpa *hvpav1alpha1.Hvpa) (newCPU, newMem int64) {
+	baseUsageSpec := hvpa.Spec.BaseResourcesPerReplica
+	if baseUsageSpec == nil || finalReplica == currentReplicas {
+		return newCPUPerReplica, newMemPerReplica
 	}
 
-	currentBucketHasCPU := currentBucket.HasValue(cpu, ResourceReplicas, ResourceCPU) == 0
-	currentBucketHasMem := currentBucket.HasValue(memory, ResourceReplicas, ResourceMemory) == 0
+	var currReco, currReq *int64
 
-	if currentBucketHasCPU && currentBucketHasMem {
-		// no need to change bucket since recommended cpu AND memory fall in the same bucket
-		// We can calculate new resource values based on current bucket itself then,
-		// no need to use the generic bucket list anymore - overwrite:
-		buckets = currentBucket
-	} else if isScaleDown && (currentBucketHasCPU || currentBucketHasMem) {
-		// scaling down - no need to change bucket since recommended cpu OR memory fall in the same bucket
-		// This provides hysteresis while scaling down.
-		// We can calculate new resource values based on current bucket itself then,
-		// no need to use the generic bucket list anymore - overwrite:
-		buckets = currentBucket
-	}
+	for resourceName, params := range baseUsageSpec {
+		deltaPercReco, deltaPercReq, deltaVal := int64(0), int64(0), int64(0)
 
-	replicasByCPU, bucketCPU, _ := buckets.FindXValue(cpu, ResourceReplicas, ResourceCPU)
-	replicasByMemory, bucketMemory, _ := buckets.FindXValue(memory, ResourceReplicas, ResourceMemory)
-
-	// Recommend max - erring on the side of stability
-	replicasReco := int64(math.Max(float64(replicasByCPU), float64(replicasByMemory)))
-	var valueInterval utils.ValueInterval
-
-	if replicasByCPU > replicasByMemory {
-		replicasReco = replicasByCPU
-		valueInterval = (*bucketCPU).GetIntervals()
-	} else {
-		replicasReco = replicasByMemory
-		valueInterval = (*bucketMemory).GetIntervals()
-	}
-
-	if valueInterval.Intervals[ResourceCPU].MinValue == valueInterval.Intervals[ResourceCPU].MaxValue &&
-		valueInterval.Intervals[ResourceMemory].MinValue == valueInterval.Intervals[ResourceMemory].MaxValue {
-		// This interval supports only horizontal scaling with cpu and memory set to max values
-		// Recalculate
-		replicasByCPU := cpu / valueInterval.Intervals[ResourceCPU].MaxValue
-		replicasByMemory := memory / valueInterval.Intervals[ResourceMemory].MaxValue
-		replicasReco := int64(math.Max(float64(replicasByCPU), float64(replicasByMemory)))
-		return replicasReco, valueInterval.Intervals[ResourceCPU].MaxValue, valueInterval.Intervals[ResourceMemory].MaxValue, nil
-	}
-
-	cpuReco := cpu / replicasReco
-	memoryReco := memory / replicasReco
-
-	// To prevent paradoxical situation around the boundary between the intervals where the desiredReplicas changes:
-	if replicasReco > currentBucket.GetIntervals().Intervals[ResourceReplicas].MaxValue {
-		// If scaling out, choose maximum of current requests and calculated requests
-		cpuReco = int64(math.Max(float64(cpuReco), float64(currPodCPU)))
-		memoryReco = int64(math.Max(float64(memoryReco), float64(currPodMem)))
-	} else if replicasReco < currentBucket.GetIntervals().Intervals[ResourceReplicas].MinValue {
-		// Don't scale if new per pod resource recommendations are higher than current
-		if (currPodCPU != 0 && currPodCPU < cpuReco) || (currPodMem != 0 && currPodMem < memoryReco) {
-			log.V(2).Info("Paradoxical scaling: No scaling recommended because recommendation for horizontal scale is \"scale in\", while for vertical scale is \"scale up\"", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-			replicasReco = int64(currentReplicas)
-			cpuReco = currPodCPU
-			memoryReco = currPodMem
-			return replicasReco, cpuReco, memoryReco, nil
+		if resourceName == corev1.ResourceCPU {
+			currReq = &currentperReplicaCPU
+			currReco = &newCPUPerReplica
+		} else if resourceName == corev1.ResourceMemory {
+			currReq = &currentperReplicaMem
+			currReco = &newMemPerReplica
+		} else {
+			log.V(3).Info("WARNING:", "unsupported resource in BaseResourcesPerReplica", resourceName, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+			continue
 		}
-	}
-
-	if int32(replicasReco) != currentReplicas && hvpa.Spec.BaseResourcesPerReplica != nil {
-		// Adjust for base usage for replicas
-		var (
-			deltaPercReco, deltaValReco, deltaPercReq, deltaValReq int64
-			currReco, currReq                                      *int64
-		)
-		for resourceName, params := range hvpa.Spec.BaseResourcesPerReplica {
-			if resourceName == corev1.ResourceCPU {
-				currReq = &currPodCPU
-				currReco = &cpuReco
-			} else if resourceName == corev1.ResourceMemory {
-				currReq = &currPodMem
-				currReco = &memoryReco
-			} else {
-				log.V(3).Info("WARNING:", "unsupported resource in BaseResourcesPerReplica", resourceName, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-				continue
-			}
-			perc := params.Percentage
-			value := params.Value
-			if perc != nil {
-				deltaPercReq = *currReq * int64(*perc) / 100
-				deltaPercReco = *currReco * int64(*perc) / 100
-			}
-			if value != nil {
-				valBase := resource.MustParse(*value)
-				deltaValReq = valBase.MilliValue()
-				valReco := resource.MustParse(*value)
-				deltaValReco = valReco.MilliValue()
-			}
-			currBase := *currReq - int64(math.Max(float64(deltaPercReq), float64(deltaValReq)))
-			if currBase < 0 {
-				// This could happen if scaling is happening for the first time - current request might be set very small
-				currBase = 0
-			}
-			// Following statement will update cpuReco/memoryReco value
-			*currReco = *currReco - currBase + int64(math.Max(float64(deltaPercReco), float64(deltaValReco)))
+		perc := params.Percentage
+		value := params.Value
+		if perc != nil {
+			deltaPercReq = *currReq * int64(*perc) / 100
+			deltaPercReco = *currReco * int64(*perc) / 100
 		}
-	}
-
-	return replicasReco, cpuReco, memoryReco, nil
-}
-
-func getNewPodSpec(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, newpodcpu, newpodmemory, podCPUByVPA, podMemoryByVPA int64, podSpec *corev1.PodSpec, limitScalingParams *autoscalingv1alpha1.ScaleParams) (*corev1.PodSpec, *vpa_api.VerticalPodAutoscalerStatus) {
-	len := len(vpaStatus.Recommendation.ContainerRecommendations)
-	outVpaStatus := &vpa_api.VerticalPodAutoscalerStatus{
-		Recommendation: &vpa_api.RecommendedPodResources{
-			ContainerRecommendations: make([]vpa_api.RecommendedContainerResources, 0, len),
-		},
-	}
-
-	// Get fresh copy of podSpec. We need old container resources to calculate new limits
-	newPodSpec := podSpec.DeepCopy()
-	for _, reco := range vpaStatus.Recommendation.ContainerRecommendations {
-		// Resources should be updated only for containers for which VPA recommendations are available
-		for i := range newPodSpec.Containers {
-			container := &newPodSpec.Containers[i]
-			if container.Name == reco.ContainerName {
-				vpaTargetCPU := reco.Target.Cpu().MilliValue()
-				vpaTargetMemory := reco.Target.Memory().MilliValue()
-
-				cpu := newpodcpu * vpaTargetCPU / podCPUByVPA
-				memory := int64(float64(newpodmemory) * (float64(vpaTargetMemory) / float64(podMemoryByVPA))) // Prevents overflow
-
-				newCPU := resource.NewScaledQuantity(cpu, resource.Milli)
-				_ = newCPU.String() // cache string q.s
-				newMem := resource.NewScaledQuantity(memory, resource.Milli)
-				newMem.SetScaled(newMem.ScaledValue(resource.Kilo), resource.Kilo)
-
-				newRequest := corev1.ResourceList{
-					corev1.ResourceCPU:    *newCPU,
-					corev1.ResourceMemory: *newMem,
-				}
-				newLimits := getScaledLimits(container.Resources.Limits, container.Resources.Requests, newRequest, *limitScalingParams)
-
-				container.Resources.Requests = newRequest
-				container.Resources.Limits = newLimits
-
-				outVpaStatus.Recommendation.ContainerRecommendations = append(outVpaStatus.Recommendation.ContainerRecommendations,
-					vpa_api.RecommendedContainerResources{
-						Target:        newRequest,
-						ContainerName: container.Name,
-					})
-				break
-			}
+		if value != nil {
+			valBase := resource.MustParse(*value)
+			deltaVal = valBase.MilliValue()
 		}
+		currBase := int64(math.Max(float64(deltaPercReq), float64(deltaVal))) * int64(currentReplicas)
+		if *currReq*int64(currentReplicas) <= currBase {
+			// This could happen if scaling is happening for the first time - current request might be set very small
+			continue
+		}
+		newBase := int64(math.Max(float64(deltaPercReco), float64(deltaVal)) * float64(finalReplica))
+		// Following statement will update newCPUPerReplica/newMemPerReplica value
+		*currReco = (*currReco*int64(finalReplica) - currBase + newBase) / int64(finalReplica)
 	}
-
-	return newPodSpec, outVpaStatus
+	return newCPUPerReplica, newMemPerReplica
 }
 
 func getScalingRecommendations(
 	hpaStatus *autoscaling.HorizontalPodAutoscalerStatus,
 	vpaStatus *vpa_api.VerticalPodAutoscalerStatus,
-	hvpa *autoscalingv1alpha1.Hvpa,
+	hvpa *hvpav1alpha1.Hvpa,
 	podSpec *corev1.PodSpec,
 	currentReplicas int32,
 ) (
-	scaledStatus *autoscalingv1alpha1.ScalingStatus,
+	scaledStatus *hvpav1alpha1.ScalingStatus,
 	newPodSpec *corev1.PodSpec,
 	resourceChanged bool,
-	blockingReason autoscalingv1alpha1.BlockingReason,
+	blockingReason *[]*hvpav1alpha1.BlockedScaling,
 	err error,
 ) {
 	if vpaStatus == nil || vpaStatus.Recommendation == nil {
 		log.V(3).Info("VPA is not ready yet. Will not scale", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-		return nil, nil, false, "", nil
+		return nil, nil, false, nil, nil
 	}
 
 	if !vpaStatusConditionsSupported(vpaStatus, hvpa.Namespace+"/"+hvpa.Name) {
-		return nil, nil, false, "", errors.New("VPA status conditions not supported")
+		return nil, nil, false, nil, errors.New("VPA status conditions not supported")
 	}
 
-	var podMemoryByVPA, podCPUbyVPA, currentPodMemory, currentPodCPU resource.Quantity
-	var totalMemoryByVPA, totalMemoryByHPA, totalCPUByVPA, totalCPUByHPA int64
+	overrideStablization := hvpa.Status.OverrideScaleUpStabilization
 
-	// Calculate total resource requests for containers in a pod for which VPA is enabled
-	for i := range vpaStatus.Recommendation.ContainerRecommendations {
-		recommendation := &vpaStatus.Recommendation.ContainerRecommendations[i]
-		podMemoryByVPA.Add(*recommendation.Target.Memory())
-		podCPUbyVPA.Add(*recommendation.Target.Cpu())
-
-		for j := range podSpec.Containers {
-			container := &podSpec.Containers[j]
-			if container.Name == recommendation.ContainerName {
-				if container.Resources.Requests != nil {
-					currentPodMemory.Add(*container.Resources.Requests.Memory())
-					currentPodCPU.Add(*container.Resources.Requests.Cpu())
-				}
-				break
-			}
+	var maintenanceTimeWindow *utils.MaintenanceTimeWindow
+	maintenanceWindow := hvpa.Spec.MaintenanceTimeWindow
+	if maintenanceWindow != nil {
+		maintenanceTimeWindow, err = utils.ParseMaintenanceTimeWindow(maintenanceWindow.Begin, maintenanceWindow.End)
+		if err != nil {
+			return nil, nil, false, nil, err
 		}
 	}
-
-	currentPodMemoryVal := currentPodMemory.MilliValue()
-	currentPodCPUVal := currentPodCPU.MilliValue()
-
-	totalMemoryByVPA = podMemoryByVPA.MilliValue() * int64(currentReplicas)
-	totalCPUByVPA = podCPUbyVPA.MilliValue() * int64(currentReplicas)
-	if hpaStatus != nil {
-		totalMemoryByHPA = currentPodMemoryVal * int64(hpaStatus.DesiredReplicas)
-		totalCPUByHPA = currentPodCPUVal * int64(hpaStatus.DesiredReplicas)
-	}
-
-	totalMemoryRequired := int64(math.Max(float64(totalMemoryByHPA), float64(totalMemoryByVPA)))
-	totalCPURequired := int64(math.Max(float64(totalCPUByHPA), float64(totalCPUByVPA)))
-
-	actualMemDelta := totalMemoryRequired - (currentPodMemoryVal * int64(currentReplicas))
-	actualCPUDelta := totalCPURequired - (currentPodCPUVal * int64(currentReplicas))
-	if actualMemDelta == 0 && actualCPUDelta == 0 {
-		// No scaling required
-		return nil, nil, false, "", nil
-	}
-
-	// If either or both of memory and cpu are scaling up, consider it as a overall scale up - erring on the side of stability
-	isScaleDown := actualCPUDelta <= 0 && actualMemDelta <= 0
-	isScaleUp := !isScaleDown
-
-	replicasReco, cpuReco, memoryReco, err := getRecommendations(hvpa, currentReplicas, totalCPURequired, totalMemoryRequired, currentPodCPUVal, currentPodMemoryVal, isScaleDown)
-	if err != nil {
-		return nil, nil, false, "", err
-	}
-	desiredReplicas := int32(replicasReco)
-	if desiredReplicas == currentReplicas && cpuReco == currentPodCPUVal && memoryReco == currentPodMemoryVal {
-		log.V(3).Info("Scaling Not required", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-		return nil, nil, false, "", nil
-	}
-
-	desiredHpaStatus := &autoscaling.HorizontalPodAutoscalerStatus{
-		CurrentReplicas: currentReplicas,
-		DesiredReplicas: desiredReplicas,
-	}
-	var desiredVpaStatus *vpa_api.VerticalPodAutoscalerStatus
-
-	if cpuReco != currentPodCPUVal || memoryReco != currentPodMemoryVal {
-		newPodSpec, desiredVpaStatus = getNewPodSpec(vpaStatus, cpuReco, memoryReco, podCPUbyVPA.MilliValue(), podMemoryByVPA.MilliValue(), podSpec, &hvpa.Spec.Vpa.LimitsRequestsGapScaleParams)
-	}
-
-	scaleUpMinDeltaMem := getThreshold(&hvpa.Spec.ScaleUp.MinChange.Memory, corev1.ResourceMemory, currentPodMemory)
-	scaleDownMinDeltaMem := getThreshold(&hvpa.Spec.ScaleDown.MinChange.Memory, corev1.ResourceMemory, currentPodMemory)
-	scaleUpMinDeltaCPU := getThreshold(&hvpa.Spec.ScaleUp.MinChange.CPU, corev1.ResourceCPU, currentPodCPU)
-	scaleDownMinDeltaCPU := getThreshold(&hvpa.Spec.ScaleDown.MinChange.CPU, corev1.ResourceCPU, currentPodCPU)
-
-	// The blockedScalingReason is populated with the reasons for blocking scaling with the following priority order:
-	// UpdatePolicy > StabilizationWindow > MaintenanceWindow > MinChanged
-	var blockedScalingReason autoscalingv1alpha1.BlockingReason
 
 	// Check if scale up and scale down stabilisation windows has passed
 	scaleUpStabilizationWindow, scaleDownStabilizationWindow := time.Duration(0), time.Duration(0)
@@ -419,45 +267,258 @@ func getScalingRecommendations(
 	}
 	lastScaleTimeDuration := metav1.Now().Sub(lastScaleTime.Time)
 
-	// Check for minChange
-	if ((actualMemDelta >= 0 && actualMemDelta < scaleUpMinDeltaMem) || (actualMemDelta <= 0 && -actualMemDelta < scaleDownMinDeltaMem)) &&
-		((actualCPUDelta >= 0 && actualCPUDelta < scaleUpMinDeltaCPU) || (actualCPUDelta <= 0 && -actualCPUDelta < scaleDownMinDeltaCPU)) {
-		// All deltas are less than minChange
-		blockedScalingReason = autoscalingv1alpha1.BlockingReasonMinChange
+	// Initialise desiredReplicas to 1.
+	// Otherwise it might prevent scale down if HPA is not deployed - because we take max of VPA's and HPA's total recommendations
+	desiredReplicas := int32(1)
+	if hpaStatus != nil {
+		desiredReplicas = hpaStatus.DesiredReplicas
 	}
 
-	// Check for maintenanceWindow mode
-	if (isScaleDown && hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode != nil && *hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow) ||
-		(isScaleUp && hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode != nil && *hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow) {
-		maintenanceWindow := hvpa.Spec.MaintenanceTimeWindow
-		if maintenanceWindow == nil {
-			return nil, nil, false, blockedScalingReason, errors.New("scale up/down update mode is maintenanceWindow but maintenance time window is not provided")
+	limitScalingParams := hvpa.Spec.Vpa.LimitsRequestsGapScaleParams
+	buckets, currentBucket, err := getBuckets(hvpa, currentReplicas)
+	if err != nil {
+		return nil, nil, false, nil, err
+	}
+
+	var finalReplica int32
+	var blockedScalingUpdatePolicy, blockedScalingMaintenanceWindow, blockedScalingStabilizationWindow, blockedScalingMinChange, blockedScalingParadoxicalScaling *hvpav1alpha1.BlockedScaling
+	var blockedScaling []*hvpav1alpha1.BlockedScaling
+
+	// The blockedScalingReason is populated with the reasons for blocking scaling with the following priority order:
+	// UpdatePolicy > StabilizationWindow > MaintenanceWindow > MinChanged > ParadoxicalScaling
+	blockedScalingReason := make(map[string]hvpav1alpha1.BlockingReason, 0)
+
+	desiredVpaStatus := &vpa_api.VerticalPodAutoscalerStatus{
+		Recommendation: &vpa_api.RecommendedPodResources{
+			ContainerRecommendations: make([]vpa_api.RecommendedContainerResources, 0, 0),
+		},
+	}
+
+	for _, reco := range vpaStatus.Recommendation.ContainerRecommendations {
+		for _, container := range podSpec.Containers {
+			if container.Name == reco.ContainerName {
+				currentperReplicaCPU := container.Resources.Requests.Cpu().MilliValue()
+				currentperReplicaMem := container.Resources.Requests.Memory().MilliValue()
+
+				currentTotalCPU := currentperReplicaCPU * int64(currentReplicas)
+				currentTotalMem := currentperReplicaMem * int64(currentReplicas)
+
+				scaleUpMinDeltaMem := getThreshold(&hvpa.Spec.ScaleUp.MinChange.Memory, corev1.ResourceMemory, currentTotalMem)
+				scaleDownMinDeltaMem := getThreshold(&hvpa.Spec.ScaleDown.MinChange.Memory, corev1.ResourceMemory, currentTotalMem)
+				scaleUpMinDeltaCPU := getThreshold(&hvpa.Spec.ScaleUp.MinChange.CPU, corev1.ResourceCPU, currentTotalCPU)
+				scaleDownMinDeltaCPU := getThreshold(&hvpa.Spec.ScaleDown.MinChange.CPU, corev1.ResourceCPU, currentTotalCPU)
+
+				newTotalCPUReco := int64(math.Max(float64(reco.Target.Cpu().MilliValue()*int64(currentReplicas)), float64(currentperReplicaCPU*int64(desiredReplicas))))
+				newTotalMemReco := int64(math.Max(float64(reco.Target.Memory().MilliValue()*int64(currentReplicas)), float64(currentperReplicaMem*int64(desiredReplicas))))
+
+				if newTotalCPUReco == currentTotalCPU && newTotalMemReco == currentTotalMem {
+					break
+				}
+
+				// If either or both of memory and cpu are scaling up, consider it as a overall scale up - erring on the side of stability
+				isScaleDown := newTotalCPUReco <= currentTotalCPU && newTotalMemReco <= currentTotalMem
+				isScaleUp := !isScaleDown
+
+				if (isScaleUp && hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode != nil && *hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode == hvpav1alpha1.UpdateModeOff) ||
+					(isScaleDown && hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode != nil && *hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode == hvpav1alpha1.UpdateModeOff) {
+					blockedScalingReason[container.Name] = hvpav1alpha1.BlockingReasonUpdatePolicy
+					break
+				}
+
+				if (!overrideStablization && isScaleUp && scaleUpStabilizationWindow > lastScaleTimeDuration) ||
+					(isScaleDown && scaleDownStabilizationWindow > lastScaleTimeDuration) {
+					blockedScalingReason[container.Name] = hvpav1alpha1.BlockingReasonStabilizationWindow
+					break
+				}
+
+				// Check for maintenanceWindow mode
+				if (isScaleDown && hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode != nil && *hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode == hvpav1alpha1.UpdateModeMaintenanceWindow) ||
+					(isScaleUp && hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode != nil && *hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode == hvpav1alpha1.UpdateModeMaintenanceWindow) {
+					if maintenanceTimeWindow == nil {
+						return nil, nil, false, nil, errors.New("scale up/down update mode is maintenanceWindow but maintenance time window is not provided")
+					}
+					if !maintenanceTimeWindow.Contains(time.Now()) {
+						blockedScalingReason[container.Name] = hvpav1alpha1.BlockingReasonMaintenanceWindow
+						break
+					}
+				}
+
+				if isScaleDown {
+					// Scale Down scenario only if none of the resources is scaling up. Check for minChange
+					if currentTotalCPU-newTotalCPUReco < scaleDownMinDeltaCPU &&
+						currentTotalMem-newTotalMemReco < scaleDownMinDeltaMem {
+						blockedScalingReason[container.Name] = hvpav1alpha1.BlockingReasonMinChange
+						break
+					}
+				} else {
+					// Scale Up. Check for minChange
+					if !overrideStablization && newTotalCPUReco-currentTotalCPU < scaleUpMinDeltaCPU &&
+						newTotalMemReco-currentTotalMem < scaleUpMinDeltaMem {
+						blockedScalingReason[container.Name] = hvpav1alpha1.BlockingReasonMinChange
+						break
+					}
+				}
+
+				currentBucketHasCPU := currentBucket.HasValue(newTotalCPUReco, ResourceReplicas, ResourceCPU) == 0
+				currentBucketHasMem := currentBucket.HasValue(newTotalMemReco, ResourceReplicas, ResourceMemory) == 0
+
+				if currentBucketHasCPU && currentBucketHasMem {
+					// no need to change bucket since recommended cpu AND memory fall in the same bucket
+					// We can calculate new resource values based on current bucket itself then,
+					// no need to use the generic bucket list anymore - overwrite:
+					finalReplica = currentReplicas
+					break
+				} else if isScaleDown && (currentBucketHasCPU || currentBucketHasMem) {
+					// scaling down - no need to change bucket since recommended cpu OR memory fall in the same bucket
+					// This provides hysteresis while scaling down.
+					// We can calculate new resource values based on current bucket itself then,
+					// no need to use the generic bucket list anymore - overwrite:
+					finalReplica = currentReplicas
+					break
+				}
+
+				replicaByCPU, _, _ := buckets.FindXValue(newTotalCPUReco, ResourceReplicas, ResourceCPU)
+				replicaByMem, _, _ := buckets.FindXValue(newTotalMemReco, ResourceReplicas, ResourceMemory)
+				maxReplica := int32(math.Max(float64(replicaByCPU), float64(replicaByMem)))
+
+				newPerReplicaCPU := newTotalCPUReco / int64(maxReplica)
+				newPerReplicaMem := newTotalMemReco / int64(maxReplica)
+
+				if maxReplica < currentReplicas {
+					if (currentperReplicaCPU != 0 && currentperReplicaCPU < newPerReplicaCPU) && (currentperReplicaMem != 0 && currentperReplicaMem < newPerReplicaMem) {
+						// Paradoxical Scaling - block scaling for this container
+						log.V(2).Info("Paradoxical scaling: No scaling recommended because recommendation for horizontal scale is \"scale in\", while for vertical scale is \"scale up\"", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+						blockedScalingReason[container.Name] = hvpav1alpha1.BlockingReasonParadoxicalScaling
+						break
+					}
+				}
+				if maxReplica > finalReplica {
+					finalReplica = maxReplica
+				}
+				break
+			}
 		}
-		maintenanceTimeWindow, err := utils.ParseMaintenanceTimeWindow(maintenanceWindow.Begin, maintenanceWindow.End)
-		if err != nil {
-			return nil, nil, false, blockedScalingReason, err
+	}
+	if finalReplica == 0 {
+		// scaling for all the containers is blocked
+		finalReplica = currentReplicas
+	}
+
+	newPodSpec = podSpec.DeepCopy()
+
+	for _, reco := range vpaStatus.Recommendation.ContainerRecommendations {
+		for i := range newPodSpec.Containers {
+			container := &newPodSpec.Containers[i]
+			if container.Name == reco.ContainerName {
+				currentperReplicaCPU := container.Resources.Requests.Cpu().MilliValue()
+				currentperReplicaMem := container.Resources.Requests.Memory().MilliValue()
+
+				newTotalCPUReco := int64(math.Max(float64(reco.Target.Cpu().MilliValue()*int64(currentReplicas)), float64(container.Resources.Requests.Cpu().MilliValue()*int64(desiredReplicas))))
+				newTotalMemReco := int64(math.Max(float64(reco.Target.Memory().MilliValue()*int64(currentReplicas)), float64(container.Resources.Requests.Memory().MilliValue()*int64(desiredReplicas))))
+
+				newCPUPerReplica := newTotalCPUReco / int64(finalReplica)
+				newMemPerReplica := newTotalMemReco / int64(finalReplica)
+
+				newCPUPerReplica, newMemPerReplica = adjustForBaseUsage(newCPUPerReplica, currentperReplicaCPU, newMemPerReplica, currentperReplicaMem, finalReplica, currentReplicas, hvpa)
+
+				if finalReplica > currentReplicas {
+					if currentperReplicaCPU > newCPUPerReplica && currentperReplicaMem > newMemPerReplica {
+						// Paradoxical Scaling
+						log.V(2).Info("Paradoxical scaling: current resources recommended because recommendation for horizontal scale is \"scale out\", while for vertical scale is \"scale down\"", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+						break
+					}
+					newCPUPerReplica = int64(math.Max(float64(currentperReplicaCPU), float64(newCPUPerReplica)))
+					newMemPerReplica = int64(math.Max(float64(currentperReplicaMem), float64(newMemPerReplica)))
+				}
+
+				newCPU := resource.NewScaledQuantity(newCPUPerReplica, resource.Milli)
+				_ = newCPU.String() // cache string q.s
+				newMem := resource.NewScaledQuantity(newMemPerReplica, resource.Milli)
+				newMem.SetScaled(newMem.ScaledValue(resource.Kilo), resource.Kilo)
+
+				target := corev1.ResourceList{
+					corev1.ResourceCPU:    *newCPU,
+					corev1.ResourceMemory: *newMem,
+				}
+				if reason, ok := blockedScalingReason[container.Name]; ok {
+					// scaling blocked for this container
+					appendToBlockedScaling(&blockedScalingUpdatePolicy, hvpav1alpha1.BlockingReasonUpdatePolicy, target, container.Name, reason == hvpav1alpha1.BlockingReasonUpdatePolicy)
+					appendToBlockedScaling(&blockedScalingStabilizationWindow, hvpav1alpha1.BlockingReasonStabilizationWindow, target, container.Name, reason == hvpav1alpha1.BlockingReasonStabilizationWindow)
+					appendToBlockedScaling(&blockedScalingMaintenanceWindow, hvpav1alpha1.BlockingReasonMaintenanceWindow, target, container.Name, reason == hvpav1alpha1.BlockingReasonMaintenanceWindow)
+					appendToBlockedScaling(&blockedScalingMinChange, hvpav1alpha1.BlockingReasonMinChange, target, container.Name, reason == hvpav1alpha1.BlockingReasonMinChange)
+					appendToBlockedScaling(&blockedScalingParadoxicalScaling, hvpav1alpha1.BlockingReasonParadoxicalScaling, target, container.Name, reason == hvpav1alpha1.BlockingReasonParadoxicalScaling)
+				} else {
+					resourceChanged = true
+					container.Resources.Requests = target
+					container.Resources.Limits = getScaledLimits(container.Resources.Limits, container.Resources.Requests, target, limitScalingParams)
+
+					desiredVpaStatus.Recommendation.ContainerRecommendations = append(desiredVpaStatus.Recommendation.ContainerRecommendations,
+						vpa_api.RecommendedContainerResources{
+							ContainerName: container.Name,
+							Target:        target,
+						})
+				}
+				break
+			}
 		}
-		if !maintenanceTimeWindow.Contains(time.Now()) {
-			// Overwrite
-			blockedScalingReason = autoscalingv1alpha1.BlockingReasonMaintenanceWindow
+	}
+	if blockedScalingUpdatePolicy != nil {
+		blockedScaling = append(blockedScaling, blockedScalingUpdatePolicy)
+	}
+	if blockedScalingStabilizationWindow != nil {
+		blockedScaling = append(blockedScaling, blockedScalingStabilizationWindow)
+	}
+	if blockedScalingMaintenanceWindow != nil {
+		blockedScaling = append(blockedScaling, blockedScalingMaintenanceWindow)
+	}
+	if blockedScalingMinChange != nil {
+		blockedScaling = append(blockedScaling, blockedScalingMinChange)
+	}
+	if blockedScalingParadoxicalScaling != nil {
+		blockedScaling = append(blockedScaling, blockedScalingParadoxicalScaling)
+	}
+
+	desiredHpaStatus := &autoscaling.HorizontalPodAutoscalerStatus{
+		CurrentReplicas: currentReplicas,
+		DesiredReplicas: finalReplica,
+	}
+	if !resourceChanged {
+		newPodSpec = nil
+	}
+	if resourceChanged || finalReplica != currentReplicas {
+		scaledStatus = getScalingStatusFrom(desiredHpaStatus, desiredVpaStatus, newPodSpec)
+	}
+
+	return scaledStatus, newPodSpec, resourceChanged, &blockedScaling, nil
+}
+
+func newBlockedScaling(reason hvpav1alpha1.BlockingReason) *hvpav1alpha1.BlockedScaling {
+	blockedScaling := hvpav1alpha1.BlockedScaling{
+		Reason: reason,
+		ScalingStatus: hvpav1alpha1.ScalingStatus{
+			VpaStatus: hvpav1alpha1.VpaStatus{
+				ContainerResources: make([]hvpav1alpha1.ContainerResources, 0, 0),
+			},
+		},
+	}
+
+	return &blockedScaling
+}
+
+func appendToBlockedScaling(blockedScaling **hvpav1alpha1.BlockedScaling, reason hvpav1alpha1.BlockingReason, target corev1.ResourceList, container string, blocked bool) {
+	if blocked {
+		if *blockedScaling == nil {
+			*blockedScaling = newBlockedScaling(reason)
 		}
+		(*blockedScaling).VpaStatus.ContainerResources = append(
+			(*blockedScaling).VpaStatus.ContainerResources,
+			hvpav1alpha1.ContainerResources{
+				Resources: corev1.ResourceRequirements{
+					Requests: target,
+				},
+				ContainerName: container,
+			})
 	}
-
-	if (isScaleUp && scaleUpStabilizationWindow > lastScaleTimeDuration) ||
-		(isScaleDown && scaleDownStabilizationWindow > lastScaleTimeDuration) {
-		// Overwrite
-		blockedScalingReason = autoscalingv1alpha1.BlockingReasonStabilizationWindow
-	}
-
-	if (isScaleUp && hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode != nil && *hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeOff) ||
-		(isScaleDown && hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode != nil && *hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode == autoscalingv1alpha1.UpdateModeOff) {
-		// Overwrite
-		blockedScalingReason = autoscalingv1alpha1.BlockingReasonUpdatePolicy
-	}
-
-	scaleStatus := getScalingStatusFrom(desiredHpaStatus, desiredVpaStatus, newPodSpec)
-
-	return scaleStatus, newPodSpec, newPodSpec != nil && blockedScalingReason == "", blockedScalingReason, nil
 }
 
 func vpaStatusConditionsSupported(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpaKey string) bool {

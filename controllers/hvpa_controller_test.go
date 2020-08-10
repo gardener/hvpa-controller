@@ -71,11 +71,11 @@ var (
 	scaledLarge = v1.ResourceRequirements{
 		Limits: v1.ResourceList{
 			v1.ResourceCPU:    resource.MustParse("1225m"),
-			v1.ResourceMemory: resource.MustParse("4860000k"),
+			v1.ResourceMemory: resource.MustParse("2160000k"),
 		},
 		Requests: v1.ResourceList{
 			v1.ResourceCPU:    resource.MustParse("225m"),
-			v1.ResourceMemory: resource.MustParse("2700000k"),
+			v1.ResourceMemory: resource.MustParse("1200000k"),
 		},
 	}
 	unscaledLarge = v1.ResourceRequirements{
@@ -271,14 +271,16 @@ var _ = Describe("#TestReconcile", func() {
 			desiredReplicas int32
 			resourceChange  bool
 			resources       v1.ResourceRequirements
-			blockedReason   hvpav1alpha1.BlockingReason
+			blockedReasons  []hvpav1alpha1.BlockingReason
+			buckets         []utils.ValueInterval
 		}
 		type action struct {
-			maintenanceWindow  *hvpav1alpha1.MaintenanceTimeWindow
-			updateMode         string
-			limitScaling       hvpav1alpha1.ScaleParams
-			scaleIntervals     []hvpav1alpha1.ScaleIntervals
-			vpaStatusCondition []vpa_api.VerticalPodAutoscalerCondition
+			maintenanceWindow       *hvpav1alpha1.MaintenanceTimeWindow
+			updateMode              string
+			limitScaling            hvpav1alpha1.ScaleParams
+			scaleIntervals          []hvpav1alpha1.ScaleIntervals
+			vpaStatusCondition      []vpa_api.VerticalPodAutoscalerCondition
+			baseResourcesPerReplica hvpav1alpha1.ResourceChangeParams
 		}
 		type data struct {
 			setup  setup
@@ -307,6 +309,9 @@ var _ = Describe("#TestReconcile", func() {
 				if data.action.scaleIntervals != nil {
 					hvpa.Spec.ScaleIntervals = data.action.scaleIntervals
 				}
+				if data.action.baseResourcesPerReplica != nil {
+					hvpa.Spec.BaseResourcesPerReplica = data.action.baseResourcesPerReplica
+				}
 				if data.action.vpaStatusCondition != nil {
 					vpaStatus.Conditions = append(data.action.vpaStatusCondition, vpaStatus.Conditions...)
 				}
@@ -315,16 +320,28 @@ var _ = Describe("#TestReconcile", func() {
 
 				if data.action.vpaStatusCondition != nil {
 					Expect(err).To(HaveOccurred())
-				} else {
-					Expect(err).ToNot(HaveOccurred())
+					return
 				}
+				Expect(err).ToNot(HaveOccurred())
 				Expect(resourceChanged).To(Equal(data.expect.resourceChange))
-				Expect(blockedScaling).To(Equal(data.expect.blockedReason))
 
+				Expect(len(*blockedScaling)).To(Equal(len(data.expect.blockedReasons)))
+				if len(data.expect.blockedReasons) != 0 {
+					for i, blockedScaling := range *blockedScaling {
+						Expect(blockedScaling.Reason).To(Equal(data.expect.blockedReasons[i]))
+					}
+				}
+
+				if data.expect.desiredReplicas == *target.Spec.Replicas && data.expect.resourceChange == false {
+					Expect(scaledStatus).To(BeNil())
+				} else {
+					Expect(scaledStatus.HpaStatus.DesiredReplicas).To(Equal(data.expect.desiredReplicas))
+				}
 				if data.expect.resourceChange {
 					Expect(newPodSpec).NotTo(BeNil())
 					Expect(newPodSpec.Containers[0].Resources).To(Equal(data.expect.resources))
-					Expect(scaledStatus.HpaStatus.DesiredReplicas).To(Equal(data.expect.desiredReplicas))
+				} else {
+					Expect(newPodSpec).To(BeNil())
 				}
 			},
 
@@ -342,10 +359,10 @@ var _ = Describe("#TestReconcile", func() {
 					desiredReplicas: 2,
 					resourceChange:  false,
 					resources:       unscaledSmall,
-					blockedReason:   "",
+					blockedReasons:  []hvpav1alpha1.BlockingReason{},
 				},
 			}),
-			Entry("UpdateMode Auto, scale down", &data{
+			Entry("UpdateMode Auto, scaled down, no scaling because of paradoxical scaling recommendations", &data{
 				setup: setup{
 					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: nil,
@@ -356,10 +373,11 @@ var _ = Describe("#TestReconcile", func() {
 					limitScaling: limitScale,
 				},
 				expect: expect{
-					desiredReplicas: 2,
-					resourceChange:  true,
-					resources:       scaledLarge,
-					blockedReason:   "",
+					desiredReplicas: 3,
+					resourceChange:  false,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonParadoxicalScaling,
+					},
 				},
 			}),
 			Entry("UpdateMode Auto, scale up blocked due to minChange", &data{
@@ -373,15 +391,18 @@ var _ = Describe("#TestReconcile", func() {
 					limitScaling: limitScale,
 				},
 				expect: expect{
-					resourceChange: false,
-					blockedReason:  hvpav1alpha1.BlockingReasonMinChange,
+					desiredReplicas: 1,
+					resourceChange:  false,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMinChange,
+					},
 				},
 			}),
 			Entry("UpdateMode maintenanceWindow, blocked scaling", &data{
 				setup: setup{
 					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: nil,
-					vpaStatus: newVpaStatus("deployment", "1.8G", "150m"),
+					vpaStatus: newVpaStatus("deployment", "0.8G", "150m"),
 					target:    newTarget("deployment", unscaledLarge, 3),
 				},
 				action: action{
@@ -392,15 +413,18 @@ var _ = Describe("#TestReconcile", func() {
 					updateMode: hvpav1alpha1.UpdateModeMaintenanceWindow,
 				},
 				expect: expect{
-					resourceChange: false,
-					blockedReason:  hvpav1alpha1.BlockingReasonMaintenanceWindow,
+					desiredReplicas: 3,
+					resourceChange:  false,
+					blockedReasons: []hvpav1alpha1.BlockingReason{
+						hvpav1alpha1.BlockingReasonMaintenanceWindow,
+					},
 				},
 			}),
 			Entry("UpdateMode maintenanceWindow, scale down", &data{
 				setup: setup{
 					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: nil,
-					vpaStatus: newVpaStatus("deployment", "1.8G", "150m"),
+					vpaStatus: newVpaStatus("deployment", "0.8G", "150m"),
 					target:    newTarget("deployment", unscaledLarge, 3),
 				},
 				action: action{
@@ -415,7 +439,7 @@ var _ = Describe("#TestReconcile", func() {
 					desiredReplicas: 2,
 					resourceChange:  true,
 					resources:       scaledLarge,
-					blockedReason:   "",
+					blockedReasons:  []hvpav1alpha1.BlockingReason{},
 				},
 			}),
 			Entry("VPA unsupported condition", &data{
@@ -435,33 +459,92 @@ var _ = Describe("#TestReconcile", func() {
 				},
 				expect: expect{
 					resourceChange: false,
-					blockedReason:  "",
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
 				},
 			}),
-			Entry("VPA unsupported condition", &data{
+			Entry("UpdateMode Auto, scale down hysteresis", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
-							{
-								Type:   autoscaling.ScalingLimited,
-								Status: v1.ConditionTrue,
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "5.486G", "2.828"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								"cpu":    resource.MustParse("8"),
+								"memory": resource.MustParse("10G"),
 							},
-						}),
-					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
-					target:    target,
+						}, 3),
+				},
+				expect: expect{
+					desiredReplicas: 3,
+					resourceChange:  true,
+					blockedReasons:  []hvpav1alpha1.BlockingReason{},
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("2828m"),
+							"memory": resource.MustParse("5486000k"),
+						},
+					},
+				},
+			}),
+			Entry("UpdateMode Auto, scale up, base resource usage adjusted", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "4G", "500m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("150m"),
+								v1.ResourceMemory: resource.MustParse("1.8G"),
+							},
+						}, 1),
 				},
 				action: action{
-					vpaStatusCondition: []vpa_api.VerticalPodAutoscalerCondition{
-						{
-							Type:   vpa_api.ConfigUnsupported,
-							Status: v1.ConditionTrue,
+					baseResourcesPerReplica: hvpav1alpha1.ResourceChangeParams{
+						"cpu": hvpav1alpha1.ChangeParams{
+							Value: stringPtr("100m"),
+						},
+						"memory": hvpav1alpha1.ChangeParams{
+							Percentage: int32Ptr(10),
 						},
 					},
 				},
 				expect: expect{
-					resourceChange: false,
-					resources:      unscaled,
+					desiredReplicas: 2,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("300m"),
+							"memory": resource.MustParse("2110000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("UpdateMode Auto, scale up, nil base resource usage", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "4G", "500m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("150m"),
+								v1.ResourceMemory: resource.MustParse("1.8G"),
+							},
+						}, 1),
+				},
+				expect: expect{
+					desiredReplicas: 2,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("250m"),
+							"memory": resource.MustParse("2000000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
 				},
 			}),
 		)

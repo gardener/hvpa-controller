@@ -170,10 +170,25 @@ type EffectiveScalingInterval struct {
 	// The desired replicas for this effective scaling interval
 	Replicas int32
 	// Applicable while scaling down
-	MinResources corev1.ResourceList
+	MinResources ResourceList
 	// Applicable while scaling up
-	MaxResources corev1.ResourceList
+	MaxResources ResourceList
 }
+
+// ResourceList is a set of (resource name, quantity) pairs.
+type ResourceList map[ResourceName]int64
+
+// ResourceName is the name identifying various resources in a ResourceList.
+type ResourceName string
+
+const (
+	// ResourceCPU represents CPU in millicores (1core = 1000millicores).
+	ResourceCPU ResourceName = "cpu"
+	// ResourceMemory represents memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024).
+	ResourceMemory ResourceName = "memory"
+	// ResourceReplicas represents replicas.
+	ResourceReplicas ResourceName = "replicas"
+)
 
 // VpaTemplate defines the template for VPA
 type VpaTemplate struct {
@@ -293,9 +308,9 @@ type HvpaStatus struct {
 	// Override scale up stabilization
 	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
 
-	LastBlockedScaling           *BlockedScaling `json:"lastBlockedScaling,omitempty"`
-	LastScaling                  ScalingStatus   `json:"lastScaling,omitempty"`
-	LastProcessedRecommendations ScalingStatus   `json:"lastProcessedRecommendations,omitempty"`
+	LastBlockedScaling           []*BlockedScaling `json:"lastBlockedScaling,omitempty"`
+	LastScaling                  ScalingStatus     `json:"lastScaling,omitempty"`
+	LastProcessedRecommendations ScalingStatus     `json:"lastProcessedRecommendations,omitempty"`
 
 	// LastError has details of any errors that occurred
 	LastError *LastError `json:"lastError,omitempty"`
@@ -313,6 +328,8 @@ const (
 	BlockingReasonUpdatePolicy BlockingReason = "UpdatePolicy"
 	// BlockingReasonMinChange - Min change doesn't support scaling
 	BlockingReasonMinChange BlockingReason = "MinChange"
+	// BlockingReasonParadoxicalScaling - paradoxical scaling
+	BlockingReasonParadoxicalScaling BlockingReason = "ParadoxicalScaling"
 )
 
 // BlockingReasons lists all the blocking reasons

@@ -421,8 +421,8 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 	}
 
 	if m.aggrBlockedScalingsTotal != nil && (!hpaScaled || !vpaScaled) {
-		if hvpa.Status.LastBlockedScaling != nil {
-			m.aggrBlockedScalingsTotal.WithLabelValues(string(hvpa.Status.LastBlockedScaling.Reason)).Inc()
+		for _, blocked := range hvpa.Status.LastBlockedScaling {
+			m.aggrBlockedScalingsTotal.WithLabelValues(string(blocked.Reason)).Inc()
 		}
 	}
 
@@ -451,12 +451,14 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 		}
 
 		blockedMap := make(map[hvpav1alpha1.BlockingReason]*hvpav1alpha1.BlockedScaling)
-
-		if hvpa.Status.LastBlockedScaling == nil {
-			log.V(4).Info("Invalid blocked scaling entry", "hvpa", hvpa)
-		} else {
-			blockedMap[hvpa.Status.LastBlockedScaling.Reason] = hvpa.Status.LastBlockedScaling
+		for _, blocked := range hvpa.Status.LastBlockedScaling {
+			if blocked == nil {
+				log.V(4).Info("Invalid blocked scaling entry", "hvpa", hvpa)
+				continue
+			}
+			blockedMap[blocked.Reason] = blocked
 		}
+
 		for _, blockingReason := range hvpav1alpha1.BlockingReasons {
 			blocked, ok := blockedMap[blockingReason]
 			if m.statusBlockedHPACurrentReplicas != nil {

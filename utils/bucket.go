@@ -19,29 +19,10 @@ import (
 	"math"
 )
 
-/*
-TODO: Remove?
-// AggregatedBuckets defines collection of buckets
-type AggregatedBuckets interface {
-	// Returns the number of buckets in the histogram.
-	NumBuckets() int
-	// Returns the index of the bucket to which the given value falls.
-	// If the value is outside of the range covered by the histogram, it
-	// returns the closest bucket (either the first or the last one).
-	FindBucket(value float64) int
-}
-
-type aggregatedBuckets struct {
-	aggregatedBuckets []Bucket
-	xInterval         intervalMap
-	yInterval         intervalMap
-}
-*/
-
 // Bucket defines the size and nature of bucket.
 // The argument "value" is product of values on "xAxis" and "yAxis".
-// A Bucket can have any number of axis, with their minValue, maxValue and delta defined.
-// To find "XValue" for a given "value", "delta" will be used to iterate over primary axis, the name for which should be passed as xAxis argument.
+// A Bucket can have any number of axis, with their minValue and maxValue defined.
+// To find "XValue" for a given "value", we iterate over primary axis, the name for which should be passed as xAxis argument.
 // "YValue" would be the value in yAxis, such that XValue * YValue = "value".
 //
 // A Bucket is said to contain the "value" if:
@@ -52,10 +33,10 @@ type Bucket interface {
 	FindYValue(value int64, xAxis, yAxis AxisName) (int64, error)
 	HasValue(value int64, xAxis, yAxis AxisName) int
 	GetIntervals() ValueInterval
-	AddAxis(axisName AxisName, minValue, maxValue, delta int64) error
+	AddAxis(axisName AxisName, minValue, maxValue int64) error
 }
 
-func newInterval(axis AxisName, minValue, maxValue, delta int64) (Interval, error) {
+func newInterval(axis AxisName, minValue, maxValue int64) (Interval, error) {
 	if minValue < 0 || maxValue < minValue {
 		return Interval{}, errors.New("minValue must both be positive, and maxValue should be greater than minValue")
 	}
@@ -63,7 +44,6 @@ func newInterval(axis AxisName, minValue, maxValue, delta int64) (Interval, erro
 	return Interval{
 		MinValue: minValue,
 		MaxValue: maxValue,
-		Delta:    delta,
 	}, nil
 }
 
@@ -103,7 +83,6 @@ func NewGenericBucket(buckets []Bucket) Bucket {
 type Interval struct {
 	MinValue int64
 	MaxValue int64
-	Delta    int64 // used for iteration.
 }
 
 var (
@@ -113,15 +92,6 @@ var (
 
 // AxisName is the name of the axis for bucket intervals
 type AxisName string
-
-const (
-	// ResourceCPU represents CPU in millicores (1core = 1000millicores).
-	ResourceCPU AxisName = "cpu"
-	// ResourceMemory represents memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024).
-	ResourceMemory AxisName = "memory"
-	// ResourceReplicas represents replicas.
-	ResourceReplicas AxisName = "replicas"
-)
 
 // IntervalMap defines axis with intervals
 type IntervalMap map[AxisName]Interval
@@ -196,15 +166,15 @@ func (o *genericBucket) FindYValue(value int64, xAxis, yAxis AxisName) (int64, e
 	return yValue, err
 }
 
-func (o *genericBucket) AddAxis(axisName AxisName, minValue, maxValue, delta int64) error {
+func (o *genericBucket) AddAxis(axisName AxisName, minValue, maxValue int64) error {
 	return nil
 }
 
-func (o *linearBucket) AddAxis(axisName AxisName, minValue, maxValue, delta int64) error {
+func (o *linearBucket) AddAxis(axisName AxisName, minValue, maxValue int64) error {
 	if o.Intervals == nil {
 		o.Intervals = make(map[AxisName]Interval)
 	}
-	interval, err := newInterval(axisName, minValue, maxValue, delta)
+	interval, err := newInterval(axisName, minValue, maxValue)
 	o.Intervals[axisName] = interval
 	return err
 }
@@ -222,16 +192,13 @@ func (o *linearBucket) FindXValue(value int64, xAxis, yAxis AxisName) (int64, *B
 		return 0, nil, ErrorOutOfRange
 	}
 
-	numberOfXIntervals := float64(o.Intervals[xAxis].MaxValue-o.Intervals[xAxis].MinValue+1) / float64(o.Intervals[xAxis].Delta)
-	if numberOfXIntervals != math.Trunc(numberOfXIntervals) {
-		return 0, nil, errors.New("delta does not divide the interval wholly")
-	}
+	numberOfXIntervals := o.Intervals[xAxis].MaxValue - o.Intervals[xAxis].MinValue + 1
 
 	yDelta := (o.Intervals[yAxis].MaxValue - o.Intervals[yAxis].MinValue) / int64(numberOfXIntervals)
 
 	x := o.Intervals[xAxis].MinValue
 	i := int64(1)
-	for ; x <= o.Intervals[xAxis].MaxValue; x += o.Intervals[xAxis].Delta {
+	for ; x <= o.Intervals[xAxis].MaxValue; x++ {
 		yMaxForX := o.Intervals[yAxis].MinValue + i*yDelta
 		if value < x*yMaxForX {
 			break

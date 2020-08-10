@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	validation "github.com/gardener/hvpa-controller/api/validation"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
@@ -37,8 +37,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
+	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -50,7 +52,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-var controllerKindHvpa = autoscalingv1alpha1.SchemeGroupVersionHvpa.WithKind("Hvpa")
+var controllerKindHvpa = hvpav1alpha1.SchemeGroupVersionHvpa.WithKind("Hvpa")
 
 // HvpaReconciler reconciles a Hvpa object
 type HvpaReconciler struct {
@@ -65,7 +67,7 @@ var log = logf.Log.WithName("controller").WithName("hvpa")
 func updateEventFunc(e event.UpdateEvent) bool {
 	// If update event is for HVPA/HPA/VPA then we would want to reconcile unconditionally.
 	switch t := e.ObjectOld.(type) {
-	case *autoscalingv1alpha1.Hvpa, *autoscaling.HorizontalPodAutoscaler, *vpa_api.VerticalPodAutoscaler:
+	case *hvpav1alpha1.Hvpa, *autoscaling.HorizontalPodAutoscaler, *vpa_api.VerticalPodAutoscaler:
 		log.V(4).Info("Update event for", "kind", t.GetObjectKind().GroupVersionKind().Kind)
 		return true
 	case *corev1.Pod:
@@ -145,7 +147,7 @@ type hvpaObj struct {
 var cachedNames map[string][]*hvpaObj
 var cacheMux sync.Mutex
 
-func (r *HvpaReconciler) getSelectorFromHvpa(instance *autoscalingv1alpha1.Hvpa) (labels.Selector, error) {
+func (r *HvpaReconciler) getSelectorFromHvpa(instance *hvpav1alpha1.Hvpa) (labels.Selector, error) {
 	targetRef := instance.Spec.TargetRef
 
 	target := &unstructured.Unstructured{}
@@ -199,7 +201,7 @@ func removeFromCache(namespacedName types.NamespacedName) {
 }
 
 // ManageCache manages the global map of HVPAs
-func (r *HvpaReconciler) ManageCache(instance *autoscalingv1alpha1.Hvpa, namespacedName types.NamespacedName, foundHvpa bool) {
+func (r *HvpaReconciler) ManageCache(instance *hvpav1alpha1.Hvpa, namespacedName types.NamespacedName, foundHvpa bool) {
 	cacheMux.Lock()
 	defer cacheMux.Unlock()
 
@@ -245,7 +247,7 @@ func (r *HvpaReconciler) ManageCache(instance *autoscalingv1alpha1.Hvpa, namespa
 	log.V(4).Info("HVPA", "number of hvpas in cache", len(cachedNames[instance.Namespace]), "for namespace", instance.Namespace)
 }
 
-func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
+func (r *HvpaReconciler) reconcileVpa(hvpa *hvpav1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscalerStatus, error) {
 	selector, err := metav1.LabelSelectorAsSelector(hvpa.Spec.Vpa.Selector)
 	if err != nil {
 		log.Error(err, "Error converting vpa selector to selector", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
@@ -322,7 +324,7 @@ func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.
 	return vpa.Status.DeepCopy(), nil
 }
 
-func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
+func (r *HvpaReconciler) reconcileHpa(hvpa *hvpav1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
 	selector, err := metav1.LabelSelectorAsSelector(hvpa.Spec.Hpa.Selector)
 	if err != nil {
 		log.Error(err, "Error converting hpa selector to selector", "hvpa", hvpa.Namespace+"/"+hvpa.Namespace)
@@ -413,11 +415,11 @@ func areResourcesEqual(x, y *corev1.PodSpec) bool {
 func (r *HvpaReconciler) scaleIfRequired(
 	hpaStatus *autoscaling.HorizontalPodAutoscalerStatus,
 	vpaStatus *vpa_api.VerticalPodAutoscalerStatus,
-	hvpa *autoscalingv1alpha1.Hvpa,
+	hvpa *hvpav1alpha1.Hvpa,
 	target runtime.Object,
-) (scaleStatus *autoscalingv1alpha1.ScalingStatus,
+) (scaleStatus *hvpav1alpha1.ScalingStatus,
 	hpaScaled, vpaScaled bool,
-	blockedScalings *autoscalingv1alpha1.BlockedScaling,
+	blockedScalings *[]*hvpav1alpha1.BlockedScaling,
 	err error) {
 
 	var newObj runtime.Object
@@ -458,7 +460,7 @@ func (r *HvpaReconciler) scaleIfRequired(
 		return nil, false, false, nil, err
 	}
 
-	scaledStatus, newPodSpec, resourcesChanged, blockingReason, err := getScalingRecommendations(hpaStatus, vpaStatus, hvpa, podSpec, currentReplicas)
+	scaledStatus, newPodSpec, resourcesChanged, blockedScaling, err := getScalingRecommendations(hpaStatus, vpaStatus, hvpa, podSpec, currentReplicas)
 	if err != nil {
 		return nil, false, false, nil, err
 	}
@@ -468,16 +470,7 @@ func (r *HvpaReconciler) scaleIfRequired(
 		desiredReplicas = scaledStatus.HpaStatus.DesiredReplicas
 	}
 
-	var blockedScaling *autoscalingv1alpha1.BlockedScaling
-	if blockingReason != "" && hvpa.Status.OverrideScaleUpStabilization != true {
-		blockedScaling = &autoscalingv1alpha1.BlockedScaling{Reason: blockingReason}
-		blockedScaling.ScalingStatus = *scaledStatus
-		log.V(3).Info("Scaling is blocked", "hvpa", hvpa.Namespace+"/"+hvpa.Name, "blocking reason", blockingReason)
-		return nil, false, false, blockedScaling, nil
-	}
-
-	if currentReplicas == desiredReplicas &&
-		(newPodSpec == nil || areResourcesEqual(podSpec, newPodSpec)) {
+	if currentReplicas == desiredReplicas && !resourcesChanged {
 		log.V(3).Info("Scaling not required", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 		return nil, false, false, blockedScaling, nil
 	}
@@ -523,16 +516,7 @@ func (r *HvpaReconciler) scaleIfRequired(
 		desiredReplicas != currentReplicas, resourcesChanged, blockedScaling, r.Update(context.TODO(), newObj)
 }
 
-func initialzeIfRequired(resources *corev1.ResourceRequirements) {
-	if resources.Requests == nil {
-		resources.Requests = corev1.ResourceList{}
-	}
-	if resources.Limits == nil {
-		resources.Limits = corev1.ResourceList{}
-	}
-}
-
-func getScaledLimits(currLimits, currReq, newReq corev1.ResourceList, scaleParams autoscalingv1alpha1.ScaleParams) corev1.ResourceList {
+func getScaledLimits(currLimits, currReq, newReq corev1.ResourceList, scaleParams hvpav1alpha1.ScaleParams) corev1.ResourceList {
 	cpuLimit, msg := getScaledResourceLimit(corev1.ResourceCPU, currLimits.Cpu(), currReq.Cpu(), newReq.Cpu(), &scaleParams.CPU)
 	if msg != "" {
 		log.V(3).Info("VPA", "Warning", msg)
@@ -540,6 +524,10 @@ func getScaledLimits(currLimits, currReq, newReq corev1.ResourceList, scaleParam
 	memLimit, msg := getScaledResourceLimit(corev1.ResourceMemory, currLimits.Memory(), currReq.Memory(), newReq.Memory(), &scaleParams.Memory)
 	if msg != "" {
 		log.V(3).Info("VPA", "Warning", msg)
+	}
+
+	if cpuLimit == nil && memLimit == nil {
+		return nil
 	}
 
 	result := corev1.ResourceList{}
@@ -554,7 +542,7 @@ func getScaledLimits(currLimits, currReq, newReq corev1.ResourceList, scaleParam
 	return result
 }
 
-func getScaledResourceLimit(resourceName corev1.ResourceName, originalLimit, originalRequest, newRequest *resource.Quantity, changeParams *autoscalingv1alpha1.ChangeParams) (*resource.Quantity, string) {
+func getScaledResourceLimit(resourceName corev1.ResourceName, originalLimit, originalRequest, newRequest *resource.Quantity, changeParams *hvpav1alpha1.ChangeParams) (*resource.Quantity, string) {
 	// originalLimit not set, don't set limit.
 	if originalLimit == nil || originalLimit.Value() == 0 {
 		return nil, ""
@@ -627,7 +615,7 @@ func scaleQuantityProportionally(scaledQuantity, scaleBase, scaleResult *resourc
 	return resource.NewMilliQuantity(math.MaxInt64, scaledQuantity.Format), true
 }
 
-func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeParams, resourceType corev1.ResourceName, currentVal resource.Quantity) int64 {
+func getThreshold(thresholdVals *hvpav1alpha1.ChangeParams, resourceType corev1.ResourceName, currentVal int64) int64 {
 	const (
 		defaultMemThreshold string = "200M"
 		defaultCPUThreshold string = "200m"
@@ -650,22 +638,21 @@ func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeParams, resourceType 
 		return quantity.MilliValue()
 	}
 
-	percentageValue := currentVal.ScaledValue(-3) * int64(*thresholdVals.Percentage) / 100
-	percentageQuantity := resource.NewQuantity(percentageValue, currentVal.Format)
-	percentageQuantity.SetScaled(percentageQuantity.Value(), -3)
+	percentageValue := currentVal * int64(*thresholdVals.Percentage) / 100
 
 	if thresholdVals.Value == nil {
-		return percentageQuantity.MilliValue()
+		return percentageValue
 	}
 
 	absoluteQuantity := resource.MustParse(*thresholdVals.Value)
-	if percentageQuantity.Cmp(absoluteQuantity) < 0 {
-		return percentageQuantity.MilliValue()
+	absValue := absoluteQuantity.MilliValue()
+	if percentageValue < absValue {
+		return percentageValue
 	}
-	return absoluteQuantity.MilliValue()
+	return absValue
 }
 
-func (r *HvpaReconciler) applyLastApplied(lastApplied *autoscalingv1alpha1.ScalingStatus, target runtime.Object, hvpa string) error {
+func (r *HvpaReconciler) applyLastApplied(lastApplied *hvpav1alpha1.ScalingStatus, target runtime.Object, hvpa string) error {
 	var newObj runtime.Object
 	var deploy *appsv1.Deployment
 	var ss *appsv1.StatefulSet
@@ -768,19 +755,19 @@ func (r *HvpaReconciler) applyLastApplied(lastApplied *autoscalingv1alpha1.Scali
 	return nil
 }
 
-func getScalingStatusFrom(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, podSpec *corev1.PodSpec) *autoscalingv1alpha1.ScalingStatus {
-	scalingStatus := &autoscalingv1alpha1.ScalingStatus{}
+func getScalingStatusFrom(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, podSpec *corev1.PodSpec) *hvpav1alpha1.ScalingStatus {
+	scalingStatus := &hvpav1alpha1.ScalingStatus{}
 
 	if hpaStatus != nil {
-		scalingStatus.HpaStatus = autoscalingv1alpha1.HpaStatus{
+		scalingStatus.HpaStatus = hvpav1alpha1.HpaStatus{
 			CurrentReplicas: hpaStatus.CurrentReplicas,
 			DesiredReplicas: hpaStatus.DesiredReplicas,
 		}
 	}
 
 	if vpaStatus != nil && vpaStatus.Recommendation != nil {
-		podResources := autoscalingv1alpha1.VpaStatus{
-			ContainerResources: make([]autoscalingv1alpha1.ContainerResources, len(vpaStatus.Recommendation.ContainerRecommendations)),
+		podResources := hvpav1alpha1.VpaStatus{
+			ContainerResources: make([]hvpav1alpha1.ContainerResources, len(vpaStatus.Recommendation.ContainerRecommendations)),
 		}
 		for idx := range vpaStatus.Recommendation.ContainerRecommendations {
 			recommendation := &vpaStatus.Recommendation.ContainerRecommendations[idx]
@@ -827,7 +814,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	hvpaObj.SetGroupVersionKind(controllerKindHvpa)
 
 	err := r.Get(ctx, req.NamespacedName, hvpaObj)
-	instance := &autoscalingv1alpha1.Hvpa{}
+	instance := &hvpav1alpha1.Hvpa{}
 	if errInt := runtime.DefaultUnstructuredConverter.FromUnstructured(hvpaObj.Object, instance); errInt != nil {
 		return ctrl.Result{}, errInt
 	}
@@ -858,28 +845,15 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		RequeueAfter: requeAfter,
 	}
 
-	var obj runtime.Object
-	switch instance.Spec.TargetRef.Kind {
-	case "Deployment":
-		obj = &appsv1.Deployment{}
-	case "StatefulSet":
-		obj = &appsv1.StatefulSet{}
-	case "DaemonSet":
-		obj = &appsv1.DaemonSet{}
-	case "ReplicaSet":
-		obj = &appsv1.ReplicaSet{}
-	case "ReplicationController":
-		obj = &corev1.ReplicationController{}
-	default:
-		err := fmt.Errorf("TargetRef kind not supported %v", instance.Spec.TargetRef.Kind)
-		log.Error(err, "Error", "hvpa", instance.Namespace+"/"+instance.Name)
-		// Don't return error, and requeue, so that reconciliation is tried after default sync period only
-		return ctrl.Result{}, nil
-	}
-
-	err = r.Get(ctx, types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, obj)
+	target := instance.Spec.TargetRef
+	obj, err := scheme.Scheme.New(schema.FromAPIVersionAndKind(target.APIVersion, target.Kind))
 	if err != nil {
-		log.Error(err, "Error getting", "kind", instance.Spec.TargetRef.Kind, "name", instance.Spec.TargetRef.Name, "namespace", instance.Namespace)
+		log.Error(err, "Error initializing runtime.Object for", "kind", target.Kind, "name", target.Name, "namespace", instance.Namespace)
+		return ctrl.Result{}, err
+	}
+	err = r.Get(ctx, types.NamespacedName{Name: target.Name, Namespace: instance.Namespace}, obj)
+	if err != nil {
+		log.Error(err, "Error getting", "kind", target.Kind, "name", target.Name, "namespace", instance.Namespace)
 		return ctrl.Result{}, err
 	}
 
@@ -922,8 +896,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	hvpa := instance.DeepCopy()
 	now := metav1.Now()
 	if blockedScaling != nil {
-		blockedScaling.LastUpdated = &now
-		hvpa.Status.LastBlockedScaling = blockedScaling
+		hvpa.Status.LastBlockedScaling = *blockedScaling
 	}
 
 	// lookup cache for selector
@@ -944,10 +917,10 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 
 		// Prune
 		if !hpaScaled {
-			lastScaling.HpaStatus = autoscalingv1alpha1.HpaStatus{}
+			lastScaling.HpaStatus = hvpav1alpha1.HpaStatus{}
 		}
 		if !vpaScaled {
-			lastScaling.VpaStatus = autoscalingv1alpha1.VpaStatus{}
+			lastScaling.VpaStatus = hvpav1alpha1.VpaStatus{}
 		}
 
 		hvpa.Status.LastScaling = *lastScaling
@@ -997,12 +970,50 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 
 			log.V(4).Info("Checking if need to override last scale time.", "hvpa", name, "pod", pod.Name, "namespace", pod.Namespace)
 			// Get latest HVPA object
-			hvpa := &autoscalingv1alpha1.Hvpa{}
+			hvpa := &hvpav1alpha1.Hvpa{}
 			err := client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: a.Meta.GetNamespace()}, hvpa)
 			if err != nil {
 				log.Error(err, "Error retreiving hvpa", "name", a.Meta.GetNamespace()+"/"+name)
 				return nil
 			}
+
+			// Check if pod has latest resource values - we don't want to override stabilisation if target has different resources than this pod
+			target := hvpa.Spec.TargetRef
+			obj, err := scheme.Scheme.New(schema.FromAPIVersionAndKind(target.APIVersion, target.Kind))
+			if err != nil {
+				log.Error(err, "Error initializing runtime.Object for", "kind", target.Kind, "name", target.Name, "namespace", hvpa.Namespace)
+				return nil
+			}
+
+			err = client.Get(context.TODO(), types.NamespacedName{Name: target.Name, Namespace: hvpa.Namespace}, obj)
+			if err != nil {
+				log.Error(err, "Error getting", "kind", target.Kind, "name", target.Name, "namespace", hvpa.Namespace)
+				return nil
+			}
+
+			var podTemplateSpec *corev1.PodSpec
+			switch target.Kind {
+			case "Deployment":
+				podTemplateSpec = &obj.(*appsv1.Deployment).Spec.Template.Spec
+			case "StatefulSet":
+				podTemplateSpec = &obj.(*appsv1.StatefulSet).Spec.Template.Spec
+			case "DaemonSet":
+				podTemplateSpec = &obj.(*appsv1.DaemonSet).Spec.Template.Spec
+			case "ReplicaSet":
+				podTemplateSpec = &obj.(*appsv1.ReplicaSet).Spec.Template.Spec
+			case "ReplicationController":
+				podTemplateSpec = &obj.(*corev1.ReplicationController).Spec.Template.Spec
+			default:
+				err := fmt.Errorf("TargetRef kind not supported %v in hvpa %v", hvpa.Spec.TargetRef.Kind, hvpa.Namespace+"/"+hvpa.Name)
+				log.Error(err, "Error")
+				return nil
+			}
+
+			if !areResourcesEqual(&pod.Spec, podTemplateSpec) {
+				log.V(3).Info("Ignoring pod event because the pod doesn't belong to latest replicaset", "pod", pod.Namespace+"/"+pod.Name)
+				return nil
+			}
+
 			clone := hvpa.DeepCopy()
 
 			hvpaStatus := clone.Status
@@ -1098,7 +1109,7 @@ func (r *HvpaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	podSource := source.Kind{Type: &corev1.Pod{}}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&autoscalingv1alpha1.Hvpa{}).
+		For(&hvpav1alpha1.Hvpa{}).
 		Owns(&autoscaling.HorizontalPodAutoscaler{}).
 		Owns(&vpa_api.VerticalPodAutoscaler{}).
 		Watches(&podSource, podEventHandler).

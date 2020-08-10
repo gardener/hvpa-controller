@@ -134,6 +134,14 @@ func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync
 	return stop, wg
 }
 
+/* This hvpa results in following effective buckets after taking ScalingIntervalsOverlap into account:
+ * {map[cpu:{10 1000} memory:{50M 2G} replicas:{1}]}
+ * {map[cpu:{400 5300} memory:{990M 8.2425G} replicas:{2}]}
+ * {map[cpu:{2827 10200} memory:{5.485G 15.495G} replicas:{3}]}
+ * {map[cpu:{6120 15100} memory:{11.61125G 22.7475G} replicas:{4}]}
+ * {map[cpu:{9664 20000} memory:{18.188G 30G} replicas:{5}]}
+ * {map[cpu:{13333 30000} memory:{24.99 40G} replicas:{6}]}
+ */
 func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) *hvpav1alpha1.Hvpa {
 	updateMode := hvpav1alpha1.UpdateModeAuto
 
@@ -198,6 +206,10 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 							ContainerPolicies: []vpa_api.ContainerResourcePolicy{
 								{
 									ContainerName: target,
+									MinAllowed: v1.ResourceList{
+										v1.ResourceCPU:    resource.MustParse("10m"),
+										v1.ResourceMemory: resource.MustParse("50M"),
+									},
 									MaxAllowed: v1.ResourceList{
 										v1.ResourceCPU:    resource.MustParse("2"),
 										v1.ResourceMemory: resource.MustParse("5G"),
@@ -237,6 +249,14 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 					MaxCPU:      "30",
 					MaxMemory:   "40G",
 					MaxReplicas: 6,
+				},
+			},
+			ScalingIntervalsOverlap: hvpav1alpha1.ResourceChangeParams{
+				v1.ResourceCPU: hvpav1alpha1.ChangeParams{
+					Percentage: int32Ptr(20),
+				},
+				v1.ResourceMemory: hvpav1alpha1.ChangeParams{
+					Value: stringPtr("10M"),
 				},
 			},
 		},

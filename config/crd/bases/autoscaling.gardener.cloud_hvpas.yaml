@@ -3,14 +3,18 @@
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.3.0
   creationTimestamp: null
   name: hvpas.autoscaling.gardener.cloud
 spec:
   group: autoscaling.gardener.cloud
   names:
     kind: Hvpa
+    listKind: HvpaList
     plural: hvpas
-  scope: ""
+    singular: hvpa
+  scope: Namespaced
   subresources:
     scale:
       labelSelectorPath: .status.targetSelector
@@ -200,15 +204,23 @@ spec:
                                         type: object
                                     type: object
                                   targetAverageValue:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
                                     description: targetAverageValue is the target
                                       per-pod value of global metric (as a quantity).
                                       Mutually exclusive with TargetValue.
-                                    type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
                                   targetValue:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
                                     description: targetValue is the target value of
                                       the metric (as a quantity). Mutually exclusive
                                       with TargetAverageValue.
-                                    type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
                                 required:
                                 - metricName
                                 type: object
@@ -218,10 +230,14 @@ spec:
                                   on an Ingress object).
                                 properties:
                                   averageValue:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
                                     description: averageValue is the target value
                                       of the average of the metric across all relevant
                                       pods (as a quantity)
-                                    type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
                                   metricName:
                                     description: metricName is the name of the metric
                                       in question.
@@ -301,9 +317,13 @@ spec:
                                     - name
                                     type: object
                                   targetValue:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
                                     description: targetValue is the target value of
                                       the metric (as a quantity).
-                                    type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
                                 required:
                                 - metricName
                                 - target
@@ -375,10 +395,14 @@ spec:
                                         type: object
                                     type: object
                                   targetAverageValue:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
                                     description: targetAverageValue is the target
                                       value of the average of the metric across all
                                       relevant pods (as a quantity)
-                                    type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
                                 required:
                                 - metricName
                                 - targetAverageValue
@@ -405,12 +429,16 @@ spec:
                                     format: int32
                                     type: integer
                                   targetAverageValue:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
                                     description: targetAverageValue is the target
                                       value of the average of the resource metric
                                       across all relevant pods, as a raw value (instead
                                       of as a percentage of the request), similar
                                       to the "pods" metric source type.
-                                    type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
                                 required:
                                 - name
                                 type: object
@@ -759,14 +787,22 @@ spec:
                                     type: string
                                   maxAllowed:
                                     additionalProperties:
-                                      type: string
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
                                     description: Specifies the maximum amount of resources
                                       that will be recommended for the container.
                                       The default is no maximum.
                                     type: object
                                   minAllowed:
                                     additionalProperties:
-                                      type: string
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
                                     description: Specifies the minimal amount of resources
                                       that will be recommended for the container.
                                       The default is no minimum.
@@ -788,64 +824,74 @@ spec:
           description: HvpaStatus defines the observed state of Hvpa
           properties:
             lastBlockedScaling:
-              description: BlockedScaling defines the details for blocked scaling
-              properties:
-                reason:
-                  description: BlockingReason defines the reason for blocking.
-                  type: string
-                scalingStatus:
-                  description: ScalingStatus defines the status of scaling
-                  properties:
-                    hpaStatus:
-                      description: HpaStatus defines the status of HPA
-                      properties:
-                        currentReplicas:
-                          format: int32
-                          type: integer
-                        desiredReplicas:
-                          format: int32
-                          type: integer
-                      type: object
-                    lastUpdated:
-                      format: date-time
-                      type: string
-                    vpaStatus:
-                      description: VpaStatus defines the status of VPA
-                      properties:
-                        containerResources:
-                          items:
-                            description: ContainerResources has the details of the
-                              container resources
-                            properties:
-                              containerName:
-                                description: Name of the container.
-                                type: string
-                              resources:
-                                description: ResourceRequirements describes the compute
-                                  resource requirements.
-                                properties:
-                                  limits:
-                                    additionalProperties:
-                                      type: string
-                                    description: 'Limits describes the maximum amount
-                                      of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
-                                    type: object
-                                  requests:
-                                    additionalProperties:
-                                      type: string
-                                    description: 'Requests describes the minimum amount
-                                      of compute resources required. If Requests is
-                                      omitted for a container, it defaults to Limits
-                                      if that is explicitly specified, otherwise to
-                                      an implementation-defined value. More info:
-                                      https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
-                                    type: object
-                                type: object
-                            type: object
-                          type: array
-                      type: object
-                  type: object
-              type: object
+              items:
+                description: BlockedScaling defines the details for blocked scaling
+                properties:
+                  reason:
+                    description: BlockingReason defines the reason for blocking.
+                    type: string
+                  scalingStatus:
+                    description: ScalingStatus defines the status of scaling
+                    properties:
+                      hpaStatus:
+                        description: HpaStatus defines the status of HPA
+                        properties:
+                          currentReplicas:
+                            format: int32
+                            type: integer
+                          desiredReplicas:
+                            format: int32
+                            type: integer
+                        type: object
+                      lastUpdated:
+                        format: date-time
+                        type: string
+                      vpaStatus:
+                        description: VpaStatus defines the status of VPA
+                        properties:
+                          containerResources:
+                            items:
+                              description: ContainerResources has the details of the
+                                container resources
+                              properties:
+                                containerName:
+                                  description: Name of the container.
+                                  type: string
+                                resources:
+                                  description: ResourceRequirements describes the
+                                    compute resource requirements.
+                                  properties:
+                                    limits:
+                                      additionalProperties:
+                                        anyOf:
+                                        - type: integer
+                                        - type: string
+                                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                        x-kubernetes-int-or-string: true
+                                      description: 'Limits describes the maximum amount
+                                        of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                      type: object
+                                    requests:
+                                      additionalProperties:
+                                        anyOf:
+                                        - type: integer
+                                        - type: string
+                                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                        x-kubernetes-int-or-string: true
+                                      description: 'Requests describes the minimum
+                                        amount of compute resources required. If Requests
+                                        is omitted for a container, it defaults to
+                                        Limits if that is explicitly specified, otherwise
+                                        to an implementation-defined value. More info:
+                                        https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                                      type: object
+                                  type: object
+                              type: object
+                            type: array
+                        type: object
+                    type: object
+                type: object
+              type: array
             lastError:
               description: LastError has details of any errors that occurred
               properties:
@@ -894,13 +940,21 @@ spec:
                             properties:
                               limits:
                                 additionalProperties:
-                                  type: string
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                                 description: 'Limits describes the maximum amount
                                   of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
                                 type: object
                               requests:
                                 additionalProperties:
-                                  type: string
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                                 description: 'Requests describes the minimum amount
                                   of compute resources required. If Requests is omitted
                                   for a container, it defaults to Limits if that is
@@ -945,13 +999,21 @@ spec:
                             properties:
                               limits:
                                 additionalProperties:
-                                  type: string
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                                 description: 'Limits describes the maximum amount
                                   of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
                                 type: object
                               requests:
                                 additionalProperties:
-                                  type: string
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                                 description: 'Requests describes the minimum amount
                                   of compute resources required. If Requests is omitted
                                   for a container, it defaults to Limits if that is
@@ -992,6 +1054,7 @@ spec:
               type: string
           type: object
       type: object
+  version: v1alpha1
   versions:
   - name: v1alpha1
     served: true
