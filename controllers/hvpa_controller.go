@@ -518,6 +518,9 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	upUpdateMode := hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode
 
 	hpaScaleOutLimited := isHpaScaleOutLimited(hpaStatus, hvpa.Spec.Hpa.Template.Spec.MaxReplicas, upUpdateMode, hvpa.Spec.MaintenanceTimeWindow)
+	if hvpa.Spec.Hpa.Deploy == false {
+		hpaScaleOutLimited = true
+	}
 
 	blockedScaling := &[]*autoscalingv1alpha1.BlockedScaling{}
 
