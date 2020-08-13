@@ -460,6 +460,11 @@ func (r *HvpaReconciler) scaleIfRequired(
 		return nil, false, false, nil, err
 	}
 
+	if currentReplicas == 0 && kind != "Daemonset" {
+		log.V(3).Info("HVPA", "Not scaling because current replicas is 0", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+		return nil, false, false, nil, nil
+	}
+
 	scaledStatus, newPodSpec, resourcesChanged, blockedScaling, err := getScalingRecommendations(hpaStatus, vpaStatus, hvpa, podSpec, currentReplicas)
 	if err != nil {
 		return nil, false, false, nil, err
@@ -992,20 +997,30 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			}
 
 			var podTemplateSpec *corev1.PodSpec
+			var currentReplicas int32
 			switch target.Kind {
 			case "Deployment":
 				podTemplateSpec = &obj.(*appsv1.Deployment).Spec.Template.Spec
+				currentReplicas = *obj.(*appsv1.Deployment).Spec.Replicas
 			case "StatefulSet":
 				podTemplateSpec = &obj.(*appsv1.StatefulSet).Spec.Template.Spec
+				currentReplicas = *obj.(*appsv1.StatefulSet).Spec.Replicas
 			case "DaemonSet":
 				podTemplateSpec = &obj.(*appsv1.DaemonSet).Spec.Template.Spec
 			case "ReplicaSet":
 				podTemplateSpec = &obj.(*appsv1.ReplicaSet).Spec.Template.Spec
+				currentReplicas = *obj.(*appsv1.ReplicaSet).Spec.Replicas
 			case "ReplicationController":
 				podTemplateSpec = &obj.(*corev1.ReplicationController).Spec.Template.Spec
+				currentReplicas = *obj.(*corev1.ReplicationController).Spec.Replicas
 			default:
 				err := fmt.Errorf("TargetRef kind not supported %v in hvpa %v", hvpa.Spec.TargetRef.Kind, hvpa.Namespace+"/"+hvpa.Name)
 				log.Error(err, "Error")
+				return nil
+			}
+
+			if currentReplicas == 0 && target.Kind != "Daemonset" {
+				log.V(3).Info("HVPA", "Not scaling because current replicas is 0", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 				return nil
 			}
 

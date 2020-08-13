@@ -162,34 +162,6 @@ const (
 	EffectiveIntervalExtrapolicationHorizontalOnly = "horizontalOnly"
 )
 
-// EffectiveScalingInterval explicitly defines a single effective scaling interval
-// with a fixed single desired `replicas` value and the corresponding allowed range
-// (maximum while scaling up and minimum while scaling down) for total as well as
-// per-pod resources for the given desired `replicas`.
-type EffectiveScalingInterval struct {
-	// The desired replicas for this effective scaling interval
-	Replicas int32
-	// Applicable while scaling down
-	MinResources ResourceList
-	// Applicable while scaling up
-	MaxResources ResourceList
-}
-
-// ResourceList is a set of (resource name, quantity) pairs.
-type ResourceList map[ResourceName]int64
-
-// ResourceName is the name identifying various resources in a ResourceList.
-type ResourceName string
-
-const (
-	// ResourceCPU represents CPU in millicores (1core = 1000millicores).
-	ResourceCPU ResourceName = "cpu"
-	// ResourceMemory represents memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024).
-	ResourceMemory ResourceName = "memory"
-	// ResourceReplicas represents replicas.
-	ResourceReplicas ResourceName = "replicas"
-)
-
 // VpaTemplate defines the template for VPA
 type VpaTemplate struct {
 	// Metadata of the pods created from this template.
