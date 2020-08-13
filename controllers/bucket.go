@@ -24,22 +24,6 @@ import (
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 )
 
-// EffectiveScalingInterval explicitly defines a single effective scaling interval
-// with a fixed single desired `replicas` value and the corresponding allowed range
-// (maximum while scaling up and minimum while scaling down) for total as well as
-// per-pod resources for the given desired `replicas`.
-type EffectiveScalingInterval struct {
-	// The desired replicas for this effective scaling interval
-	Replicas int32
-	// Applicable while scaling down
-	MinResources ResourceList
-	// Applicable while scaling up
-	MaxResources ResourceList
-}
-
-// ResourceList is a set of (resource name, quantity) pairs.
-type ResourceList map[corev1.ResourceName]int64
-
 const (
 	// ResourceCPU represents CPU in millicores (1core = 1000millicores).
 	ResourceCPU AxisName = "cpu"
@@ -299,19 +283,17 @@ func getLinearBuckets(scaleInterval hvpav1alpha1.ScaleIntervals, scalingOverlap 
 	for i := int64(1); i <= numOfSubIntervals; i++ {
 		localMaxCPU := intervalMinCPU + i*cpuDelta
 		localMaxMem := intervalMinMemory + i*memDelta
-		subInterval := EffectiveScalingInterval{
-			Replicas: *replicas,
-			MinResources: ResourceList{
-				corev1.ResourceCPU:    *minCPU,
-				corev1.ResourceMemory: *minMemory,
-			},
-			MaxResources: ResourceList{
-				corev1.ResourceCPU:    localMaxCPU,
-				corev1.ResourceMemory: localMaxMem,
-			},
-		}
 
-		bucket, err := getLinearBucketFromInterval(&subInterval)
+		bucket := NewLinearBucket()
+		err := bucket.AddAxis(ResourceReplicas, int64(*replicas), int64(*replicas))
+		if err != nil {
+			return nil, nil, err
+		}
+		err = bucket.AddAxis(ResourceCPU, int64(*minCPU), int64(localMaxCPU))
+		if err != nil {
+			return nil, nil, err
+		}
+		err = bucket.AddAxis(ResourceMemory, int64(*minMemory), int64(localMaxMem))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -374,31 +356,4 @@ func getMinAllowed(containerPolicies []vpa_api.ContainerResourcePolicy) (minCPU,
 	}
 
 	return cpu, memory
-}
-
-func getLinearBucketFromInterval(scaleInterval *EffectiveScalingInterval) (Bucket, error) {
-	linearBucket := NewLinearBucket()
-
-	maxReplicas := scaleInterval.Replicas
-	minReplicas := scaleInterval.Replicas
-	err := linearBucket.AddAxis(ResourceReplicas, int64(minReplicas), int64(maxReplicas))
-	if err != nil {
-		return nil, err
-	}
-
-	maxCPU := scaleInterval.MaxResources[corev1.ResourceCPU]
-	minCPU := scaleInterval.MinResources[corev1.ResourceCPU]
-	err = linearBucket.AddAxis(ResourceCPU, minCPU, maxCPU)
-	if err != nil {
-		return nil, err
-	}
-
-	maxMemory := scaleInterval.MaxResources[corev1.ResourceMemory]
-	minMemory := scaleInterval.MinResources[corev1.ResourceMemory]
-	err = linearBucket.AddAxis(ResourceMemory, minMemory, maxMemory)
-	if err != nil {
-		return nil, err
-	}
-
-	return linearBucket, nil
 }
