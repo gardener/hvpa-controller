@@ -272,7 +272,6 @@ var _ = Describe("#TestReconcile", func() {
 			resourceChange  bool
 			resources       v1.ResourceRequirements
 			blockedReasons  []hvpav1alpha1.BlockingReason
-			buckets         []utils.ValueInterval
 		}
 		type action struct {
 			maintenanceWindow       *hvpav1alpha1.MaintenanceTimeWindow

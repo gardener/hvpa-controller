@@ -12,11 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package utils
+package controllers
 
 import (
 	"errors"
 	"math"
+
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
+)
+
+const (
+	// ResourceCPU represents CPU in millicores (1core = 1000millicores).
+	ResourceCPU AxisName = "cpu"
+	// ResourceMemory represents memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024).
+	ResourceMemory AxisName = "memory"
+	// ResourceReplicas represents replicas.
+	ResourceReplicas AxisName = "replicas"
 )
 
 // Bucket defines the size and nature of bucket.
@@ -219,4 +233,156 @@ func (o *linearBucket) FindYValue(value int64, xAxis, yAxis AxisName) (int64, er
 		return o.Intervals[yAxis].MinValue, nil
 	}
 	return int64(math.Round(float64(value) / float64(x))), nil
+}
+
+// GetBuckets factory to construct buckets from provided scaling intervals
+func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList, currentBucket Bucket, err error) {
+	var (
+		buckets     []Bucket
+		currBucket  Bucket
+		minReplicas int32 = 1
+	)
+	scalingOverlap := hvpa.Spec.ScalingIntervalsOverlap
+
+	if hvpa.Spec.Hpa.Template.Spec.MinReplicas != nil {
+		minReplicas = *hvpa.Spec.Hpa.Template.Spec.MinReplicas
+	}
+	minCPU, minMemory := getMinAllowed(hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies)
+
+	for _, scaleInterval := range hvpa.Spec.ScaleIntervals {
+		bucket, curr, err := getLinearBuckets(scaleInterval, scalingOverlap, &minCPU, &minMemory, &minReplicas, currentReplicas, hvpa.Namespace+"/"+hvpa.Name)
+		if err != nil {
+			return nil, nil, err
+		}
+		buckets = append(buckets, bucket...)
+		if curr != nil {
+			currBucket = curr
+		}
+	}
+
+	return NewGenericBucket(buckets), currBucket, err
+}
+
+// Linear bucket factory
+func getLinearBuckets(scaleInterval hvpav1alpha1.ScaleIntervals, scalingOverlap hvpav1alpha1.ResourceChangeParams, minCPU, minMemory *int64, minReplicas *int32, currentReplicas int32, hvpa string) (bucketList []Bucket, currentBucket Bucket, err error) {
+	var (
+		currMin    *int64
+		buckets    []Bucket
+		currBucket Bucket
+	)
+	replicas := minReplicas
+	intervalMaxCPU := resource.MustParse(scaleInterval.MaxCPU)
+	intervalMaxMemory := resource.MustParse(scaleInterval.MaxMemory)
+	intervalMinCPU := *minCPU
+	intervalMinMemory := *minMemory
+
+	numOfSubIntervals := int64(scaleInterval.MaxReplicas - *replicas + 1)
+	cpuDelta := (intervalMaxCPU.MilliValue() - intervalMinCPU) / numOfSubIntervals
+	memDelta := (intervalMaxMemory.MilliValue() - intervalMinMemory) / numOfSubIntervals
+
+	for i := int64(1); i <= numOfSubIntervals; i++ {
+		localMaxCPU := intervalMinCPU + i*cpuDelta
+		localMaxMem := intervalMinMemory + i*memDelta
+		subInterval := hvpav1alpha1.EffectiveScalingInterval{
+			Replicas: *replicas,
+			MinResources: hvpav1alpha1.ResourceList{
+				hvpav1alpha1.ResourceCPU:    *minCPU,
+				hvpav1alpha1.ResourceMemory: *minMemory,
+			},
+			MaxResources: hvpav1alpha1.ResourceList{
+				hvpav1alpha1.ResourceCPU:    localMaxCPU,
+				hvpav1alpha1.ResourceMemory: localMaxMem,
+			},
+		}
+
+		bucket, err := getLinearBucketFromInterval(&subInterval)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if currentReplicas == *replicas {
+			currBucket = bucket
+		}
+
+		log.V(4).Info("hvpa intervals", "interval", bucket.GetIntervals(), "hvpa", hvpa)
+		buckets = append(buckets, bucket)
+
+		// Prepare for next iteration - total max of current bucket is equal to total min of next bucket
+		prevReplicas := *replicas
+		*replicas = *replicas + 1
+		*minCPU = localMaxCPU * int64(prevReplicas) / int64(*replicas)
+		*minMemory = localMaxMem * int64(prevReplicas) / int64(*replicas)
+
+		if scalingOverlap != nil {
+			// Adjust min values for overlap
+			for resourceName, params := range scalingOverlap {
+				deltaPerc := int64(0)
+				deltaVal := int64(0)
+				if resourceName == corev1.ResourceCPU {
+					currMin = minCPU
+				} else if resourceName == corev1.ResourceMemory {
+					currMin = minMemory
+				} else {
+					log.V(3).Info("WARNING:", "unsupported resource in ScalingIntervalsOverlap", resourceName, "hvpa", hvpa)
+					continue
+				}
+				perc := params.Percentage
+				if perc != nil {
+					deltaPerc = *currMin * int64(*perc) / 100
+				}
+				if params.Value != nil {
+					val := resource.MustParse(*params.Value)
+					deltaVal = val.MilliValue()
+				}
+				// Following statement will update minCPU/minMemory value
+				*currMin = *currMin - int64(math.Max(float64(deltaPerc), float64(deltaVal)))
+			}
+		}
+	}
+	return buckets, currBucket, nil
+}
+
+// Returns minAllowed of all containers for which VPA mode is not set to "Off"
+func getMinAllowed(containerPolicies []vpa_api.ContainerResourcePolicy) (minCPU, minMemory int64) {
+	var cpu, memory int64
+
+	for _, policy := range containerPolicies {
+		if policy.MinAllowed != nil && (policy.Mode == nil || *policy.Mode != vpa_api.ContainerScalingModeOff) {
+			if policy.MinAllowed.Cpu() != nil {
+				cpu += policy.MinAllowed.Cpu().MilliValue()
+			}
+			if policy.MinAllowed.Cpu() != nil {
+				memory += policy.MinAllowed.Memory().MilliValue()
+			}
+		}
+	}
+
+	return cpu, memory
+}
+
+func getLinearBucketFromInterval(scaleInterval *hvpav1alpha1.EffectiveScalingInterval) (Bucket, error) {
+	linearBucket := NewLinearBucket()
+
+	maxReplicas := scaleInterval.Replicas
+	minReplicas := scaleInterval.Replicas
+	err := linearBucket.AddAxis(ResourceReplicas, int64(minReplicas), int64(maxReplicas))
+	if err != nil {
+		return nil, err
+	}
+
+	maxCPU := scaleInterval.MaxResources[hvpav1alpha1.ResourceCPU]
+	minCPU := scaleInterval.MinResources[hvpav1alpha1.ResourceCPU]
+	err = linearBucket.AddAxis(ResourceCPU, minCPU, maxCPU)
+	if err != nil {
+		return nil, err
+	}
+
+	maxMemory := scaleInterval.MaxResources[hvpav1alpha1.ResourceMemory]
+	minMemory := scaleInterval.MinResources[hvpav1alpha1.ResourceMemory]
+	err = linearBucket.AddAxis(ResourceMemory, minMemory, maxMemory)
+	if err != nil {
+		return nil, err
+	}
+
+	return linearBucket, nil
 }
