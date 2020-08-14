@@ -946,23 +946,6 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	return result, nil
 }
 
-func areResourcesEqual(x, y *corev1.PodSpec) bool {
-	for i := range x.Containers {
-		containerX := &x.Containers[i]
-		for j := range y.Containers {
-			containerY := &y.Containers[j]
-			if containerX.Name == containerY.Name {
-				if containerX.Resources.Requests.Cpu().Cmp(*containerY.Resources.Requests.Cpu()) != 0 ||
-					containerX.Resources.Requests.Memory().Cmp(*containerY.Resources.Requests.Memory()) != 0 {
-					return false
-				}
-				break
-			}
-		}
-	}
-	return true
-}
-
 func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 	return &handler.EnqueueRequestsFromMapFunc{
 		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
