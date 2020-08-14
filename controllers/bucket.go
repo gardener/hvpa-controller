@@ -21,7 +21,6 @@ import (
 	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 )
 
 const (
@@ -236,31 +235,59 @@ func (o *linearBucket) FindYValue(value int64, xAxis, yAxis AxisName) (int64, er
 }
 
 // GetBuckets factory to construct buckets from provided scaling intervals
-func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList, currentBucket Bucket, err error) {
+func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[string]Bucket, currentBucket Bucket, err error) {
 	var (
-		buckets     []Bucket
-		currBucket  Bucket
-		minReplicas int32 = 1
+		containerMapBucketMap                map[string][]Bucket = make(map[string][]Bucket)
+		containerBucketMap                   map[string]Bucket   = make(map[string]Bucket)
+		currBucket                           Bucket
+		minReplicasGlobal                    int32 = 1
+		firstContainerName                   string
+		firstContainerFirstIntervalBucketLen int
 	)
 	scalingOverlap := hvpa.Spec.ScalingIntervalsOverlap
 
 	if hvpa.Spec.Hpa.Template.Spec.MinReplicas != nil {
-		minReplicas = *hvpa.Spec.Hpa.Template.Spec.MinReplicas
-	}
-	minCPU, minMemory := getMinAllowed(hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies)
-
-	for _, scaleInterval := range hvpa.Spec.ScaleIntervals {
-		bucket, curr, err := getLinearBuckets(scaleInterval, scalingOverlap, &minCPU, &minMemory, &minReplicas, currentReplicas, hvpa.Namespace+"/"+hvpa.Name)
-		if err != nil {
-			return nil, nil, err
-		}
-		buckets = append(buckets, bucket...)
-		if curr != nil {
-			currBucket = curr
-		}
+		minReplicasGlobal = *hvpa.Spec.Hpa.Template.Spec.MinReplicas
 	}
 
-	return NewGenericBucket(buckets), currBucket, err
+	// Since minAllowed is taken as the min resource value for the first interval for each container,
+	// the buckets generated using first scaleInterval can be different for each container.
+	// But rest of the buckets are going to be the same for all the containers because for rest of the scaleIntervals,
+	// the min resource values are calculated using max resource of each interval and scalingOverlap which is common for all containers.
+	for i := range hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies {
+		container := &hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies[i]
+		containerMapBucketMap[container.ContainerName] = make([]Bucket, 0)
+		if i == 0 {
+			firstContainerName = container.ContainerName
+		}
+		minReplicas := minReplicasGlobal
+		minCPU := container.MinAllowed.Cpu().MilliValue()
+		minMemory := container.MinAllowed.Memory().MilliValue()
+		for j, scaleInterval := range hvpa.Spec.ScaleIntervals {
+			bucket, curr, err := getLinearBuckets(scaleInterval, scalingOverlap, &minCPU, &minMemory, &minReplicas, currentReplicas, hvpa.Namespace+"/"+hvpa.Name)
+			if err != nil {
+				return nil, nil, err
+			}
+			if i == 0 && j == 0 {
+				firstContainerFirstIntervalBucketLen = len(bucket)
+			}
+			containerMapBucketMap[container.ContainerName] = append(containerMapBucketMap[container.ContainerName], bucket...)
+			if curr != nil {
+				currBucket = curr
+			}
+			if i != 0 {
+				// For 2nd container onwards, since rest of the buckets are same as for first container, append and break
+				containerMapBucketMap[container.ContainerName] = append(containerMapBucketMap[container.ContainerName], containerMapBucketMap[firstContainerName][firstContainerFirstIntervalBucketLen:]...)
+				break
+			}
+		}
+	}
+
+	for containerName, buckets := range containerMapBucketMap {
+		containerBucketMap[containerName] = NewGenericBucket(buckets)
+	}
+
+	return containerBucketMap, currBucket, err
 }
 
 // Linear bucket factory
@@ -338,22 +365,4 @@ func getLinearBuckets(scaleInterval hvpav1alpha1.ScaleIntervals, scalingOverlap 
 		}
 	}
 	return buckets, currBucket, nil
-}
-
-// Returns minAllowed of all containers for which VPA mode is not set to "Off"
-func getMinAllowed(containerPolicies []vpa_api.ContainerResourcePolicy) (minCPU, minMemory int64) {
-	var cpu, memory int64
-
-	for _, policy := range containerPolicies {
-		if policy.MinAllowed != nil && (policy.Mode == nil || *policy.Mode != vpa_api.ContainerScalingModeOff) {
-			if policy.MinAllowed.Cpu() != nil {
-				cpu += policy.MinAllowed.Cpu().MilliValue()
-			}
-			if policy.MinAllowed.Cpu() != nil {
-				memory += policy.MinAllowed.Memory().MilliValue()
-			}
-		}
-	}
-
-	return cpu, memory
 }

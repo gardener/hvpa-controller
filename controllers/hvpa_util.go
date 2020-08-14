@@ -132,7 +132,7 @@ func getScalingRecommendations(
 	}
 
 	limitScalingParams := hvpa.Spec.Vpa.LimitsRequestsGapScaleParams
-	buckets, currentBucket, err := GetBuckets(hvpa, currentReplicas)
+	containerBuckets, currentBucket, err := GetBuckets(hvpa, currentReplicas)
 	if err != nil {
 		return nil, nil, false, nil, err
 	}
@@ -234,8 +234,8 @@ func getScalingRecommendations(
 					break
 				}
 
-				replicaByCPU, _, _ := buckets.FindXValue(newTotalCPUReco, ResourceReplicas, ResourceCPU)
-				replicaByMem, _, _ := buckets.FindXValue(newTotalMemReco, ResourceReplicas, ResourceMemory)
+				replicaByCPU, _, _ := containerBuckets[container.Name].FindXValue(newTotalCPUReco, ResourceReplicas, ResourceCPU)
+				replicaByMem, _, _ := containerBuckets[container.Name].FindXValue(newTotalMemReco, ResourceReplicas, ResourceMemory)
 				maxReplica := int32(math.Max(float64(replicaByCPU), float64(replicaByMem)))
 
 				newPerReplicaCPU := newTotalCPUReco / int64(maxReplica)
