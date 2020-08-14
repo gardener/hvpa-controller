@@ -21,6 +21,7 @@ import (
 	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 )
 
 const (
@@ -256,13 +257,20 @@ func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[
 	// the min resource values are calculated using max resource of each interval and scalingOverlap which is common for all containers.
 	for i := range hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies {
 		container := &hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies[i]
+		if container.Mode != nil && *container.Mode == vpa_api.ContainerScalingModeOff {
+			continue
+		}
+		minCPU, minMemory := int64(0), int64(0)
 		containerMapBucketMap[container.ContainerName] = make([]Bucket, 0)
 		if i == 0 {
 			firstContainerName = container.ContainerName
 		}
 		minReplicas := minReplicasGlobal
-		minCPU := container.MinAllowed.Cpu().MilliValue()
-		minMemory := container.MinAllowed.Memory().MilliValue()
+
+		if container.MinAllowed != nil {
+			minCPU = container.MinAllowed.Cpu().MilliValue()
+			minMemory = container.MinAllowed.Memory().MilliValue()
+		}
 		for j, scaleInterval := range hvpa.Spec.ScaleIntervals {
 			bucket, curr, err := getLinearBuckets(scaleInterval, scalingOverlap, &minCPU, &minMemory, &minReplicas, currentReplicas, hvpa.Namespace+"/"+hvpa.Name)
 			if err != nil {

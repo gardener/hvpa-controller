@@ -136,6 +136,10 @@ func getScalingRecommendations(
 	if err != nil {
 		return nil, nil, false, nil, err
 	}
+	if containerBuckets == nil {
+		log.V(3).Info("hvpa", "No scaling because buckets were not generated", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+		return nil, nil, false, nil, nil
+	}
 
 	var finalReplica int32
 	var blockedScalingUpdatePolicy, blockedScalingMaintenanceWindow, blockedScalingStabilizationWindow, blockedScalingMinChange, blockedScalingParadoxicalScaling *hvpav1alpha1.BlockedScaling
@@ -216,8 +220,11 @@ func getScalingRecommendations(
 					}
 				}
 
-				currentBucketHasCPU := currentBucket.HasValue(newTotalCPUReco, ResourceReplicas, ResourceCPU) == 0
-				currentBucketHasMem := currentBucket.HasValue(newTotalMemReco, ResourceReplicas, ResourceMemory) == 0
+				currentBucketHasCPU, currentBucketHasMem := false, false
+				if currentBucket != nil {
+					currentBucketHasCPU = currentBucket.HasValue(newTotalCPUReco, ResourceReplicas, ResourceCPU) == 0
+					currentBucketHasMem = currentBucket.HasValue(newTotalMemReco, ResourceReplicas, ResourceMemory) == 0
+				}
 
 				if currentBucketHasCPU && currentBucketHasMem {
 					// no need to change bucket since recommended cpu AND memory fall in the same bucket
