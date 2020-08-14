@@ -38,8 +38,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
+	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -1436,6 +1438,23 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	return result, nil
 }
 
+func areResourcesEqual(x, y *corev1.PodSpec) bool {
+	for i := range x.Containers {
+		containerX := &x.Containers[i]
+		for j := range y.Containers {
+			containerY := &y.Containers[j]
+			if containerX.Name == containerY.Name {
+				if containerX.Resources.Requests.Cpu().Cmp(*containerY.Resources.Requests.Cpu()) != 0 ||
+					containerX.Resources.Requests.Memory().Cmp(*containerY.Resources.Requests.Memory()) != 0 {
+					return false
+				}
+				break
+			}
+		}
+	}
+	return true
+}
+
 func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 	return &handler.EnqueueRequestsFromMapFunc{
 		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
@@ -1471,6 +1490,44 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 				log.Error(err, "Error retreiving hvpa", "name", a.Meta.GetNamespace()+"/"+name)
 				return nil
 			}
+
+			// Check if pod has latest resource values - we don't want to override stabilisation if target has different resources than this pod
+			target := hvpa.Spec.TargetRef
+			obj, err := scheme.Scheme.New(schema.FromAPIVersionAndKind(target.APIVersion, target.Kind))
+			if err != nil {
+				log.Error(err, "Error initializing runtime.Object for", "kind", target.Kind, "name", target.Name, "namespace", hvpa.Namespace)
+				return nil
+			}
+
+			err = client.Get(context.TODO(), types.NamespacedName{Name: target.Name, Namespace: hvpa.Namespace}, obj)
+			if err != nil {
+				log.Error(err, "Error getting", "kind", target.Kind, "name", target.Name, "namespace", hvpa.Namespace)
+				return nil
+			}
+
+			var podTemplateSpec *corev1.PodSpec
+			switch target.Kind {
+			case "Deployment":
+				podTemplateSpec = &obj.(*appsv1.Deployment).Spec.Template.Spec
+			case "StatefulSet":
+				podTemplateSpec = &obj.(*appsv1.StatefulSet).Spec.Template.Spec
+			case "DaemonSet":
+				podTemplateSpec = &obj.(*appsv1.DaemonSet).Spec.Template.Spec
+			case "ReplicaSet":
+				podTemplateSpec = &obj.(*appsv1.ReplicaSet).Spec.Template.Spec
+			case "ReplicationController":
+				podTemplateSpec = &obj.(*corev1.ReplicationController).Spec.Template.Spec
+			default:
+				err := fmt.Errorf("TargetRef kind not supported %v in hvpa %v", hvpa.Spec.TargetRef.Kind, hvpa.Namespace+"/"+hvpa.Name)
+				log.Error(err, "Error")
+				return nil
+			}
+
+			if !areResourcesEqual(&pod.Spec, podTemplateSpec) {
+				log.V(3).Info("Ignoring pod event because the pod doesn't belong to latest replicaset", "pod", pod.Namespace+"/"+pod.Name)
+				return nil
+			}
+
 			clone := hvpa.DeepCopy()
 
 			hvpaStatus := clone.Status
