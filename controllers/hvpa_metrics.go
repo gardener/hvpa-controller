@@ -89,7 +89,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 		},
 		[]string{labelReason},
 	)
-	for _, reason := range []hvpav1alpha1.BlockingReason{hvpav1alpha1.BlockingReasonMaintenanceWindow, hvpav1alpha1.BlockingReasonMinChange, hvpav1alpha1.BlockingReasonStabilizationWindow, hvpav1alpha1.BlockingReasonUpdatePolicy} {
+	for _, reason := range []hvpav1alpha1.BlockingReason{hvpav1alpha1.BlockingReasonParadoxicalScaling, hvpav1alpha1.BlockingReasonMaintenanceWindow, hvpav1alpha1.BlockingReasonMinChange, hvpav1alpha1.BlockingReasonStabilizationWindow, hvpav1alpha1.BlockingReasonUpdatePolicy} {
 		m.aggrBlockedScalingsTotal.WithLabelValues(string(reason)).Set(0)
 	}
 	allCollectors = append(allCollectors, m.aggrBlockedScalingsTotal)
