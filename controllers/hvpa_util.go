@@ -230,14 +230,14 @@ func getScalingRecommendations(
 					// no need to change bucket since recommended cpu AND memory fall in the same bucket
 					// We can calculate new resource values based on current bucket itself then,
 					// no need to use the generic bucket list anymore - overwrite:
-					finalReplica = currentReplicas
+					finalReplica = int32(math.Max(float64(finalReplica), float64(currentReplicas)))
 					break
 				} else if isScaleDown && (currentBucketHasCPU || currentBucketHasMem) {
 					// scaling down - no need to change bucket since recommended cpu OR memory fall in the same bucket
 					// This provides hysteresis while scaling down.
 					// We can calculate new resource values based on current bucket itself then,
 					// no need to use the generic bucket list anymore - overwrite:
-					finalReplica = currentReplicas
+					finalReplica = int32(math.Max(float64(finalReplica), float64(currentReplicas)))
 					break
 				}
 

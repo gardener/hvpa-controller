@@ -571,6 +571,41 @@ var _ = Describe("#TestReconcile", func() {
 					blockedReasons: []hvpav1alpha1.BlockingReason{},
 				},
 			}),
+			Entry("UpdateMode Auto, scale down, base resource usage adjusted", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "0.8G", "150m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("150m"),
+								v1.ResourceMemory: resource.MustParse("2.2G"),
+							},
+						}, 3),
+				},
+				action: action{
+					baseResourcesPerReplica: hvpav1alpha1.ResourceChangeParams{
+						"cpu": hvpav1alpha1.ChangeParams{
+							Value: stringPtr("100m"),
+						},
+						"memory": hvpav1alpha1.ChangeParams{
+							Percentage: int32Ptr(10),
+						},
+					},
+				},
+				expect: expect{
+					desiredReplicas: 2,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("175m"),
+							"memory": resource.MustParse("990000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
 			Entry("UpdateMode Auto, scale up, nil base resource usage", &data{
 				setup: setup{
 					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),

@@ -887,7 +887,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	if !instance.Status.OverrideScaleUpStabilization && reflect.DeepEqual(*processingStatus, instance.Status.LastProcessedRecommendations) {
 		log.V(3).Info("HVPA", "No new recommendations for", "hvpa", instance.Namespace+"/"+instance.Name)
 		err = r.applyLastApplied(&instance.Status.LastScaling, obj, instance.Namespace+"/"+instance.Name)
-		return result, nil
+		return result, err
 	}
 
 	log.V(2).Info("HVPA", "Processing recommendations", processingStatus, "hvpa", instance.Namespace+"/"+instance.Name)
