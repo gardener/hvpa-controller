@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 )
@@ -137,9 +138,11 @@ type ScaleParams struct {
 // ScaleIntervals defines the scaling interval for resources
 type ScaleIntervals struct {
 	// Scale parameters for CPU
-	MaxCPU string `json:"maxCpu,omitempty"`
+	// +optional
+	MaxCPU *resource.Quantity `json:"maxCpu,omitempty"`
 	// Scale parameters for memory
-	MaxMemory string `json:"maxMemory,omitempty"`
+	// +optional
+	MaxMemory *resource.Quantity `json:"maxMemory,omitempty"`
 	// Scale patameters for replicas
 	MaxReplicas int32 `json:"maxReplicas,omitempty"`
 	// This field defines how to compute multiple effective scaling intervals from the total

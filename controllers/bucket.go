@@ -273,7 +273,7 @@ func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[
 			minMemory = container.MinAllowed.Memory().MilliValue()
 		}
 		for j, scaleInterval := range hvpa.Spec.ScaleIntervals {
-			bucket, curr, err := getLinearBuckets(scaleInterval, scalingOverlap, &minCPU, &minMemory, &minReplicas, currentReplicas, hvpa.Namespace+"/"+hvpa.Name)
+			bucket, curr, err := getLinearBuckets(container.MaxAllowed, scaleInterval, scalingOverlap, &minCPU, &minMemory, &minReplicas, currentReplicas, hvpa.Namespace+"/"+hvpa.Name)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -301,15 +301,21 @@ func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[
 }
 
 // Linear bucket factory
-func getLinearBuckets(scaleInterval hvpav1alpha1.ScaleIntervals, scalingOverlap hvpav1alpha1.ResourceChangeParams, minCPU, minMemory *int64, minReplicas *int32, currentReplicas int32, hvpa string) (bucketList []Bucket, currentBucket Bucket, err error) {
+func getLinearBuckets(maxAllowed corev1.ResourceList, scaleInterval hvpav1alpha1.ScaleIntervals, scalingOverlap hvpav1alpha1.ResourceChangeParams, minCPU, minMemory *int64, minReplicas *int32, currentReplicas int32, hvpa string) (bucketList []Bucket, currentBucket Bucket, err error) {
 	var (
 		currMin    *int64
 		buckets    []Bucket
 		currBucket Bucket
 	)
 	replicas := minReplicas
-	intervalMaxCPU := resource.MustParse(scaleInterval.MaxCPU)
-	intervalMaxMemory := resource.MustParse(scaleInterval.MaxMemory)
+	intervalMaxCPU := scaleInterval.MaxCPU
+	if intervalMaxCPU == nil {
+		intervalMaxCPU = maxAllowed.Cpu()
+	}
+	intervalMaxMemory := scaleInterval.MaxMemory
+	if intervalMaxMemory == nil {
+		intervalMaxMemory = maxAllowed.Memory()
+	}
 	intervalMinCPU := *minCPU
 	intervalMinMemory := *minMemory
 

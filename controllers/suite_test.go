@@ -236,18 +236,18 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 			},
 			ScaleIntervals: []hvpav1alpha1.ScaleIntervals{
 				{
-					MaxCPU:      "1",
-					MaxMemory:   "2G",
+					MaxCPU:      resourcePtr("1"),
+					MaxMemory:   resourcePtr("2G"),
 					MaxReplicas: 1,
 				},
 				{
-					MaxCPU:      "20",
-					MaxMemory:   "30G",
+					MaxCPU:      resourcePtr("20"),
+					MaxMemory:   resourcePtr("30G"),
 					MaxReplicas: 5,
 				},
 				{
-					MaxCPU:      "30",
-					MaxMemory:   "40G",
+					MaxCPU:      resourcePtr("30"),
+					MaxMemory:   resourcePtr("40G"),
 					MaxReplicas: 6,
 				},
 			},
@@ -343,4 +343,9 @@ func int32Ptr(i int32) *int32 {
 
 func stringPtr(i string) *string {
 	return &i
+}
+
+func resourcePtr(i string) *resource.Quantity {
+	q := resource.MustParse(i)
+	return &q
 }
