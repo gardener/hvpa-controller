@@ -124,9 +124,9 @@ func getScalingRecommendations(
 	}
 	lastScaleTimeDuration := metav1.Now().Sub(lastScaleTime.Time)
 
-	// Initialise desiredReplicas to 1.
+	// Initialise desiredReplicas to 0.
 	// Otherwise it might prevent scale down if HPA is not deployed - because we take max of VPA's and HPA's total recommendations
-	desiredReplicas := int32(1)
+	desiredReplicas := int32(0)
 	if hpaStatus != nil {
 		desiredReplicas = hpaStatus.DesiredReplicas
 	}
@@ -248,10 +248,11 @@ func getScalingRecommendations(
 				newPerReplicaCPU := newTotalCPUReco / int64(maxReplica)
 				newPerReplicaMem := newTotalMemReco / int64(maxReplica)
 
-				if maxReplica < currentReplicas {
+				// Block paradoxical scaling only if it is a scale down
+				if isScaleDown && maxReplica < currentReplicas {
 					if (currentperReplicaCPU != 0 && currentperReplicaCPU < newPerReplicaCPU) && (currentperReplicaMem != 0 && currentperReplicaMem < newPerReplicaMem) {
 						// Paradoxical Scaling - block scaling for this container
-						log.V(2).Info("Paradoxical scaling: No scaling recommended because recommendation for horizontal scale is \"scale in\", while for vertical scale is \"scale up\"", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+						log.V(2).Info("Paradoxical scaling: No scaling recommended because recommendation for horizontal scale is \"scale in\", while for vertical scale is \"scale up\"", "recommended replica", maxReplica, "recommended cpu", newPerReplicaCPU, "recommended memory", newPerReplicaMem, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 						blockedScalingReason[container.Name] = hvpav1alpha1.BlockingReasonParadoxicalScaling
 						break
 					}
@@ -277,6 +278,9 @@ func getScalingRecommendations(
 				currentperReplicaCPU := container.Resources.Requests.Cpu().MilliValue()
 				currentperReplicaMem := container.Resources.Requests.Memory().MilliValue()
 
+				currentTotalCPU := currentperReplicaCPU * int64(currentReplicas)
+				currentTotalMem := currentperReplicaMem * int64(currentReplicas)
+
 				newTotalCPUReco := int64(math.Max(float64(reco.Target.Cpu().MilliValue()*int64(currentReplicas)), float64(container.Resources.Requests.Cpu().MilliValue()*int64(desiredReplicas))))
 				newTotalMemReco := int64(math.Max(float64(reco.Target.Memory().MilliValue()*int64(currentReplicas)), float64(container.Resources.Requests.Memory().MilliValue()*int64(desiredReplicas))))
 
@@ -285,7 +289,11 @@ func getScalingRecommendations(
 
 				newCPUPerReplica, newMemPerReplica = adjustForBaseUsage(newCPUPerReplica, currentperReplicaCPU, newMemPerReplica, currentperReplicaMem, finalReplica, currentReplicas, hvpa)
 
-				if finalReplica > currentReplicas {
+				// If either or both of memory and cpu are scaling down, consider it as a overall scale down
+				isScaleUp := newTotalCPUReco >= currentTotalCPU && newTotalMemReco >= currentTotalMem
+
+				// Consider paradoxical only if it's a scale up
+				if isScaleUp && finalReplica > currentReplicas {
 					if currentperReplicaCPU > newCPUPerReplica && currentperReplicaMem > newMemPerReplica {
 						// Paradoxical Scaling
 						log.V(2).Info("Paradoxical scaling: current resources recommended because recommendation for horizontal scale is \"scale out\", while for vertical scale is \"scale down\"", "hvpa", hvpa.Namespace+"/"+hvpa.Name)

@@ -74,6 +74,7 @@ func NewGenericBucket(buckets []Bucket) Bucket {
 
 	for _, bucket := range buckets {
 		valueInterval := bucket.GetIntervals()
+		log.V(4).Info("hvpa", "interval", valueInterval)
 
 		for axisName, interval := range valueInterval.Intervals {
 			if _, ok := genericValueInterval.Intervals[axisName]; !ok {
@@ -292,6 +293,7 @@ func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[
 	}
 
 	for containerName, buckets := range containerMapBucketMap {
+		log.V(4).Info("hvpa", "containerName", containerName, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 		containerBucketMap[containerName] = NewGenericBucket(buckets)
 	}
 

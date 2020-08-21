@@ -344,7 +344,7 @@ var _ = Describe("#TestReconcile", func() {
 				}
 			},
 
-			Entry("UpdateMode Auto, scale up, paradoxical scaling", &data{
+			Entry("UpdateMode Auto, scale up, paradoxical scaling, replicas increases, resources per replica decreases", &data{
 				setup: setup{
 					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: nil,
@@ -377,6 +377,56 @@ var _ = Describe("#TestReconcile", func() {
 					blockedReasons: []hvpav1alpha1.BlockingReason{
 						hvpav1alpha1.BlockingReasonParadoxicalScaling,
 					},
+				},
+			}),
+			Entry("UpdateMode Auto, overall scale up, paradoxical scaling, but replicas decrease - should not be considered paradoxical", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "4G", "500m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("150m"),
+								v1.ResourceMemory: resource.MustParse("1.8G"),
+							},
+						}, 3),
+				},
+				expect: expect{
+					desiredReplicas: 2,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("750m"),
+							"memory": resource.MustParse("6000000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("UpdateMode Auto, overall scale down, paradoxical scaling, but replicas increase - should not be considered paradoxical", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "4G", "1500m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("15"),
+								v1.ResourceMemory: resource.MustParse("20G"),
+							},
+						}, 1),
+				},
+				expect: expect{
+					desiredReplicas: 2,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("750m"),
+							"memory": resource.MustParse("2000000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
 				},
 			}),
 			Entry("UpdateMode Auto, scale up blocked due to minChange", &data{
