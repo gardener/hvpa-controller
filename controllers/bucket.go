@@ -24,80 +24,92 @@ import (
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 )
 
-const (
-	// ResourceCPU represents CPU in millicores (1core = 1000millicores).
-	ResourceCPU AxisName = "cpu"
-	// ResourceMemory represents memory, in bytes. (500Gi = 500GiB = 500 * 1024 * 1024 * 1024).
-	ResourceMemory AxisName = "memory"
-	// ResourceReplicas represents replicas.
-	ResourceReplicas AxisName = "replicas"
-)
-
-// Bucket defines the size and nature of bucket.
-// The argument "value" is product of values on "xAxis" and "yAxis".
-// A Bucket can have any number of axis, with their minValue and maxValue defined.
-// To find "XValue" for a given "value", we iterate over primary axis, the name for which should be passed as xAxis argument.
-// "YValue" would be the value in yAxis, such that XValue * YValue = "value".
-//
-// A Bucket is said to contain the "value" if:
-// 1. The "value" is greater than the product of minValues of xAxis and yAxis intervals, and
-// 2. The "value" is less than the product of maxValues of xAxis and yAxis intervals
-type Bucket interface {
-	FindXValue(value int64, xAxis, yAxis AxisName) (int64, *Bucket, error)
-	FindYValue(value int64, xAxis, yAxis AxisName) (int64, error)
-	HasValue(value int64, xAxis, yAxis AxisName) int
-	GetIntervals() ValueInterval
-	AddAxis(axisName AxisName, minValue, maxValue int64) error
+// EffectiveScalingInterval explicitly defines a single effective scaling interval
+// with a fixed single desired `replicas` value and the corresponding allowed range
+// (maximum while scaling up and minimum while scaling down) for total as well as
+// per-pod resources for the given desired `replicas`.
+type EffectiveScalingInterval struct {
+	// The desired replicas for this effective scaling interval
+	Replicas int32
+	// Applicable while scaling down
+	MinResources ResourceList
+	// Applicable while scaling up
+	MaxResources ResourceList
 }
 
-func newInterval(axis AxisName, minValue, maxValue int64) (Interval, error) {
-	if minValue < 0 || maxValue < minValue {
-		return Interval{}, errors.New("minValue must both be positive, and maxValue should be greater than minValue")
+// ResourceList is a set of (resource name, quantity) pairs.
+type ResourceList map[corev1.ResourceName]int64
+
+// EffectiveScalingIntervals explicitly defines a collection of effective scaling intervals
+type EffectiveScalingIntervals interface {
+	IsResourceInRangeForReplica(replicas int32, resourceName corev1.ResourceName, resourceValue int64) (bool, error)
+	// If more than one replicas has the resource value in its range (due to overlap), then use biasReplicas
+	// to resolve the conflict. If the biasReplicas is not among the candidate replicas then the lower of the replicas
+	// should be returned.
+	GetReplicasForResource(resourceName corev1.ResourceName, resourceValue int64, biasReplicas int32) (int32, error)
+}
+
+type effectiveScalingIntervals struct {
+	intervals []*EffectiveScalingInterval
+}
+
+// NewGenericEffectiveIntervals returns EffectiveScalingIntervals interface
+func NewGenericEffectiveIntervals(scalingIntervals []*EffectiveScalingInterval) EffectiveScalingIntervals {
+	return &effectiveScalingIntervals{
+		intervals: scalingIntervals,
+	}
+}
+
+func (e *effectiveScalingIntervals) IsResourceInRangeForReplica(replicas int32, resourceName corev1.ResourceName, resourceValue int64) (bool, error) {
+	if len(e.intervals) < int(replicas) {
+		return false, ErrorOutOfRange
+	}
+	interval := e.intervals[replicas-1]
+	return interval.IsResourceInRangeForReplica(replicas, resourceName, resourceValue)
+}
+
+func (e *effectiveScalingIntervals) GetReplicasForResource(resourceName corev1.ResourceName, resourceValue int64, biasReplicas int32) (int32, error) {
+	// first check in the biasReplica interval
+	inRange, err := e.IsResourceInRangeForReplica(biasReplicas, resourceName, resourceValue)
+	if err != nil {
+		return biasReplicas, err
+	}
+	if inRange {
+		return biasReplicas, err
 	}
 
-	return Interval{
-		MinValue: minValue,
-		MaxValue: maxValue,
-	}, nil
-}
-
-// NewLinearBucket returns Bucket describing a linear bucket
-func NewLinearBucket() Bucket {
-	return &linearBucket{}
-}
-
-// NewGenericBucket returns Bucket describing a collection of buckets
-func NewGenericBucket(buckets []Bucket) Bucket {
-	genericValueInterval := ValueInterval{
-		Intervals: make(map[AxisName]Interval),
-	}
-
-	for _, bucket := range buckets {
-		valueInterval := bucket.GetIntervals()
-		log.V(4).Info("hvpa", "interval", valueInterval)
-
-		for axisName, interval := range valueInterval.Intervals {
-			if _, ok := genericValueInterval.Intervals[axisName]; !ok {
-				genericValueInterval.Intervals[axisName] = interval
-				continue
-			}
-			currentInterval := genericValueInterval.Intervals[axisName]
-			if currentInterval.MinValue > interval.MinValue {
-				currentInterval.MinValue = interval.MinValue
-			}
-			if currentInterval.MaxValue < interval.MaxValue {
-				currentInterval.MaxValue = interval.MaxValue
-			}
-			genericValueInterval.Intervals[axisName] = currentInterval
+	for _, interval := range e.intervals {
+		inRange, err = interval.IsResourceInRangeForReplica(interval.Replicas, resourceName, resourceValue)
+		if err != nil {
+			return interval.Replicas, err
+		}
+		if inRange {
+			return interval.Replicas, nil
 		}
 	}
-	return &genericBucket{buckets, genericValueInterval}
+	return 0, ErrorOutOfRange
 }
 
-// Interval defines the range of interval
-type Interval struct {
-	MinValue int64
-	MaxValue int64
+// NewEffectiveScalingInterval returns effective scaling interval
+func NewEffectiveScalingInterval() *EffectiveScalingInterval {
+	interval := &EffectiveScalingInterval{}
+	interval.MinResources = make(ResourceList)
+	interval.MaxResources = make(ResourceList)
+	return interval
+}
+
+// IsResourceInRangeForReplica returns true if resourceValue falls in interval e
+func (e *EffectiveScalingInterval) IsResourceInRangeForReplica(replicas int32, resourceName corev1.ResourceName, resourceValue int64) (bool, error) {
+	if e.Replicas != replicas {
+		return false, errors.New("replicas do not match the interval replicas")
+	}
+	minValue := int64(replicas) * e.MinResources[resourceName]
+	maxValue := int64(replicas) * e.MaxResources[resourceName]
+
+	if resourceValue >= minValue && resourceValue <= maxValue {
+		return true, nil
+	}
+	return false, nil
 }
 
 var (
@@ -105,143 +117,12 @@ var (
 	ErrorOutOfRange error = errors.New("Value out of range")
 )
 
-// AxisName is the name of the axis for bucket intervals
-type AxisName string
-
-// IntervalMap defines axis with intervals
-type IntervalMap map[AxisName]Interval
-
-// ValueInterval has values for a bucket
-type ValueInterval struct {
-	Intervals IntervalMap
-}
-
-// HasValue checks if the interval containes a value
-func (o *ValueInterval) HasValue(value int64, xAxis, yAxis AxisName) int {
-	// TODO: check if axis with the provided names exist
-	minTotal := o.Intervals[xAxis].MinValue * o.Intervals[yAxis].MinValue
-	maxTotal := o.Intervals[xAxis].MaxValue * o.Intervals[yAxis].MaxValue
-
-	if value < minTotal {
-		return -1
-	}
-	if value > maxTotal {
-		return 1
-	}
-	return 0
-}
-
-type linearBucket struct {
-	ValueInterval
-}
-
-// Defines collection of buckets
-type genericBucket struct {
-	buckets []Bucket
-	ValueInterval
-}
-
-func (o *genericBucket) NumBuckets() int {
-	return len(o.buckets)
-}
-
-func (o *genericBucket) FindBucket(value int64, xAxis, yAxis AxisName) (int, error) {
-	for i, bucket := range o.buckets {
-		if bucket.HasValue(value, xAxis, yAxis) == 0 {
-			return i, nil
-		}
-	}
-
-	// TODO: return whether value is below or above bucket
-	return 0, ErrorOutOfRange
-}
-
-func (o *genericBucket) GetIntervals() ValueInterval {
-	if o == nil {
-		return ValueInterval{}
-	}
-	return o.ValueInterval
-}
-
-func (o *genericBucket) FindXValue(value int64, xAxis, yAxis AxisName) (int64, *Bucket, error) {
-	bucketIdx, err := o.FindBucket(value, xAxis, yAxis)
-	if err != nil {
-		return 0, nil, err
-	}
-	xValue, _, err := o.buckets[bucketIdx].FindXValue(value, xAxis, yAxis)
-	return xValue, &o.buckets[bucketIdx], err
-}
-
-func (o *genericBucket) FindYValue(value int64, xAxis, yAxis AxisName) (int64, error) {
-	bucketIdx, err := o.FindBucket(value, xAxis, yAxis)
-	if err != nil {
-		return 0, err
-	}
-	yValue, err := o.buckets[bucketIdx].FindYValue(value, xAxis, yAxis)
-	return yValue, err
-}
-
-func (o *genericBucket) AddAxis(axisName AxisName, minValue, maxValue int64) error {
-	return nil
-}
-
-func (o *linearBucket) AddAxis(axisName AxisName, minValue, maxValue int64) error {
-	if o.Intervals == nil {
-		o.Intervals = make(map[AxisName]Interval)
-	}
-	interval, err := newInterval(axisName, minValue, maxValue)
-	o.Intervals[axisName] = interval
-	return err
-}
-
-func (o *linearBucket) GetIntervals() ValueInterval {
-	if o == nil {
-		return ValueInterval{}
-	}
-	return o.ValueInterval
-}
-
-func (o *linearBucket) FindXValue(value int64, xAxis, yAxis AxisName) (int64, *Bucket, error) {
-	if o.HasValue(value, xAxis, yAxis) != 0 {
-		// TODO: return whether value is below or above bucket
-		return 0, nil, ErrorOutOfRange
-	}
-
-	numberOfXIntervals := o.Intervals[xAxis].MaxValue - o.Intervals[xAxis].MinValue + 1
-
-	yDelta := (o.Intervals[yAxis].MaxValue - o.Intervals[yAxis].MinValue) / int64(numberOfXIntervals)
-
-	x := o.Intervals[xAxis].MinValue
-	i := int64(1)
-	for ; x <= o.Intervals[xAxis].MaxValue; x++ {
-		yMaxForX := o.Intervals[yAxis].MinValue + i*yDelta
-		if value < x*yMaxForX {
-			break
-		}
-		i++
-	}
-	b := Bucket(o)
-	return x, &b, nil
-}
-
-func (o *linearBucket) FindYValue(value int64, xAxis, yAxis AxisName) (int64, error) {
-	x, _, err := o.FindXValue(value, xAxis, yAxis)
-	if err != nil {
-		return 0, err
-	}
-	if o.Intervals[yAxis].MinValue == o.Intervals[yAxis].MaxValue {
-		// Special case: when only xValue should change, without any change in yValue
-		return o.Intervals[yAxis].MinValue, nil
-	}
-	return int64(math.Round(float64(value) / float64(x))), nil
-}
-
 // GetBuckets factory to construct buckets from provided scaling intervals
-func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[string]Bucket, currentBucket Bucket, err error) {
+func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[string]EffectiveScalingIntervals, currentBucket *EffectiveScalingInterval, err error) {
 	var (
-		containerMapBucketMap                map[string][]Bucket = make(map[string][]Bucket)
-		containerBucketMap                   map[string]Bucket   = make(map[string]Bucket)
-		currBucket                           Bucket
+		containerMapBucketMap                map[string][]*EffectiveScalingInterval = make(map[string][]*EffectiveScalingInterval)
+		containerBucketMap                   map[string]EffectiveScalingIntervals   = make(map[string]EffectiveScalingIntervals)
+		currBucket                           *EffectiveScalingInterval
 		minReplicasGlobal                    int32 = 1
 		firstContainerName                   string
 		firstContainerFirstIntervalBucketLen int
@@ -262,7 +143,7 @@ func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[
 			continue
 		}
 		minCPU, minMemory := int64(0), int64(0)
-		containerMapBucketMap[container.ContainerName] = make([]Bucket, 0)
+		containerMapBucketMap[container.ContainerName] = make([]*EffectiveScalingInterval, 0)
 		if i == 0 {
 			firstContainerName = container.ContainerName
 		}
@@ -294,18 +175,18 @@ func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[
 
 	for containerName, buckets := range containerMapBucketMap {
 		log.V(4).Info("hvpa", "containerName", containerName, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-		containerBucketMap[containerName] = NewGenericBucket(buckets)
+		containerBucketMap[containerName] = NewGenericEffectiveIntervals(buckets)
 	}
 
 	return containerBucketMap, currBucket, err
 }
 
 // Linear bucket factory
-func getLinearBuckets(maxAllowed corev1.ResourceList, scaleInterval hvpav1alpha1.ScaleIntervals, scalingOverlap hvpav1alpha1.ResourceChangeParams, minCPU, minMemory *int64, minReplicas *int32, currentReplicas int32, hvpa string) (bucketList []Bucket, currentBucket Bucket, err error) {
+func getLinearBuckets(maxAllowed corev1.ResourceList, scaleInterval hvpav1alpha1.ScaleIntervals, scalingOverlap hvpav1alpha1.ResourceChangeParams, minCPU, minMemory *int64, minReplicas *int32, currentReplicas int32, hvpa string) (bucketList []*EffectiveScalingInterval, currentBucket *EffectiveScalingInterval, err error) {
 	var (
 		currMin    *int64
-		buckets    []Bucket
-		currBucket Bucket
+		buckets    []*EffectiveScalingInterval
+		currBucket *EffectiveScalingInterval
 	)
 	replicas := minReplicas
 	intervalMaxCPU := scaleInterval.MaxCPU
@@ -327,25 +208,19 @@ func getLinearBuckets(maxAllowed corev1.ResourceList, scaleInterval hvpav1alpha1
 		localMaxCPU := intervalMinCPU + i*cpuDelta
 		localMaxMem := intervalMinMemory + i*memDelta
 
-		bucket := NewLinearBucket()
-		err := bucket.AddAxis(ResourceReplicas, int64(*replicas), int64(*replicas))
-		if err != nil {
-			return nil, nil, err
-		}
-		err = bucket.AddAxis(ResourceCPU, int64(*minCPU), int64(localMaxCPU))
-		if err != nil {
-			return nil, nil, err
-		}
-		err = bucket.AddAxis(ResourceMemory, int64(*minMemory), int64(localMaxMem))
-		if err != nil {
-			return nil, nil, err
-		}
+		bucket := NewEffectiveScalingInterval()
+		bucket.Replicas = *replicas
+		bucket.MinResources[corev1.ResourceCPU] = *minCPU
+		bucket.MaxResources[corev1.ResourceCPU] = localMaxCPU
+
+		bucket.MinResources[corev1.ResourceMemory] = *minMemory
+		bucket.MaxResources[corev1.ResourceMemory] = localMaxMem
 
 		if currentReplicas == *replicas {
 			currBucket = bucket
 		}
 
-		log.V(4).Info("hvpa intervals", "interval", bucket.GetIntervals(), "hvpa", hvpa)
+		log.V(4).Info("hvpa intervals", "interval", bucket, "hvpa", hvpa)
 		buckets = append(buckets, bucket)
 
 		// Prepare for next iteration - total max of current bucket is equal to total min of next bucket
