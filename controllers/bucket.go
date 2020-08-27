@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	"math"
 
 	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
@@ -40,7 +41,7 @@ type EffectiveScalingInterval struct {
 // ResourceList is a set of (resource name, quantity) pairs.
 type ResourceList map[corev1.ResourceName]int64
 
-// EffectiveScalingIntervals explicitly defines a collection of effective scaling intervals
+// EffectiveScalingIntervals defines the contract to interact with effective scaling intervals.
 type EffectiveScalingIntervals interface {
 	IsResourceInRangeForReplica(replicas int32, resourceName corev1.ResourceName, resourceValue int64) (bool, error)
 	// If more than one replicas has the resource value in its range (due to overlap), then use biasReplicas
@@ -49,6 +50,7 @@ type EffectiveScalingIntervals interface {
 	GetReplicasForResource(resourceName corev1.ResourceName, resourceValue int64, biasReplicas int32) (int32, error)
 }
 
+// effectiveScalingIntervals contains the EffectiveScalingInterval indexed by their corresponding replicas count.
 type effectiveScalingIntervals struct {
 	intervals []*EffectiveScalingInterval
 }
@@ -71,11 +73,8 @@ func (e *effectiveScalingIntervals) IsResourceInRangeForReplica(replicas int32, 
 func (e *effectiveScalingIntervals) GetReplicasForResource(resourceName corev1.ResourceName, resourceValue int64, biasReplicas int32) (int32, error) {
 	// first check in the biasReplica interval
 	inRange, err := e.IsResourceInRangeForReplica(biasReplicas, resourceName, resourceValue)
-	if err != nil {
-		return biasReplicas, err
-	}
 	if inRange {
-		return biasReplicas, err
+		return biasReplicas, nil
 	}
 
 	for _, interval := range e.intervals {
@@ -118,12 +117,11 @@ var (
 )
 
 // GetBuckets factory to construct buckets from provided scaling intervals
-func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[string]EffectiveScalingIntervals, currentBucket *EffectiveScalingInterval, err error) {
+func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[string]EffectiveScalingIntervals, err error) {
 	var (
 		containerMapBucketMap                map[string][]*EffectiveScalingInterval = make(map[string][]*EffectiveScalingInterval)
 		containerBucketMap                   map[string]EffectiveScalingIntervals   = make(map[string]EffectiveScalingIntervals)
-		currBucket                           *EffectiveScalingInterval
-		minReplicasGlobal                    int32 = 1
+		minReplicasGlobal                    int32                                  = 1
 		firstContainerName                   string
 		firstContainerFirstIntervalBucketLen int
 	)
@@ -144,7 +142,7 @@ func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[
 		}
 		minCPU, minMemory := int64(0), int64(0)
 		containerMapBucketMap[container.ContainerName] = make([]*EffectiveScalingInterval, 0)
-		if i == 0 {
+		if firstContainerName == "" {
 			firstContainerName = container.ContainerName
 		}
 		minReplicas := minReplicasGlobal
@@ -154,18 +152,15 @@ func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[
 			minMemory = container.MinAllowed.Memory().MilliValue()
 		}
 		for j, scaleInterval := range hvpa.Spec.ScaleIntervals {
-			bucket, curr, err := getLinearBuckets(container.MaxAllowed, scaleInterval, scalingOverlap, &minCPU, &minMemory, &minReplicas, currentReplicas, hvpa.Namespace+"/"+hvpa.Name)
+			bucket, err := getLinearBuckets(container.MaxAllowed, scaleInterval, scalingOverlap, &minCPU, &minMemory, &minReplicas, currentReplicas, hvpa.Namespace+"/"+hvpa.Name)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
-			if i == 0 && j == 0 {
+			if container.ContainerName == firstContainerName && j == 0 {
 				firstContainerFirstIntervalBucketLen = len(bucket)
 			}
 			containerMapBucketMap[container.ContainerName] = append(containerMapBucketMap[container.ContainerName], bucket...)
-			if curr != nil {
-				currBucket = curr
-			}
-			if i != 0 {
+			if container.ContainerName != firstContainerName {
 				// For 2nd container onwards, since rest of the buckets are same as for first container, append and break
 				containerMapBucketMap[container.ContainerName] = append(containerMapBucketMap[container.ContainerName], containerMapBucketMap[firstContainerName][firstContainerFirstIntervalBucketLen:]...)
 				break
@@ -178,24 +173,31 @@ func GetBuckets(hvpa *hvpav1alpha1.Hvpa, currentReplicas int32) (bucketList map[
 		containerBucketMap[containerName] = NewGenericEffectiveIntervals(buckets)
 	}
 
-	return containerBucketMap, currBucket, err
+	return containerBucketMap, err
 }
 
 // Linear bucket factory
-func getLinearBuckets(maxAllowed corev1.ResourceList, scaleInterval hvpav1alpha1.ScaleIntervals, scalingOverlap hvpav1alpha1.ResourceChangeParams, minCPU, minMemory *int64, minReplicas *int32, currentReplicas int32, hvpa string) (bucketList []*EffectiveScalingInterval, currentBucket *EffectiveScalingInterval, err error) {
+func getLinearBuckets(VPAMaxAllowed corev1.ResourceList, scaleInterval hvpav1alpha1.ScaleIntervals, scalingOverlap hvpav1alpha1.ResourceChangeParams, minCPU, minMemory *int64, minReplicas *int32, currentReplicas int32, hvpa string) (bucketList []*EffectiveScalingInterval, err error) {
 	var (
-		currMin    *int64
-		buckets    []*EffectiveScalingInterval
-		currBucket *EffectiveScalingInterval
+		currMin *int64
+		buckets []*EffectiveScalingInterval
 	)
 	replicas := minReplicas
 	intervalMaxCPU := scaleInterval.MaxCPU
 	if intervalMaxCPU == nil {
-		intervalMaxCPU = maxAllowed.Cpu()
+		if VPAMaxAllowed == nil || VPAMaxAllowed.Cpu().IsZero() {
+			msg := fmt.Sprintf("atleast one of - VPA's maxAllowed CPU or scale interval's maxCPU - must be provided for hvpa: %s", hvpa)
+			return nil, errors.New(msg)
+		}
+		intervalMaxCPU = VPAMaxAllowed.Cpu()
 	}
 	intervalMaxMemory := scaleInterval.MaxMemory
 	if intervalMaxMemory == nil {
-		intervalMaxMemory = maxAllowed.Memory()
+		if VPAMaxAllowed == nil || VPAMaxAllowed.Memory().IsZero() {
+			msg := fmt.Sprintf("atleast one of - VPA's maxAllowed memory or scale interval's maxMemory - must be provided for hvpa: %s", hvpa)
+			return nil, errors.New(msg)
+		}
+		intervalMaxMemory = VPAMaxAllowed.Memory()
 	}
 	intervalMinCPU := *minCPU
 	intervalMinMemory := *minMemory
@@ -215,10 +217,6 @@ func getLinearBuckets(maxAllowed corev1.ResourceList, scaleInterval hvpav1alpha1
 
 		bucket.MinResources[corev1.ResourceMemory] = *minMemory
 		bucket.MaxResources[corev1.ResourceMemory] = localMaxMem
-
-		if currentReplicas == *replicas {
-			currBucket = bucket
-		}
 
 		log.V(4).Info("hvpa intervals", "interval", bucket, "hvpa", hvpa)
 		buckets = append(buckets, bucket)
@@ -255,5 +253,5 @@ func getLinearBuckets(maxAllowed corev1.ResourceList, scaleInterval hvpav1alpha1
 			}
 		}
 	}
-	return buckets, currBucket, nil
+	return buckets, nil
 }

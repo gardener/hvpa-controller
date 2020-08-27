@@ -117,9 +117,7 @@ var _ = Describe("#TestReconcile", func() {
 
 	DescribeTable("##ReconcileHPAandVPA",
 		func(instance *hvpav1alpha1.Hvpa) {
-			deploytest := target.DeepCopy()
-			// Overwrite name
-			deploytest.Name = "deploy-test-1"
+			deploytest := newTarget("deploy-test-1", unscaled, 2)
 
 			c := mgr.GetClient()
 			// Create the test deployment
@@ -188,23 +186,17 @@ var _ = Describe("#TestReconcile", func() {
 			p := v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
-					Namespace: "default",
-					Labels: map[string]string{
-						"name": target.Name,
-					},
+					Namespace: deploytest.Namespace,
+					Labels:    deploytest.Spec.Template.Labels,
 				},
 				Spec: v1.PodSpec{
-					NodeName: "test-node",
-					Containers: []v1.Container{
-						{
-							Name:  "deploy-test-1",
-							Image: "k8s.gcr.io/pause-amd64:3.0",
-						},
-					},
+					NodeName:   "test-node",
+					Containers: deploytest.Spec.Template.Spec.Containers,
 				},
 				Status: v1.PodStatus{
 					ContainerStatuses: []v1.ContainerStatus{
 						{
+							Name:         deploytest.Spec.Template.Spec.Containers[0].Name,
 							RestartCount: 2,
 							LastTerminationState: v1.ContainerState{
 								Terminated: &v1.ContainerStateTerminated{
@@ -233,7 +225,7 @@ var _ = Describe("#TestReconcile", func() {
 				if err := c.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, vpa); err != nil {
 					return err
 				}
-				vpa.Status = *newVpaStatus("deployment", "3G", "500m")
+				vpa.Status = *newVpaStatus(deploytest.Spec.Template.Spec.Containers[0].Name, "3G", "500m")
 				return c.Update(context.TODO(), vpa)
 			}, timeout).Should(Succeed())
 

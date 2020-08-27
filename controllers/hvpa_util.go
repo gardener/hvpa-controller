@@ -229,7 +229,6 @@ func estimateScalingParameters(
 	vpaStatus *vpa_api.VerticalPodAutoscalerStatus,
 	hvpa *hvpav1alpha1.Hvpa,
 	containerBuckets map[string]EffectiveScalingIntervals,
-	currentBucket *EffectiveScalingInterval,
 ) (
 	finalReplicas int32,
 	blockedScalingArray map[string]hvpav1alpha1.BlockingReason,
@@ -333,29 +332,20 @@ func estimateScalingParameters(
 					}
 				}
 
-				currentBucketHasCPU, currentBucketHasMem := false, false
-				if currentBucket != nil {
-					currentBucketHasCPU, _ = currentBucket.IsResourceInRangeForReplica(currentReplicas, corev1.ResourceCPU, newTotalCPUReco)
-					currentBucketHasMem, _ = currentBucket.IsResourceInRangeForReplica(currentReplicas, corev1.ResourceMemory, newTotalMemReco)
-				}
-
-				if currentBucketHasCPU && currentBucketHasMem {
-					// no need to change bucket since recommended cpu AND memory fall in the same bucket
-					// We can calculate new resource values based on current bucket itself then,
-					// no need to use the generic bucket list anymore - overwrite:
-					finalReplica = int32(math.Max(float64(finalReplica), float64(currentReplicas)))
-					break
-				} else if isScaleDown && (currentBucketHasCPU || currentBucketHasMem) {
-					// scaling down - no need to change bucket since recommended cpu OR memory fall in the same bucket
-					// This provides hysteresis while scaling down.
-					// We can calculate new resource values based on current bucket itself then,
-					// no need to use the generic bucket list anymore - overwrite:
-					finalReplica = int32(math.Max(float64(finalReplica), float64(currentReplicas)))
-					break
-				}
-
 				replicaByCPU, _ := containerBuckets[container.Name].GetReplicasForResource(corev1.ResourceCPU, newTotalCPUReco, currentReplicas)
 				replicaByMem, _ := containerBuckets[container.Name].GetReplicasForResource(corev1.ResourceMemory, newTotalMemReco, currentReplicas)
+
+				if replicaByCPU == currentReplicas && replicaByMem == currentReplicas {
+					// no need to change bucket since recommended cpu AND memory fall in the same bucket
+					finalReplica = int32(math.Max(float64(finalReplica), float64(currentReplicas)))
+					break
+				} else if isScaleDown && (replicaByCPU == currentReplicas || replicaByMem == currentReplicas) {
+					// scaling down - no need to change bucket since recommended cpu OR memory fall in the same bucket
+					// This provides hysteresis while scaling down.
+					finalReplica = int32(math.Max(float64(finalReplica), float64(currentReplicas)))
+					break
+				}
+
 				maxReplica := int32(math.Max(float64(replicaByCPU), float64(replicaByMem)))
 
 				newPerReplicaCPU := newTotalCPUReco / int64(maxReplica)
@@ -413,7 +403,7 @@ func getScalingRecommendations(
 		desiredReplicas = hpaStatus.DesiredReplicas
 	}
 
-	containerBuckets, currentBucket, err := GetBuckets(hvpa, currentReplicas)
+	containerBuckets, err := GetBuckets(hvpa, currentReplicas)
 	if err != nil {
 		return nil, nil, false, nil, err
 	}
@@ -422,7 +412,7 @@ func getScalingRecommendations(
 		return nil, nil, false, nil, nil
 	}
 
-	finalReplica, blockedScalingReason, err := estimateScalingParameters(currentReplicas, desiredReplicas, podSpec, vpaStatus, hvpa, containerBuckets, currentBucket)
+	finalReplica, blockedScalingReason, err := estimateScalingParameters(currentReplicas, desiredReplicas, podSpec, vpaStatus, hvpa, containerBuckets)
 	if err != nil {
 		return nil, nil, false, nil, err
 	}
