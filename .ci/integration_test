@@ -89,22 +89,9 @@ function setup_hvpacontroller(){
     echo "Successfully installed hvpa-controller."
 }
 
-function get_test_id() {
-  git_commit=`git show -s --format="%H"`
-  export TEST_ID=hvpa-test-${git_commit}
-  echo "Test id: ${TEST_ID}"
-}
-
-##############################################################################
-function setup_test_cluster() {
-  get_test_id
-}
-
 ###############################################################################
 
 setup_test_enviornment
-echo "Setting up test cluster..."
-setup_test_cluster
 
 echo "Starting integration tests..."
 
