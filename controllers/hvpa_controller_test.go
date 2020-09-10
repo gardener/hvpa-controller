@@ -129,116 +129,28 @@ var _ = Describe("#TestReconcile", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer c.Delete(context.TODO(), instance)
 
-			hpaList := &autoscaling.HorizontalPodAutoscalerList{}
-			hpa := &autoscaling.HorizontalPodAutoscaler{}
-			Eventually(func() error {
-				num := 0
-				c.List(context.TODO(), hpaList)
-				for _, obj := range hpaList.Items {
-					if obj.GenerateName == "hvpa-1-" {
-						num = num + 1
-						hpa = obj.DeepCopy()
-					}
-				}
-				if num == 1 {
-					return nil
-				}
-				return fmt.Errorf("Error: Expected 1 HPA; found %v", len(hpaList.Items))
-			}, timeout).Should(Succeed())
+			hpa := testHpaReconcile()
+			vpa := testVpaReconcile()
+			testOverrideStabilization(deploytest, instance)
 
-			vpaList := &vpa_api.VerticalPodAutoscalerList{}
-			vpa := &vpa_api.VerticalPodAutoscaler{}
-			Eventually(func() error {
-				num := 0
-				c.List(context.TODO(), vpaList)
-				for _, obj := range vpaList.Items {
-					if obj.GenerateName == "hvpa-1-" {
-						num = num + 1
-						vpa = obj.DeepCopy()
-					}
-				}
-				if num == 1 {
-					return nil
-				}
-				return fmt.Errorf("Error: Expected 1 VPA; found %v", len(vpaList.Items))
-			}, timeout).Should(Succeed())
+			testScalingOnVPAReco(vpa, instance, deploytest)
 
-			// Delete the HPA and expect Reconcile to be called for HPA deletion
-			Expect(c.Delete(context.TODO(), hpa)).NotTo(HaveOccurred())
-			Eventually(func() error {
-				oldHpa := hpa.Name
-				num := 0
-				c.List(context.TODO(), hpaList)
-				for _, obj := range hpaList.Items {
-					if obj.GenerateName == "hvpa-1-" {
-						num = num + 1
-						hpa = obj.DeepCopy()
-					}
-				}
-				if num == 1 && hpa.Name != oldHpa {
-					return nil
-				}
-				return fmt.Errorf("Error: Expected 1 new HPA; found %v", len(hpaList.Items))
-			}, timeout).Should(Succeed())
-
-			// Create a pod for the target deployment, and update status to "OOMKilled".
-			// The field hvpa.status.overrideScaleUpStabilization should be set to true.
-			p := v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: deploytest.Namespace,
-					Labels:    deploytest.Spec.Template.Labels,
-				},
-				Spec: v1.PodSpec{
-					NodeName:   "test-node",
-					Containers: deploytest.Spec.Template.Spec.Containers,
-				},
-				Status: v1.PodStatus{
-					ContainerStatuses: []v1.ContainerStatus{
-						{
-							Name:         deploytest.Spec.Template.Spec.Containers[0].Name,
-							RestartCount: 2,
-							LastTerminationState: v1.ContainerState{
-								Terminated: &v1.ContainerStateTerminated{
-									Reason:     "OOMKilled",
-									FinishedAt: metav1.Now(),
-								},
-							},
-						},
-					},
-				},
-			}
-			Expect(c.Create(context.TODO(), &p)).To(Succeed())
-			Expect(c.Status().Update(context.TODO(), &p)).To(Succeed())
-
-			Eventually(func() bool {
-				h := &hvpav1alpha1.Hvpa{}
-				c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, h)
-				return h.Status.OverrideScaleUpStabilization
-			}, timeout).Should(BeTrue())
-
-			// Update VPA status, let HVPA scale
+			// Status cleanup to prevent blocking due to stabilization window
 			hvpa := &hvpav1alpha1.Hvpa{}
-			Expect(c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa)).To(Succeed())
-			Expect(hvpa.Status.LastScaling.LastUpdated).To(BeNil())
 			Eventually(func() error {
-				if err := c.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, vpa); err != nil {
+				if err = c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
 					return err
 				}
-				vpa.Status = *newVpaStatus(deploytest.Spec.Template.Spec.Containers[0].Name, "3G", "500m")
-				return c.Update(context.TODO(), vpa)
-			}, timeout).Should(Succeed())
-
-			Eventually(func() error {
-				hvpa = &hvpav1alpha1.Hvpa{}
-				if err := c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
+				hvpa.Status.LastScaling.LastUpdated = nil
+				if err = c.Status().Update(context.TODO(), hvpa); err != nil {
 					return err
-				}
-				if hvpa.Status.LastScaling.LastUpdated == nil {
-					return fmt.Errorf("HVPA did not scale")
 				}
 				return nil
 			}, timeout).Should(Succeed())
+
+			testScalingOnHPAReco(hpa, instance, deploytest)
+
+			testNoScalingOnHvpaSpecUpdate(instance)
 
 			// Manually delete HPA & VPA since GC isn't enabled in the test control plane
 			Eventually(func() error { return c.Delete(context.TODO(), hpa) }, timeout).
@@ -336,7 +248,7 @@ var _ = Describe("#TestReconcile", func() {
 				}
 			},
 
-			Entry("UpdateMode Auto, scale up, paradoxical scaling, replicas increases, resources per replica decreases", &data{
+			Entry("UpdateMode Auto, scale up, paradoxical scaling, replicas increases, resources per replica decrease is blocked", &data{
 				setup: setup{
 					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: nil,
@@ -503,7 +415,7 @@ var _ = Describe("#TestReconcile", func() {
 					blockedReasons: []hvpav1alpha1.BlockingReason{},
 				},
 			}),
-			Entry("UpdateMode Auto, scale down hysteresis", &data{
+			Entry("UpdateMode Auto, scale down hysteresis based on scaling intervals overlap", &data{
 				setup: setup{
 					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: nil,
@@ -524,6 +436,31 @@ var _ = Describe("#TestReconcile", func() {
 						Requests: v1.ResourceList{
 							"cpu":    resource.MustParse("2828m"),
 							"memory": resource.MustParse("5486000k"),
+						},
+					},
+				},
+			}),
+			Entry("UpdateMode Auto, scale up, no bucket switch even when scaling intervals overlap", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "13G", "9.5"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								"cpu":    resource.MustParse("8"),
+								"memory": resource.MustParse("10G"),
+							},
+						}, 3),
+				},
+				expect: expect{
+					desiredReplicas: 3,
+					resourceChange:  true,
+					blockedReasons:  []hvpav1alpha1.BlockingReason{},
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("9500m"),
+							"memory": resource.MustParse("13000000k"),
 						},
 					},
 				},
@@ -626,3 +563,195 @@ var _ = Describe("#TestReconcile", func() {
 		)
 	})
 })
+
+func testHpaReconcile() *autoscaling.HorizontalPodAutoscaler {
+	hpaList := &autoscaling.HorizontalPodAutoscalerList{}
+	hpa := &autoscaling.HorizontalPodAutoscaler{}
+	Eventually(func() error {
+		num := 0
+		k8sClient.List(context.TODO(), hpaList)
+		for _, obj := range hpaList.Items {
+			if obj.GenerateName == "hvpa-1-" {
+				num = num + 1
+				hpa = obj.DeepCopy()
+			}
+		}
+		if num == 1 {
+			return nil
+		}
+		return fmt.Errorf("Error: Expected 1 HPA; found %v", len(hpaList.Items))
+	}, timeout).Should(Succeed())
+
+	// Delete the HPA and expect Reconcile to be called for HPA deletion
+	Expect(k8sClient.Delete(context.TODO(), hpa)).NotTo(HaveOccurred())
+	oldHpa := hpa.Name
+	Eventually(func() error {
+		num := 0
+		k8sClient.List(context.TODO(), hpaList)
+		for _, obj := range hpaList.Items {
+			if obj.GenerateName == "hvpa-1-" {
+				num = num + 1
+				hpa = obj.DeepCopy()
+			}
+		}
+		if num == 1 && hpa.Name != oldHpa {
+			return nil
+		}
+		return fmt.Errorf("Error: Expected 1 new HPA; found %v", len(hpaList.Items))
+	}, timeout).Should(Succeed())
+
+	return hpa
+}
+
+func testVpaReconcile() *vpa_api.VerticalPodAutoscaler {
+	vpaList := &vpa_api.VerticalPodAutoscalerList{}
+	vpa := &vpa_api.VerticalPodAutoscaler{}
+	Eventually(func() error {
+		num := 0
+		k8sClient.List(context.TODO(), vpaList)
+		for _, obj := range vpaList.Items {
+			if obj.GenerateName == "hvpa-1-" {
+				num = num + 1
+				vpa = obj.DeepCopy()
+			}
+		}
+		if num == 1 {
+			return nil
+		}
+		return fmt.Errorf("Error: Expected 1 VPA; found %v", len(vpaList.Items))
+	}, timeout).Should(Succeed())
+	return vpa
+}
+
+func testOverrideStabilization(deploytest *appsv1.Deployment, instance *hvpav1alpha1.Hvpa) {
+	// Create a pod for the target deployment, and update status to "OOMKilled".
+	// The field hvpa.status.overrideScaleUpStabilization should be set to true.
+	p := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: deploytest.Namespace,
+			Labels:    deploytest.Spec.Template.Labels,
+		},
+		Spec: v1.PodSpec{
+			NodeName:   "test-node",
+			Containers: deploytest.Spec.Template.Spec.Containers,
+		},
+		Status: v1.PodStatus{
+			ContainerStatuses: []v1.ContainerStatus{
+				{
+					Name:         deploytest.Spec.Template.Spec.Containers[0].Name,
+					RestartCount: 2,
+					LastTerminationState: v1.ContainerState{
+						Terminated: &v1.ContainerStateTerminated{
+							Reason:     "OOMKilled",
+							FinishedAt: metav1.Now(),
+						},
+					},
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(context.TODO(), &p)).To(Succeed())
+	Expect(k8sClient.Status().Update(context.TODO(), &p)).To(Succeed())
+
+	Eventually(func() bool {
+		h := &hvpav1alpha1.Hvpa{}
+		k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, h)
+		return h.Status.OverrideScaleUpStabilization
+	}, timeout).Should(BeTrue())
+}
+
+func testScalingOnVPAReco(vpa *vpa_api.VerticalPodAutoscaler, instance *hvpav1alpha1.Hvpa, deploytest *appsv1.Deployment) {
+	// Update VPA status, let HVPA scale
+	hvpa := &hvpav1alpha1.Hvpa{}
+	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa)).To(Succeed())
+	Expect(hvpa.Status.LastScaling.LastUpdated).To(BeNil())
+	Eventually(func() error {
+		if err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: vpa.Name, Namespace: vpa.Namespace}, vpa); err != nil {
+			return err
+		}
+		vpa.Status = *newVpaStatus(deploytest.Spec.Template.Spec.Containers[0].Name, "2G", "500m")
+		return k8sClient.Update(context.TODO(), vpa)
+	}, timeout).Should(Succeed())
+
+	Eventually(func() error {
+		hvpa = &hvpav1alpha1.Hvpa{}
+		if err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
+			return err
+		}
+		if hvpa.Status.LastScaling.LastUpdated == nil {
+			return fmt.Errorf("HVPA did not scale")
+		}
+		return nil
+	}, timeout).Should(Succeed())
+}
+
+func testScalingOnHPAReco(hpa *autoscaling.HorizontalPodAutoscaler, instance *hvpav1alpha1.Hvpa, deploytest *appsv1.Deployment) {
+	// Update HPA status, let HVPA scale
+	hvpa := &hvpav1alpha1.Hvpa{}
+	Eventually(func() error {
+		if err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
+			return err
+		}
+		if hvpa.Status.LastScaling.LastUpdated == nil {
+			return nil
+		}
+		return fmt.Errorf("hvpa status last update time not nil")
+	}, timeout).Should(Succeed())
+
+	Eventually(func() error {
+		if err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: hpa.Name, Namespace: hpa.Namespace}, hpa); err != nil {
+			return err
+		}
+		hpa.Status = *newHpaStatus(*deploytest.Spec.Replicas, *deploytest.Spec.Replicas+2, nil)
+		return k8sClient.Status().Update(context.TODO(), hpa)
+	}, timeout).Should(Succeed())
+
+	Eventually(func() error {
+		hvpa = &hvpav1alpha1.Hvpa{}
+		if err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
+			return err
+		}
+		if hvpa.Status.LastScaling.LastUpdated == nil {
+			return fmt.Errorf("HVPA did not scale %+v", hvpa.Status)
+		}
+		return nil
+	}, timeout).Should(Succeed())
+}
+
+func testNoScalingOnHvpaSpecUpdate(instance *hvpav1alpha1.Hvpa) {
+	// Change hvpa spec without changing hpa and vpa status. hvpa recommendations should not change
+	hvpa := &hvpav1alpha1.Hvpa{}
+	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa)).To(Succeed())
+	lastScaling := hvpa.Status.LastScaling.DeepCopy()
+
+	newScaleIntervals := []hvpav1alpha1.ScaleIntervals{
+		{
+			MaxCPU:      resourcePtr("10"),
+			MaxMemory:   resourcePtr("20G"),
+			MaxReplicas: 1,
+		},
+		{
+			MaxCPU:      resourcePtr("20"),
+			MaxMemory:   resourcePtr("30G"),
+			MaxReplicas: 5,
+		},
+		{
+			MaxCPU:      resourcePtr("30"),
+			MaxMemory:   resourcePtr("40G"),
+			MaxReplicas: 6,
+		},
+	}
+	Eventually(func() error {
+		if err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
+			return err
+		}
+		hvpa.Spec.ScaleIntervals = newScaleIntervals
+		return k8sClient.Update(context.TODO(), hvpa)
+	}, timeout).Should(Succeed())
+
+	// Expect no change in scaling status after spec change, as HPA and VPA recommendations are not updated
+	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa)).To(Succeed())
+	Expect(hvpa.Status.LastScaling.HpaStatus).To(Equal(lastScaling.HpaStatus))
+	Expect(hvpa.Status.LastScaling.VpaStatus).To(Equal(lastScaling.VpaStatus))
+}
