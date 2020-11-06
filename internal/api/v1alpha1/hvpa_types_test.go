@@ -17,13 +17,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	"context"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
 	"github.com/onsi/gomega"
-	"golang.org/x/net/context"
+	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -50,7 +50,6 @@ var _ = Describe("Hvpa", func() {
 	// Avoid adding tests for vanilla CRUD operations because they would
 	// test Kubernetes API server, which isn't the goal here.
 	Context("Create API", func() {
-
 		It("should create an object successfully", func() {
 			var (
 				minReplicas int32 = 1
@@ -124,7 +123,5 @@ var _ = Describe("Hvpa", func() {
 			Expect(k8sClient.Delete(context.TODO(), fetched)).NotTo(HaveOccurred())
 			Expect(k8sClient.Get(context.TODO(), key, fetched)).To(HaveOccurred())
 		})
-
 	})
-
 })

@@ -26,10 +26,8 @@ else
   export SOURCE_PATH="$(readlink -f ${SOURCE_PATH})"
 fi
 
-cd ${SOURCE_PATH}
-
-echo "Install Golint (linting tool) using $(go version) at ${PWD}"
-go install -mod=vendor golang.org/x/lint/golint
+# Install Golint (linting tool).
+go install golang.org/x/lint/golint
 
 ###############################################################################
 
