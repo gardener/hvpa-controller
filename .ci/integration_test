@@ -17,34 +17,13 @@ set -e
 # For the test step concourse will set the following environment variables:
 # SOURCE_PATH - path to component repository root directory.
 
+export GO111MODULE=on
+export GOFLAGS=-mod=vendor
+
 if [[ -z "${SOURCE_PATH}" ]]; then
   export SOURCE_PATH="$(readlink -f "$(dirname ${0})/..")"
 else
   export SOURCE_PATH="$(readlink -f "${SOURCE_PATH}")"
-fi
-
-VCS="github.com"
-ORGANIZATION="gardener"
-PROJECT="hvpa-controller"
-REPOSITORY=${VCS}/${ORGANIZATION}/${PROJECT}
-VERSION_FILE="$(readlink  -f "${SOURCE_PATH}/VERSION")"
-VERSION="$(cat "${VERSION_FILE}")"
-
-# The `go <cmd>` commands requires to see the target repository to be part of a
-# Go workspace. Thus, if we are not yet in a Go workspace, let's create one
-# temporarily by using symbolic links.
-if [[ "${SOURCE_PATH}" != *"src/${REPOSITORY}" ]]; then
-  SOURCE_SYMLINK_PATH="${SOURCE_PATH}/tmp/src/${REPOSITORY}"
-  if [[ -d "${SOURCE_PATH}/tmp" ]]; then
-    rm -rf "${SOURCE_PATH}/tmp"
-  fi
-  mkdir -p "${SOURCE_PATH}/tmp/src/${VCS}/${ORGANIZATION}"
-  ln -s "${SOURCE_PATH}" "${SOURCE_SYMLINK_PATH}"
-  cd "${SOURCE_SYMLINK_PATH}"
-
-  export GOPATH="${SOURCE_PATH}/tmp"
-  export GOBIN="${SOURCE_PATH}/tmp/bin"
-  export PATH="${GOBIN}:${PATH}"
 fi
 
 ##############################################################################
@@ -55,12 +34,11 @@ TEST_ID=
 function setup_test_enviornment() {
   setup_ginkgo
   setup_env
-  setup_hvpacontroller
 }
 
 function setup_ginkgo(){
     echo "Installing Ginkgo..."
-    go get -u github.com/onsi/ginkgo/ginkgo
+    go install github.com/onsi/ginkgo/ginkgo
     echo "Successfully installed Ginkgo."
 }
 
@@ -70,23 +48,13 @@ function setup_env(){
     arch=$(go env GOARCH)
 
     # download kubebuilder and extract it to tmp
-    curl -sL https://go.kubebuilder.io/dl/2.0.0-beta.0/${os}/${arch} | tar -xz -C /tmp/
+    curl -sL https://go.kubebuilder.io/dl/2.3.1/${os}/${arch} | tar -xz -C /tmp/
 
     # move to a long-term location and put it on your path
     # (you'll need to set the KUBEBUILDER_ASSETS env var if you put it somewhere else)
-    mv /tmp/kubebuilder_2.0.0-beta.0_${os}_${arch} /usr/local/kubebuilder
+    mv /tmp/kubebuilder_2.3.1_${os}_${arch} /usr/local/kubebuilder
     export PATH=$PATH:/usr/local/kubebuilder/bin
     echo "Successfully installed kubebuilder."
-}
-
-function setup_hvpacontroller(){
-    echo "Installing hvpa-controller..."
-    go build \
-    -v \
-    -o ${GOBIN}/manager \
-    github.com/gardener/hvpa-controller/
-    chmod +x ${GOBIN}/manager
-    echo "Successfully installed hvpa-controller."
 }
 
 function get_test_id() {
@@ -109,7 +77,7 @@ setup_test_cluster
 echo "Starting integration tests..."
 
 set +e
-ginkgo -r -cover utils api controllers
+ginkgo -r -cover utils internal controllers
 TEST_RESULT=$?
 set -e
 

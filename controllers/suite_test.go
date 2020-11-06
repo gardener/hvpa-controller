@@ -36,6 +36,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -46,19 +47,21 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
-var cfg *rest.Config
-var k8sClient client.Client
-var testEnv *envtest.Environment
-var mgr manager.Manager
-var stopMgr chan struct{}
-var mgrStopped *sync.WaitGroup
+var (
+	cfg        *rest.Config
+	k8sClient  client.Client
+	testEnv    *envtest.Environment
+	mgr        manager.Manager
+	stopMgr    chan struct{}
+	mgrStopped *sync.WaitGroup
+)
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	RunSpecsWithDefaultAndCustomReporters(t,
 		"Controller Suite",
-		[]Reporter{envtest.NewlineReporter{}})
+		[]Reporter{printer.NewlineReporter{}})
 }
 
 var _ = BeforeSuite(func(done Done) {
@@ -252,7 +255,6 @@ func newHpaStatus(currentReplicas, desiredReplicas int32, conditions []autoscali
 }
 
 func newVpaStatus(containerName, mem, cpu string) *vpa_api.VerticalPodAutoscalerStatus {
-
 	return &vpa_api.VerticalPodAutoscalerStatus{
 		Recommendation: &vpa_api.RecommendedPodResources{
 			ContainerRecommendations: []vpa_api.RecommendedContainerResources{
