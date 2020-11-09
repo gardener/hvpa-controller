@@ -22,7 +22,7 @@ hvpa-controller:
       check:
         image: 'golang:1.15.3'
       integration_test:
-        image: 'eu.gcr.io/gardener-project/cc/job-image-golang:0.12.0'
+        image: 'golang:1.15.3'
       build:
         image: 'golang:1.15.3'
         output_dir: 'binary'
