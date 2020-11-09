@@ -33,6 +33,8 @@ else
   export BINARY_PATH="$(readlink -f "${BINARY_PATH}")/bin"
 fi
 
+cd ${SOURCE_PATH}
+
 ###############################################################################
 
 # If no LOCAL_BUILD environment variable is set, we configure the `go build` command
@@ -42,12 +44,12 @@ if [[ -z "$LOCAL_BUILD" ]]; then
     -a \
     -v \
     -o ${BINARY_PATH}/linux-amd64/manager \
-    ${SOURCE_PATH}/.
+    ./
 
 # If the LOCAL_BUILD environment variable is set, we simply run `go build`.
 else
   go build \
     -v \
     -o ${BINARY_PATH}/manager \
-    ${SOURCE_PATH}/.
+    ./
 fi
