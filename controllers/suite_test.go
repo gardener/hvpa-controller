@@ -207,12 +207,12 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 								{
 									ContainerName: target,
 									MinAllowed: v1.ResourceList{
-										v1.ResourceCPU:    resource.MustParse("10m"),
-										v1.ResourceMemory: resource.MustParse("50M"),
+										v1.ResourceCPU:    resource.MustParse("100m"),
+										v1.ResourceMemory: resource.MustParse("200M"),
 									},
 									MaxAllowed: v1.ResourceList{
-										v1.ResourceCPU:    resource.MustParse("2"),
-										v1.ResourceMemory: resource.MustParse("5G"),
+										v1.ResourceCPU:    resource.MustParse("40"),
+										v1.ResourceMemory: resource.MustParse("100G"),
 									},
 								},
 							},

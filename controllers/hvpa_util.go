@@ -73,6 +73,21 @@ func adjustForBaseUsage(newCPUPerReplica, currentperReplicaCPU, newMemPerReplica
 	return newCPUPerReplica, newMemPerReplica
 }
 
+func getMinAllowed(vpaPolicies []vpa_api.ContainerResourcePolicy, containerName string) (minCPU, minMem int64) {
+	var cpu, mem int64
+	for i := range vpaPolicies {
+		policy := &vpaPolicies[i]
+		if policy.ContainerName == containerName {
+			if policy.MinAllowed != nil {
+				cpu = policy.MinAllowed.Cpu().MilliValue()
+				mem = policy.MinAllowed.Memory().MilliValue()
+			}
+			break
+		}
+	}
+	return cpu, mem
+}
+
 func finaliseScalingParameters(
 	podSpec *corev1.PodSpec,
 	currentReplicas, finalReplica, desiredReplicas int32,
@@ -113,6 +128,11 @@ func finaliseScalingParameters(
 
 				newCPUPerReplica := newTotalCPUReco / int64(finalReplica)
 				newMemPerReplica := newTotalMemReco / int64(finalReplica)
+
+				minAllowedCPU, minAllowedMem := getMinAllowed(hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.ContainerPolicies, container.Name)
+
+				newCPUPerReplica = int64(math.Max(float64(newCPUPerReplica), float64(minAllowedCPU)))
+				newMemPerReplica = int64(math.Max(float64(newMemPerReplica), float64(minAllowedMem)))
 
 				newCPUPerReplica, newMemPerReplica = adjustForBaseUsage(newCPUPerReplica, currentperReplicaCPU, newMemPerReplica, currentperReplicaMem, finalReplica, currentReplicas, hvpa)
 
@@ -332,8 +352,24 @@ func estimateScalingParameters(
 					}
 				}
 
-				replicaByCPU, _ := containerBuckets[container.Name].GetReplicasForResource(corev1.ResourceCPU, newTotalCPUReco, currentReplicas)
-				replicaByMem, _ := containerBuckets[container.Name].GetReplicasForResource(corev1.ResourceMemory, newTotalMemReco, currentReplicas)
+				replicaByCPU, err := containerBuckets[container.Name].GetReplicasForResource(corev1.ResourceCPU, newTotalCPUReco, currentReplicas)
+				if err == ErrorOutOfRange {
+					// This can happen when VPA's maxAllowed is more than maxCPU set in the last scaleInterval
+					// Use maxReplicas
+					maxCPU := hvpa.Spec.ScaleIntervals[len(hvpa.Spec.ScaleIntervals)-1].MaxCPU
+					if maxCPU != nil && reco.Target.Cpu().MilliValue() > maxCPU.MilliValue() {
+						replicaByCPU = hvpa.Spec.ScaleIntervals[len(hvpa.Spec.ScaleIntervals)-1].MaxReplicas
+					}
+				}
+				replicaByMem, err := containerBuckets[container.Name].GetReplicasForResource(corev1.ResourceMemory, newTotalMemReco, currentReplicas)
+				if err == ErrorOutOfRange {
+					// This can happen when VPA's maxAllowed is more than maxMemory set in the last scaleInterval
+					// Use maxReplicas
+					maxMem := hvpa.Spec.ScaleIntervals[len(hvpa.Spec.ScaleIntervals)-1].MaxMemory
+					if maxMem != nil && reco.Target.Memory().MilliValue() > maxMem.MilliValue() {
+						replicaByMem = hvpa.Spec.ScaleIntervals[len(hvpa.Spec.ScaleIntervals)-1].MaxReplicas
+					}
+				}
 
 				if replicaByCPU == currentReplicas && replicaByMem == currentReplicas {
 					// no need to change bucket since recommended cpu AND memory fall in the same bucket

@@ -500,6 +500,31 @@ var _ = Describe("#TestReconcile", func() {
 					blockedReasons: []hvpav1alpha1.BlockingReason{},
 				},
 			}),
+			Entry("UpdateMode Auto, prevent scale down below minAllowed, allow scale up after last scaleInterval's maxCPU/maxMem", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "75G", "0.134"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("0.613"),
+								v1.ResourceMemory: resource.MustParse("11838449000"),
+							},
+						}, 4),
+				},
+				expect: expect{
+					desiredReplicas: 6,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("100m"),
+							"memory": resource.MustParse("50000000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
 			Entry("UpdateMode Auto, scale down, base resource usage adjusted", &data{
 				setup: setup{
 					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
