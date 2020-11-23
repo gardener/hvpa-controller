@@ -218,7 +218,7 @@ func getLinearBuckets(VPAMaxAllowed corev1.ResourceList, scaleInterval hvpav1alp
 		bucket.MinResources[corev1.ResourceMemory] = *minMemory
 		bucket.MaxResources[corev1.ResourceMemory] = localMaxMem
 
-		log.V(4).Info("hvpa intervals", "interval", bucket, "hvpa", hvpa)
+		log.V(2).Info("hvpa intervals", "interval", bucket, "hvpa", hvpa)
 		buckets = append(buckets, bucket)
 
 		// Prepare for next iteration - total max of current bucket is equal to total min of next bucket

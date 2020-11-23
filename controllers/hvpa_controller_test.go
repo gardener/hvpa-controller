@@ -585,6 +585,286 @@ var _ = Describe("#TestReconcile", func() {
 					blockedReasons: []hvpav1alpha1.BlockingReason{},
 				},
 			}),
+			Entry("Full round scale test - scale up 1", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "1.2G", "500m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("150m"),
+								v1.ResourceMemory: resource.MustParse("0.4G"),
+							},
+						}, 1),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 2,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("250m"),
+							"memory": resource.MustParse("600000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Full round scale test - scale up 2", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "2.4G", "0.9"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("250m"),
+								v1.ResourceMemory: resource.MustParse("600000k"),
+							},
+						}, 2),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 3,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("600m"),
+							"memory": resource.MustParse("1600000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Full round scale test - scale up 3", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "3G", "1.2"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("600m"),
+								v1.ResourceMemory: resource.MustParse("1600000k"),
+							},
+						}, 3),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 4,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("900m"),
+							"memory": resource.MustParse("2250000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Full round scale test - scale up 4", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "4.2G", "1.6"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("900m"),
+								v1.ResourceMemory: resource.MustParse("2250000k"),
+							},
+						}, 4),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 5,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("1280m"),
+							"memory": resource.MustParse("3360000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Full round scale test - scale up 5", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "6.6G", "3"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("1280m"),
+								v1.ResourceMemory: resource.MustParse("3360000k"),
+							},
+						}, 5),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 6,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("2500m"),
+							"memory": resource.MustParse("5500000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Full round scale test - scale down 5", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "3G", "900m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("2500m"),
+								v1.ResourceMemory: resource.MustParse("5500000k"),
+							},
+						}, 6),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 5,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("1080m"),
+							"memory": resource.MustParse("3600000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Full round scale test - scale down 4", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "2G", "600m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("1080m"),
+								v1.ResourceMemory: resource.MustParse("3600000k"),
+							},
+						}, 5),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 4,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("750m"),
+							"memory": resource.MustParse("2500000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Full round scale test - scale down 3", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "1.2G", "420m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("750m"),
+								v1.ResourceMemory: resource.MustParse("2500000k"),
+							},
+						}, 4),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 3,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("560m"),
+							"memory": resource.MustParse("1600000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Full round scale test - scale down 2", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "900M", "300m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("560m"),
+								v1.ResourceMemory: resource.MustParse("1600000k"),
+							},
+						}, 3),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 2,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("450m"),
+							"memory": resource.MustParse("1350000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("Full round scale test - scale down 1", &data{
+				setup: setup{
+					hvpa:      newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: nil,
+					vpaStatus: newVpaStatus("deployment", "400M", "150m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("450m"),
+								v1.ResourceMemory: resource.MustParse("1350000k"),
+							},
+						}, 2),
+				},
+				action: action{
+					scaleIntervals: newScaleInterval(),
+				},
+				expect: expect{
+					desiredReplicas: 1,
+					resourceChange:  true,
+					resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("300m"),
+							"memory": resource.MustParse("800000k"),
+						},
+					},
+					blockedReasons: []hvpav1alpha1.BlockingReason{},
+				},
+			}),
 		)
 	})
 })

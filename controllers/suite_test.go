@@ -265,6 +265,49 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 	return instance
 }
 
+/* These scaleIntervals results in following effective buckets:
+ * {1 map[cpu:100 memory:200000000000] map[cpu:400 memory:1000000000000]}
+ * {2 map[cpu:160 memory:490000000000] map[cpu:600 memory:1500000000000]}
+ * {3 map[cpu:320 memory:990000000000] map[cpu:800 memory:2000000000000]}
+ * {4 map[cpu:480 memory:1490000000000] map[cpu:1000 memory:2750000000000]}
+ * {5 map[cpu:640 memory:2190000000000] map[cpu:1500 memory:4000000000000]}
+ * {6 map[cpu:1000 memory:3323333333333] map[cpu:1750 memory:6000000000000]}
+ */
+func newScaleInterval() []hvpav1alpha1.ScaleIntervals {
+	return []hvpav1alpha1.ScaleIntervals{
+		{
+			MaxCPU:      resourcePtr("0.4"),
+			MaxMemory:   resourcePtr("1G"),
+			MaxReplicas: 1,
+		},
+		{
+			MaxCPU:      resourcePtr("0.6"),
+			MaxMemory:   resourcePtr("1.5G"),
+			MaxReplicas: 2,
+		},
+		{
+			MaxCPU:      resourcePtr("0.8"),
+			MaxMemory:   resourcePtr("2G"),
+			MaxReplicas: 3,
+		},
+		{
+			MaxCPU:      resourcePtr("1"),
+			MaxMemory:   resourcePtr("2.75G"),
+			MaxReplicas: 4,
+		},
+		{
+			MaxCPU:      resourcePtr("1.5"),
+			MaxMemory:   resourcePtr("4G"),
+			MaxReplicas: 5,
+		},
+		{
+			MaxCPU:      resourcePtr("1.75"),
+			MaxMemory:   resourcePtr("6G"),
+			MaxReplicas: 6,
+		},
+	}
+}
+
 func newHpaStatus(currentReplicas, desiredReplicas int32, conditions []autoscaling.HorizontalPodAutoscalerCondition) *autoscaling.HorizontalPodAutoscalerStatus {
 	return &autoscaling.HorizontalPodAutoscalerStatus{
 		CurrentReplicas: currentReplicas,
