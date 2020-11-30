@@ -35,7 +35,7 @@ func (r *Hvpa) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 
-// +kubebuilder:webhook:path=/mutate-autoscaling-k8s-io-v1alpha1-hvpa,mutating=true,failurePolicy=fail,groups=autoscaling.k8s.io,resources=hvpas,verbs=create;update,versions=v1alpha1,name=mhvpa.kb.io
+// +kubebuilder:webhook:path=/mutate-autoscaling-k8s-io-v1alpha1-hvpa,mutating=true,failurePolicy=fail,groups=autoscaling.gardener.cloud,resources=hvpas,verbs=create;update,versions=v1alpha1,name=mhvpa.kb.io
 
 var _ webhook.Defaulter = &Hvpa{}
 
@@ -46,7 +46,7 @@ func (r *Hvpa) Default() {
 	// TODO(user): fill in your defaulting logic.
 }
 
-// +kubebuilder:webhook:path=/validate-autoscaling-k8s-io-v1alpha1-hvpa,mutating=false,failurePolicy=fail,groups=autoscaling.k8s.io,resources=hvpas,verbs=create;update,versions=v1alpha1,name=vhvpa.kb.io
+// +kubebuilder:webhook:path=/validate-autoscaling-k8s-io-v1alpha1-hvpa,mutating=false,failurePolicy=fail,groups=autoscaling.gardener.cloud,resources=hvpas,verbs=create;update,versions=v1alpha1,name=vhvpa.kb.io
 
 var _ webhook.Validator = &Hvpa{}
 
