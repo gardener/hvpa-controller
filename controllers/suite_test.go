@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
@@ -74,7 +74,7 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 	Expect(cfg).ToNot(BeNil())
 
-	err = autoscalingv1alpha1.AddToScheme(scheme.Scheme)
+	err = hvpav1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme
@@ -88,8 +88,9 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).NotTo(HaveOccurred())
 
 	reconciler := HvpaReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:                mgr.GetClient(),
+		Scheme:                mgr.GetScheme(),
+		EnableDetailedMetrics: true,
 	}
 
 	err = reconciler.SetupWithManager(mgr)
@@ -133,15 +134,18 @@ func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync
 	return stop, wg
 }
 
-func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleParams) *autoscalingv1alpha1.Hvpa {
-	replica := int32(1)
-	util := int32(70)
+/* This hvpa results in following effective buckets after taking ScalingIntervalsOverlap into account:
+ * {map[cpu:{10 1000} memory:{50M 2G} replicas:{1}]}
+ * {map[cpu:{400 5300} memory:{990M 8.2425G} replicas:{2}]}
+ * {map[cpu:{2827 10200} memory:{5.485G 15.495G} replicas:{3}]}
+ * {map[cpu:{6120 15100} memory:{11.61125G 22.7475G} replicas:{4}]}
+ * {map[cpu:{9664 20000} memory:{18.188G 30G} replicas:{5}]}
+ * {map[cpu:{13333 30000} memory:{24.99 40G} replicas:{6}]}
+ */
+func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) *hvpav1alpha1.Hvpa {
+	updateMode := hvpav1alpha1.UpdateModeAuto
 
-	stabilizationDur := "3m"
-
-	updateMode := autoscalingv1alpha1.UpdateModeAuto
-
-	instance := &autoscalingv1alpha1.Hvpa{
+	instance := &hvpav1alpha1.Hvpa{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
@@ -149,98 +153,159 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 				"hpa-controller": "hvpa",
 			},
 		},
-		Spec: autoscalingv1alpha1.HvpaSpec{
+		Spec: hvpav1alpha1.HvpaSpec{
+			Replicas: int32Ptr(1),
 			TargetRef: &autoscaling.CrossVersionObjectReference{
 				Kind:       "Deployment",
 				Name:       target,
 				APIVersion: "apps/v1",
 			},
-			Hpa: autoscalingv1alpha1.HpaSpec{
+			Hpa: hvpav1alpha1.HpaSpec{
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"hpaKey": labelVal,
 					},
 				},
 				Deploy: true,
-				ScaleUp: autoscalingv1alpha1.ScaleType{
-					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
-						UpdateMode: &updateMode,
-					},
-					StabilizationDuration: &stabilizationDur,
-				},
-				ScaleDown: autoscalingv1alpha1.ScaleType{
-					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
-						UpdateMode: &updateMode,
-					},
-					StabilizationDuration: &stabilizationDur,
-				},
-
-				Template: autoscalingv1alpha1.HpaTemplate{
+				Template: hvpav1alpha1.HpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							"hpaKey": labelVal,
 						},
 					},
-					Spec: autoscalingv1alpha1.HpaTemplateSpec{
-						MinReplicas: &replica,
+					Spec: hvpav1alpha1.HpaTemplateSpec{
+						MinReplicas: int32Ptr(1),
 						MaxReplicas: 3,
 						Metrics: []autoscaling.MetricSpec{
-							autoscaling.MetricSpec{
+							{
 								Type: autoscaling.ResourceMetricSourceType,
 								Resource: &autoscaling.ResourceMetricSource{
 									Name:                     v1.ResourceCPU,
-									TargetAverageUtilization: &util,
+									TargetAverageUtilization: int32Ptr(70),
 								},
 							},
 						},
 					},
 				},
 			},
-			Vpa: autoscalingv1alpha1.VpaSpec{
+			Vpa: hvpav1alpha1.VpaSpec{
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"vpaKey": labelVal,
 					},
 				},
 				Deploy: true,
-				ScaleUp: autoscalingv1alpha1.ScaleType{
-					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
-						UpdateMode: &updateMode,
-					},
-					StabilizationDuration: &stabilizationDur,
-					MinChange:             minChange,
-				},
-				ScaleDown: autoscalingv1alpha1.ScaleType{
-					UpdatePolicy: autoscalingv1alpha1.UpdatePolicy{
-						UpdateMode: &updateMode,
-					},
-					StabilizationDuration: &stabilizationDur,
-					MinChange:             minChange,
-				},
-				Template: autoscalingv1alpha1.VpaTemplate{
+				Template: hvpav1alpha1.VpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							"vpaKey": labelVal,
 						},
 					},
+					Spec: hvpav1alpha1.VpaTemplateSpec{
+						ResourcePolicy: &vpa_api.PodResourcePolicy{
+							ContainerPolicies: []vpa_api.ContainerResourcePolicy{
+								{
+									ContainerName: target,
+									MinAllowed: v1.ResourceList{
+										v1.ResourceCPU:    resource.MustParse("100m"),
+										v1.ResourceMemory: resource.MustParse("200M"),
+									},
+									MaxAllowed: v1.ResourceList{
+										v1.ResourceCPU:    resource.MustParse("40"),
+										v1.ResourceMemory: resource.MustParse("100G"),
+									},
+								},
+							},
+						},
+					},
 				},
 			},
-			WeightBasedScalingIntervals: []autoscalingv1alpha1.WeightBasedScalingInterval{
+			ScaleUp: hvpav1alpha1.ScaleType{
+				UpdatePolicy: hvpav1alpha1.UpdatePolicy{
+					UpdateMode: &updateMode,
+				},
+				StabilizationDuration: stringPtr("3m"),
+				MinChange:             minChange,
+			},
+			ScaleDown: hvpav1alpha1.ScaleType{
+				UpdatePolicy: hvpav1alpha1.UpdatePolicy{
+					UpdateMode: &updateMode,
+				},
+				StabilizationDuration: stringPtr("3m"),
+				MinChange:             minChange,
+			},
+			ScaleIntervals: []hvpav1alpha1.ScaleIntervals{
 				{
-					StartReplicaCount: 1,
-					LastReplicaCount:  2,
-					VpaWeight:         30,
+					MaxCPU:      resourcePtr("1"),
+					MaxMemory:   resourcePtr("2G"),
+					MaxReplicas: 1,
 				},
 				{
-					StartReplicaCount: 2,
-					LastReplicaCount:  3,
-					VpaWeight:         80,
+					MaxCPU:      resourcePtr("20"),
+					MaxMemory:   resourcePtr("30G"),
+					MaxReplicas: 5,
+				},
+				{
+					MaxCPU:      resourcePtr("30"),
+					MaxMemory:   resourcePtr("40G"),
+					MaxReplicas: 6,
+				},
+			},
+			ScalingIntervalsOverlap: hvpav1alpha1.ResourceChangeParams{
+				v1.ResourceCPU: hvpav1alpha1.ChangeParams{
+					Percentage: int32Ptr(20),
+				},
+				v1.ResourceMemory: hvpav1alpha1.ChangeParams{
+					Value: stringPtr("10M"),
 				},
 			},
 		},
 	}
 
 	return instance
+}
+
+/* These scaleIntervals results in following effective buckets:
+ * {1 map[cpu:100 memory:200000000000] map[cpu:400 memory:1000000000000]}
+ * {2 map[cpu:160 memory:490000000000] map[cpu:600 memory:1500000000000]}
+ * {3 map[cpu:320 memory:990000000000] map[cpu:800 memory:2000000000000]}
+ * {4 map[cpu:480 memory:1490000000000] map[cpu:1000 memory:2750000000000]}
+ * {5 map[cpu:640 memory:2190000000000] map[cpu:1500 memory:4000000000000]}
+ * {6 map[cpu:1000 memory:3323333333333] map[cpu:1750 memory:6000000000000]}
+ */
+func newScaleInterval() []hvpav1alpha1.ScaleIntervals {
+	return []hvpav1alpha1.ScaleIntervals{
+		{
+			MaxCPU:      resourcePtr("0.4"),
+			MaxMemory:   resourcePtr("1G"),
+			MaxReplicas: 1,
+		},
+		{
+			MaxCPU:      resourcePtr("0.6"),
+			MaxMemory:   resourcePtr("1.5G"),
+			MaxReplicas: 2,
+		},
+		{
+			MaxCPU:      resourcePtr("0.8"),
+			MaxMemory:   resourcePtr("2G"),
+			MaxReplicas: 3,
+		},
+		{
+			MaxCPU:      resourcePtr("1"),
+			MaxMemory:   resourcePtr("2.75G"),
+			MaxReplicas: 4,
+		},
+		{
+			MaxCPU:      resourcePtr("1.5"),
+			MaxMemory:   resourcePtr("4G"),
+			MaxReplicas: 5,
+		},
+		{
+			MaxCPU:      resourcePtr("1.75"),
+			MaxMemory:   resourcePtr("6G"),
+			MaxReplicas: 6,
+		},
+	}
 }
 
 func newHpaStatus(currentReplicas, desiredReplicas int32, conditions []autoscaling.HorizontalPodAutoscalerCondition) *autoscaling.HorizontalPodAutoscalerStatus {
@@ -270,6 +335,10 @@ func newVpaStatus(containerName, mem, cpu string) *vpa_api.VerticalPodAutoscaler
 				Status: "True",
 				Type:   vpa_api.RecommendationProvided,
 			},
+			{
+				Status: "False",
+				Type:   vpa_api.ConfigUnsupported,
+			},
 		},
 	}
 }
@@ -295,7 +364,7 @@ func newTarget(name string, resources v1.ResourceRequirements, replicas int32) *
 				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
-						v1.Container{
+						{
 							Name:      name,
 							Image:     "k8s.gcr.io/pause-amd64:3.0",
 							Resources: resources,
@@ -305,4 +374,21 @@ func newTarget(name string, resources v1.ResourceRequirements, replicas int32) *
 			},
 		},
 	}
+}
+
+func int64Ptr(i int64) *int64 {
+	return &i
+}
+
+func int32Ptr(i int32) *int32 {
+	return &i
+}
+
+func stringPtr(i string) *string {
+	return &i
+}
+
+func resourcePtr(i string) *resource.Quantity {
+	q := resource.MustParse(i)
+	return &q
 }

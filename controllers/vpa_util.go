@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -35,11 +35,11 @@ import (
 //       see https://github.com/kubernetes/kubernetes/issues/21479
 type updateVpaFunc func(vpa *vpa_api.VerticalPodAutoscaler)
 
-func (r *HvpaReconciler) claimVpas(hvpa *autoscalingv1alpha1.Hvpa, selector labels.Selector, vpas *vpa_api.VerticalPodAutoscalerList) ([]*vpa_api.VerticalPodAutoscaler, error) {
+func (r *HvpaReconciler) claimVpas(hvpa *hvpav1alpha1.Hvpa, selector labels.Selector, vpas *vpa_api.VerticalPodAutoscalerList) ([]*vpa_api.VerticalPodAutoscaler, error) {
 	// If any adoptions are attempted, we should first recheck for deletion with
 	// an uncached quorum read sometime after listing Machines (see #42639).
 	canAdoptFunc := RecheckDeletionTimestamp(func() (metav1.Object, error) {
-		foundHvpa := &autoscalingv1alpha1.Hvpa{}
+		foundHvpa := &hvpav1alpha1.Hvpa{}
 		err := r.Get(context.TODO(), types.NamespacedName{Name: hvpa.Name, Namespace: hvpa.Namespace}, foundHvpa)
 		if err != nil {
 			return nil, err
@@ -54,9 +54,9 @@ func (r *HvpaReconciler) claimVpas(hvpa *autoscalingv1alpha1.Hvpa, selector labe
 }
 
 // The returned bool value can be used to tell if the vpa is actually updated.
-func vpaSpecNeedChange(hvpa *autoscalingv1alpha1.Hvpa, vpa *vpa_api.VerticalPodAutoscaler) bool {
-	return !reflect.DeepEqual(hvpa.Spec.Vpa.Template.Spec.ResourcePolicy, vpa.Spec.ResourcePolicy) ||
-		*vpa.Spec.UpdatePolicy.UpdateMode != vpa_api.UpdateModeOff
+func vpaSpecNeedChange(hvpa *hvpav1alpha1.Hvpa, vpa *vpa_api.VerticalPodAutoscaler) (*vpa_api.VerticalPodAutoscaler, bool) {
+	desiredVpa, _ := getVpaFromHvpa(hvpa)
+	return desiredVpa, !reflect.DeepEqual(desiredVpa.Spec, vpa.Spec)
 }
 
 // UpdateVpaWithRetries updates a vpa with given applyUpdate function. Note that vpa not found error is ignored.
@@ -84,13 +84,12 @@ func (r *HvpaReconciler) UpdateVpaWithRetries(namespace, name string, applyUpdat
 	return vpa, retryErr
 }
 
-func (r *HvpaReconciler) syncVpaSpec(vpaList []*vpa_api.VerticalPodAutoscaler, hvpa *autoscalingv1alpha1.Hvpa) error {
+func (r *HvpaReconciler) syncVpaSpec(vpaList []*vpa_api.VerticalPodAutoscaler, hvpa *hvpav1alpha1.Hvpa) error {
 	for _, vpa := range vpaList {
-		if vpaChanged := vpaSpecNeedChange(hvpa, vpa); vpaChanged {
+		if desiredVpa, vpaChanged := vpaSpecNeedChange(hvpa, vpa); vpaChanged {
 			_, err := r.UpdateVpaWithRetries(vpa.Namespace, vpa.Name,
 				func(vpaToUpdate *vpa_api.VerticalPodAutoscaler) {
-					vpaToUpdate.Spec.ResourcePolicy = hvpa.Spec.Vpa.Template.Spec.ResourcePolicy
-					*vpaToUpdate.Spec.UpdatePolicy.UpdateMode = vpa_api.UpdateModeOff
+					vpaToUpdate.Spec = desiredVpa.Spec
 				})
 			if err != nil {
 				return fmt.Errorf("error in updating vpaTemplateSpec to vpa %q: %v", vpa.Name, err)
@@ -101,7 +100,7 @@ func (r *HvpaReconciler) syncVpaSpec(vpaList []*vpa_api.VerticalPodAutoscaler, h
 	return nil
 }
 
-func getVpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscaler, error) {
+func getVpaFromHvpa(hvpa *hvpav1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscaler, error) {
 	metadata := hvpa.Spec.Vpa.Template.ObjectMeta.DeepCopy()
 
 	if ownerRef := metadata.GetOwnerReferences(); len(ownerRef) != 0 {
