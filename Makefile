@@ -14,7 +14,7 @@
 
 VERSION             := $(shell cat VERSION)
 REGISTRY            := eu.gcr.io/gardener-project/gardener
-REPO_ROOT           := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+REPO_ROOT           := $(shell dirname "$(realpath $(lastword $(MAKEFILE_LIST)))")
 
 IMAGE_REPOSITORY    := $(REGISTRY)/hvpa-controller
 IMAGE_TAG           := $(VERSION)
@@ -57,7 +57,7 @@ deploy: manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
-	cd $(REPO_ROOT)/api && $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=../config/crd/bases
+	cd "$(REPO_ROOT)/api" && $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=../config/crd/bases
 	$(CONTROLLER_GEN) rbac:roleName=manager-role webhook paths="./controllers/..."
 
 # Run go fmt against code
@@ -70,7 +70,7 @@ vet:
 
 # Generate code
 generate: controller-gen
-	cd $(REPO_ROOT)/api && $(CONTROLLER_GEN) object:headerFile=../hack/boilerplate.go.txt paths=./...
+	cd "$(REPO_ROOT)/api" && $(CONTROLLER_GEN) object:headerFile=../hack/boilerplate.go.txt paths=./...
 
 # Build the docker image
 docker-build: test
@@ -84,7 +84,7 @@ docker-push:
 
 # Revendor
 revendor:
-	@cd $(REPO_ROOT)/api && go mod tidy
+	@cd "$(REPO_ROOT)/api" && go mod tidy
 	@env GO111MODULE=on go mod tidy
 	@env GO111MODULE=on go mod vendor
 

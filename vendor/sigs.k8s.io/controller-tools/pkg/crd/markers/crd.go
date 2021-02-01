@@ -19,7 +19,7 @@ package markers
 import (
 	"fmt"
 
-	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
@@ -42,6 +42,12 @@ var CRDMarkers = []*definitionWithHelp{
 
 	must(markers.MakeDefinition("kubebuilder:storageversion", markers.DescribesType, StorageVersion{})).
 		WithHelp(StorageVersion{}.Help()),
+
+	must(markers.MakeDefinition("kubebuilder:skipversion", markers.DescribesType, SkipVersion{})).
+		WithHelp(SkipVersion{}.Help()),
+
+	must(markers.MakeDefinition("kubebuilder:unservedversion", markers.DescribesType, UnservedVersion{})).
+		WithHelp(UnservedVersion{}.Help()),
 }
 
 // TODO: categories and singular used to be annotations types
@@ -58,25 +64,16 @@ type SubresourceStatus struct{}
 
 func (s SubresourceStatus) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version string) error {
 	var subresources *apiext.CustomResourceSubresources
-	if version == "" {
-		// single-version
-		if crd.Subresources == nil {
-			crd.Subresources = &apiext.CustomResourceSubresources{}
+	for i := range crd.Versions {
+		ver := &crd.Versions[i]
+		if ver.Name != version {
+			continue
 		}
-		subresources = crd.Subresources
-	} else {
-		// multi-version
-		for i := range crd.Versions {
-			ver := &crd.Versions[i]
-			if ver.Name != version {
-				continue
-			}
-			if ver.Subresources == nil {
-				ver.Subresources = &apiext.CustomResourceSubresources{}
-			}
-			subresources = ver.Subresources
-			break
+		if ver.Subresources == nil {
+			ver.Subresources = &apiext.CustomResourceSubresources{}
 		}
+		subresources = ver.Subresources
+		break
 	}
 	if subresources == nil {
 		return fmt.Errorf("status subresource applied to version %q not in CRD", version)
@@ -106,25 +103,16 @@ type SubresourceScale struct {
 
 func (s SubresourceScale) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version string) error {
 	var subresources *apiext.CustomResourceSubresources
-	if version == "" {
-		// single-version
-		if crd.Subresources == nil {
-			crd.Subresources = &apiext.CustomResourceSubresources{}
+	for i := range crd.Versions {
+		ver := &crd.Versions[i]
+		if ver.Name != version {
+			continue
 		}
-		subresources = crd.Subresources
-	} else {
-		// multi-version
-		for i := range crd.Versions {
-			ver := &crd.Versions[i]
-			if ver.Name != version {
-				continue
-			}
-			if ver.Subresources == nil {
-				ver.Subresources = &apiext.CustomResourceSubresources{}
-			}
-			subresources = ver.Subresources
-			break
+		if ver.Subresources == nil {
+			ver.Subresources = &apiext.CustomResourceSubresources{}
 		}
+		subresources = ver.Subresources
+		break
 	}
 	if subresources == nil {
 		return fmt.Errorf("scale subresource applied to version %q not in CRD", version)
@@ -165,6 +153,34 @@ func (s StorageVersion) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, ver
 
 // +controllertools:marker:generateHelp:category=CRD
 
+// SkipVersion removes the particular version of the CRD from the CRDs spec.
+//
+// This is useful if you need to skip generating and listing version entries
+// for 'internal' resource versions, which typically exist if using the
+// Kubernetes upstream conversion-gen tool.
+type SkipVersion struct{}
+
+func (s SkipVersion) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version string) error {
+	if version == "" {
+		// single-version, this is an invalid state
+		return fmt.Errorf("cannot skip a version if there is only a single version")
+	}
+	var versions []apiext.CustomResourceDefinitionVersion
+	// multi-version
+	for i := range crd.Versions {
+		ver := crd.Versions[i]
+		if ver.Name == version {
+			// skip the skipped version
+			continue
+		}
+		versions = append(versions, ver)
+	}
+	crd.Versions = versions
+	return nil
+}
+
+// +controllertools:marker:generateHelp:category=CRD
+
 // PrintColumn adds a column to "kubectl get" output for this CRD.
 type PrintColumn struct {
 	// Name specifies the name of the column.
@@ -197,20 +213,16 @@ type PrintColumn struct {
 
 func (s PrintColumn) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version string) error {
 	var columns *[]apiext.CustomResourceColumnDefinition
-	if version == "" {
-		columns = &crd.AdditionalPrinterColumns
-	} else {
-		for i := range crd.Versions {
-			ver := &crd.Versions[i]
-			if ver.Name != version {
-				continue
-			}
-			if ver.Subresources == nil {
-				ver.Subresources = &apiext.CustomResourceSubresources{}
-			}
-			columns = &ver.AdditionalPrinterColumns
-			break
+	for i := range crd.Versions {
+		ver := &crd.Versions[i]
+		if ver.Name != version {
+			continue
 		}
+		if ver.Subresources == nil {
+			ver.Subresources = &apiext.CustomResourceSubresources{}
+		}
+		columns = &ver.AdditionalPrinterColumns
+		break
 	}
 	if columns == nil {
 		return fmt.Errorf("printer columns applied to version %q not in CRD", version)
@@ -257,9 +269,9 @@ type Resource struct {
 	// The singular form is otherwise defaulted off the plural (path).
 	Singular string `marker:",optional"`
 
-	// Scope overrides the scope of the CRD (cluster vs namespaced).
+	// Scope overrides the scope of the CRD (Cluster vs Namespaced).
 	//
-	// Scope defaults to "namespaced".  Cluster-scoped ("cluster") resources
+	// Scope defaults to "Namespaced".  Cluster-scoped ("Cluster") resources
 	// don't exist in namespaces.
 	Scope string `marker:",optional"`
 }
@@ -267,6 +279,9 @@ type Resource struct {
 func (s Resource) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version string) error {
 	if s.Path != "" {
 		crd.Names.Plural = s.Path
+	}
+	if s.Singular != "" {
+		crd.Names.Singular = s.Singular
 	}
 	crd.Names.ShortNames = s.ShortName
 	crd.Names.Categories = s.Categories
@@ -278,6 +293,25 @@ func (s Resource) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version s
 		crd.Scope = apiext.ResourceScope(s.Scope)
 	}
 
+	return nil
+}
+
+// +controllertools:marker:generateHelp:category=CRD
+
+// UnservedVersion does not serve this version.
+//
+// This is useful if you need to drop support for a version in favor of a newer version.
+type UnservedVersion struct{}
+
+func (s UnservedVersion) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version string) error {
+	for i := range crd.Versions {
+		ver := &crd.Versions[i]
+		if ver.Name != version {
+			continue
+		}
+		ver.Served = false
+		break
+	}
 	return nil
 }
 
