@@ -2,7 +2,7 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-  - bases/autoscaling.k8s.io_hvpas.yaml
+  - bases/autoscaling.gardener.cloud_hvpas.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 #patches:

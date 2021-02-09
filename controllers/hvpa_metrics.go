@@ -25,31 +25,28 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const (
-	metricsNamespace              = "hvpa"
-	metricsSubsystemAggregate     = "aggregate"
-	metricsSubsystemSpec          = "spec"
-	metricsSubsystemStatus        = "status"
-	labelNamespace                = "namespace"
-	labelName                     = "name"
-	labelReason                   = "reason"
-	labelHpaScaleUpUpdatePolicy   = "hpaScaleUpUpdatePolicy"
-	labelHpaScaleDownUpdatePolicy = "hpaScaleDownUpdatePolicy"
-	labelVpaScaleUpUpdatePolicy   = "vpaScaleUpUpdatePolicy"
-	labelVpaScaleDownUpdatePolicy = "vpaScaleDownUpdatePolicy"
-	labelTargetRefName            = "targetName"
-	labelTargetRefKind            = "targetKind"
-	labelContainer                = "container"
-	labelResource                 = "resource"
-	labelRecommendation           = "recommendation"
-	recoTarget                    = "target"
-	recoLowerBound                = "lowerBound"
-	recoUpperBound                = "upperBound"
-	recoUncappedTarget            = "uncappedTarget"
+	metricsNamespace           = "hvpa"
+	metricsSubsystemAggregate  = "aggregate"
+	metricsSubsystemSpec       = "spec"
+	metricsSubsystemStatus     = "status"
+	labelNamespace             = "namespace"
+	labelName                  = "name"
+	labelReason                = "reason"
+	labelScaleUpUpdatePolicy   = "scaleUpUpdatePolicy"
+	labelScaleDownUpdatePolicy = "scaleDownUpdatePolicy"
+	labelTargetRefName         = "targetName"
+	labelTargetRefKind         = "targetKind"
+	labelContainer             = "container"
+	labelResource              = "resource"
+	labelRecommendation        = "recommendation"
+	recoTarget                 = "target"
+	recoLowerBound             = "lowerBound"
+	recoUpperBound             = "upperBound"
+	recoUncappedTarget         = "uncappedTarget"
 )
 
 type hvpaMetrics struct {
@@ -92,7 +89,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 		},
 		[]string{labelReason},
 	)
-	for _, reason := range []hvpav1alpha1.BlockingReason{hvpav1alpha1.BlockingReasonMaintenanceWindow, hvpav1alpha1.BlockingReasonMinChange, hvpav1alpha1.BlockingReasonStabilizationWindow, hvpav1alpha1.BlockingReasonUpdatePolicy, hvpav1alpha1.BlockingReasonWeight} {
+	for _, reason := range []hvpav1alpha1.BlockingReason{hvpav1alpha1.BlockingReasonParadoxicalScaling, hvpav1alpha1.BlockingReasonMaintenanceWindow, hvpav1alpha1.BlockingReasonMinChange, hvpav1alpha1.BlockingReasonStabilizationWindow, hvpav1alpha1.BlockingReasonUpdatePolicy} {
 		m.aggrBlockedScalingsTotal.WithLabelValues(string(reason)).Set(0)
 	}
 	allCollectors = append(allCollectors, m.aggrBlockedScalingsTotal)
@@ -105,7 +102,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "replicas",
 				Help:      "The number of replicas in the HVPA spec (part of the Scale sub-resource).",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy},
 		)
 		allCollectors = append(allCollectors, m.specReplicas)
 
@@ -116,7 +113,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "replicas",
 				Help:      "The number of replicas in the HVPA status (part of the Scale sub-resource).",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy},
 		)
 		allCollectors = append(allCollectors, m.statusReplicas)
 
@@ -127,7 +124,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "applied_hpa_current_replicas",
 				Help:      "The applied current replicas recommendation from HPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy},
 		)
 		allCollectors = append(allCollectors, m.statusAppliedHPACurrentReplicas)
 
@@ -138,7 +135,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "applied_hpa_desired_replicas",
 				Help:      "The applied desired replicas recommendation from HPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy},
 		)
 		allCollectors = append(allCollectors, m.statusAppliedHPADesiredReplicas)
 
@@ -149,7 +146,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "applied_vpa_recommendation",
 				Help:      "The applied recommendation from VPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy, labelContainer, labelRecommendation, labelResource},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy, labelContainer, labelRecommendation, labelResource},
 		)
 		allCollectors = append(allCollectors, m.statusAppliedVPARecommendation)
 
@@ -160,7 +157,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "blocked_hpa_current_replicas",
 				Help:      "The blocked current replicas recommendation from HPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy, labelReason},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy, labelReason},
 		)
 		allCollectors = append(allCollectors, m.statusBlockedHPACurrentReplicas)
 
@@ -171,7 +168,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "blocked_hpa_desired_replicas",
 				Help:      "The blocked desired replicas recommendation from HPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy, labelReason},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy, labelReason},
 		)
 		allCollectors = append(allCollectors, m.statusBlockedHPADesiredReplicas)
 
@@ -182,7 +179,7 @@ func (r *HvpaReconciler) AddMetrics() error {
 				Name:      "blocked_vpa_recommendation",
 				Help:      "The blocked recommendation from VPA.",
 			},
-			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelHpaScaleUpUpdatePolicy, labelHpaScaleDownUpdatePolicy, labelVpaScaleUpUpdatePolicy, labelVpaScaleDownUpdatePolicy, labelReason, labelContainer, labelRecommendation, labelResource},
+			[]string{labelNamespace, labelName, labelTargetRefKind, labelTargetRefName, labelScaleUpUpdatePolicy, labelScaleDownUpdatePolicy, labelReason, labelContainer, labelRecommendation, labelResource},
 		)
 		allCollectors = append(allCollectors, m.statusBlockedVPARecommendation)
 	}
@@ -224,24 +221,16 @@ func basicDetailedLabels(hvpa *hvpav1alpha1.Hvpa) prometheus.Labels {
 	l := basicLabels(hvpa)
 
 	// Initialise to default update mode
-	l[labelHpaScaleUpUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
-	l[labelHpaScaleDownUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
-	l[labelVpaScaleUpUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
-	l[labelVpaScaleDownUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
+	l[labelScaleUpUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
+	l[labelScaleDownUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
 
-	if hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode != nil {
-		l[labelHpaScaleUpUpdatePolicy] = *hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode
+	if hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode != nil {
+		l[labelScaleUpUpdatePolicy] = *hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode
 	}
-	if hvpa.Spec.Hpa.ScaleDown.UpdatePolicy.UpdateMode != nil {
-		l[labelHpaScaleDownUpdatePolicy] = *hvpa.Spec.Hpa.ScaleDown.UpdatePolicy.UpdateMode
+	if hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode != nil {
+		l[labelScaleDownUpdatePolicy] = *hvpa.Spec.ScaleDown.UpdatePolicy.UpdateMode
 	}
 
-	if hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode != nil {
-		l[labelVpaScaleUpUpdatePolicy] = *hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode
-	}
-	if hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode != nil {
-		l[labelVpaScaleDownUpdatePolicy] = *hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode
-	}
 	return l
 }
 
@@ -251,8 +240,8 @@ func basicBlockedLabels(hvpa *hvpav1alpha1.Hvpa, reason hvpav1alpha1.BlockingRea
 	return l
 }
 
-func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaStatus *vpa_api.VerticalPodAutoscalerStatus, baseLabelsFn func() prometheus.Labels) {
-	if gv == nil || vpaStatus == nil || vpaStatus.Recommendation == nil {
+func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaStatus *hvpav1alpha1.VpaStatus, baseLabelsFn func() prometheus.Labels) {
+	if gv == nil || vpaStatus == nil || vpaStatus.ContainerResources == nil {
 		return
 	}
 
@@ -277,15 +266,15 @@ func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaS
 		}
 	}
 
-	recoMap := make(map[string]*vpa_api.RecommendedContainerResources)
-	for i := range vpaStatus.Recommendation.ContainerRecommendations {
-		cr := &vpaStatus.Recommendation.ContainerRecommendations[i]
+	recoMap := make(map[string]*hvpav1alpha1.ContainerResources)
+	for i := range vpaStatus.ContainerResources {
+		cr := &vpaStatus.ContainerResources[i]
 		recoMap[cr.ContainerName] = cr
 	}
 
 	for _, c := range containers {
 		if cr, ok := recoMap[c]; ok {
-			updateReco(c, recoTarget, cr.Target)
+			updateReco(c, recoTarget, cr.Resources.Requests)
 		} else {
 			updateReco(c, recoTarget, nil)
 		}
@@ -451,14 +440,12 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 			return err
 		}
 
-		if hvpa.Status.LastScaling.VpaStatus.Recommendation != nil {
+		if hvpa.Status.LastScaling.VpaStatus.ContainerResources != nil {
 			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &hvpa.Status.LastScaling.VpaStatus, func() prometheus.Labels {
 				return basicDetailedLabels(hvpa)
 			})
 		} else {
-			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &vpa_api.VerticalPodAutoscalerStatus{
-				Recommendation: &vpa_api.RecommendedPodResources{},
-			}, func() prometheus.Labels {
+			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &hvpav1alpha1.VpaStatus{}, func() prometheus.Labels {
 				return basicDetailedLabels(hvpa)
 			})
 		}
@@ -471,6 +458,7 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 			}
 			blockedMap[blocked.Reason] = blocked
 		}
+
 		for _, blockingReason := range hvpav1alpha1.BlockingReasons {
 			blocked, ok := blockedMap[blockingReason]
 			if m.statusBlockedHPACurrentReplicas != nil {
@@ -488,14 +476,12 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 				}
 			}
 			if m.statusBlockedVPARecommendation != nil {
-				if ok && blocked.VpaStatus.Recommendation != nil {
+				if ok && blocked.VpaStatus.ContainerResources != nil {
 					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &blocked.VpaStatus, func() prometheus.Labels {
 						return basicBlockedLabels(hvpa, blockingReason)
 					})
 				} else {
-					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &vpa_api.VerticalPodAutoscalerStatus{
-						Recommendation: &vpa_api.RecommendedPodResources{},
-					}, func() prometheus.Labels {
+					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &hvpav1alpha1.VpaStatus{}, func() prometheus.Labels {
 						return basicBlockedLabels(hvpa, blockingReason)
 					})
 				}

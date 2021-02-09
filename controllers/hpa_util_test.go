@@ -20,11 +20,12 @@ import (
 	"context"
 	"fmt"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -32,10 +33,10 @@ import (
 var _ = Describe("#Adopt HPA", func() {
 
 	DescribeTable("##AdoptHPA",
-		func(instance *autoscalingv1alpha1.Hvpa) {
+		func(instance *hvpav1alpha1.Hvpa) {
 			deploytest := target.DeepCopy()
 			// Overwrite name
-			deploytest.Name = "deploy-test-2"
+			deploytest.Name = "deploy-test-4"
 
 			c := mgr.GetClient()
 			// Create the test deployment
@@ -45,6 +46,7 @@ var _ = Describe("#Adopt HPA", func() {
 			Expect(c.Create(context.TODO(), instance)).To(Succeed())
 			defer c.Delete(context.TODO(), instance)
 
+			var hpa *autoscaling.HorizontalPodAutoscaler
 			hasSingleChildFn := func() error {
 				num := 0
 				objList := &autoscaling.HorizontalPodAutoscalerList{}
@@ -54,6 +56,7 @@ var _ = Describe("#Adopt HPA", func() {
 				for _, obj := range objList.Items {
 					for _, owner := range obj.GetOwnerReferences() {
 						if owner.UID == instance.GetUID() {
+							hpa = obj.DeepCopy()
 							num = num + 1
 						}
 					}
@@ -61,10 +64,26 @@ var _ = Describe("#Adopt HPA", func() {
 				if num == 1 {
 					return nil
 				}
-				return fmt.Errorf("Error: Number of VPAs expected: 1; found %v", num)
+				return fmt.Errorf("Error: Number of HPAs expected: 1; found %v", num)
 			}
 
 			Eventually(hasSingleChildFn, timeout).Should(Succeed())
+
+			// Test if HPA spec is reconciled if changed
+			hpa.Spec.MaxReplicas = hpa.Spec.MaxReplicas + 1
+			Expect(c.Update(context.TODO(), hpa)).To(Succeed())
+			compareHpaSpecFn := func() error {
+				hpaFound := &autoscaling.HorizontalPodAutoscaler{}
+				if err := c.Get(context.TODO(), types.NamespacedName{Namespace: hpa.Namespace, Name: hpa.Name}, hpaFound); err != nil {
+					return err
+				}
+
+				if hpaFound.Spec.MaxReplicas != instance.Spec.Hpa.Template.Spec.MaxReplicas {
+					return fmt.Errorf("HPA spec not reconciled: Expected %v. Found %v", instance.Spec.Hpa.Template.Spec.MaxReplicas, hpaFound.Spec.MaxReplicas)
+				}
+				return nil
+			}
+			Eventually(compareHpaSpecFn, timeout).Should(Succeed())
 
 			// Create new HPA for same HVPA
 			newHpa, err := getHpaFromHvpa(instance)
@@ -102,6 +121,6 @@ var _ = Describe("#Adopt HPA", func() {
 				return nil
 			}, timeout).Should(Succeed())
 		},
-		Entry("hpa", newHvpa("hvpa-2", "deploy-test-2", "label-2", minChange)),
+		Entry("hpa", newHvpa("hvpa-4", "deploy-test-4", "label-4", minChange)),
 	)
 })

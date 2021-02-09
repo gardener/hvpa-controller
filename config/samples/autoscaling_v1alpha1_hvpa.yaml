@@ -1,4 +1,4 @@
-apiVersion: autoscaling.k8s.io/v1alpha1
+apiVersion: autoscaling.gardener.cloud/v1alpha1
 kind: Hvpa
 metadata:
   annotations:
@@ -15,14 +15,6 @@ spec:
       matchLabels:
         key1: value1
     deploy: true
-    scaleUp:
-      updatePolicy:
-        updateMode: "Auto"
-      stabilizationDuration: "3m"
-    scaleDown:
-      updatePolicy:
-        updateMode: "Auto"
-      stabilizationDuration: "3m"
     template:
       metadata:
         labels:
@@ -44,28 +36,6 @@ spec:
       matchLabels:
         key2: value2
     deploy: true
-    scaleUp:
-      updatePolicy:
-        updateMode: "Auto"
-      stabilizationDuration: "3m"
-      minChange:
-        cpu:
-          value: "3"
-          percentage: 80
-        memory:
-          value: "3"
-          percentage: 80
-    scaleDown:
-      updatePolicy:
-        updateMode: "MaintenanceWindow"
-      stabilizationDuration: "3m"
-      minChange:
-        cpu:
-          value: "3"
-          percentage: 80
-        memory:
-          value: "3"
-          percentage: 80
     limitsRequestsGapScaleParams:
       cpu:
         percentage: 80
@@ -85,16 +55,35 @@ spec:
                 memory: 3000Mi
               minAllowed:
                 memory: 400Mi
-  weightBasedScalingIntervals:
-    - vpaWeight: 0
-      startReplicaCount: 1
-      lastReplicaCount: 2
-    - vpaWeight: 50
-      startReplicaCount: 3
-      lastReplicaCount: 5
-    - vpaWeight: 60
-      startReplicaCount: 6
-      lastReplicaCount: 7
+  scaleUp:
+    updatePolicy:
+      updateMode: "Auto"
+    stabilizationDuration: "3m"
+    minChange:
+      cpu:
+        value: "3"
+        percentage: 80
+      memory:
+        value: "3"
+        percentage: 80
+  scaleDown:
+    updatePolicy:
+      updateMode: "MaintenanceWindow"
+    stabilizationDuration: "3m"
+    minChange:
+      cpu:
+        value: "3"
+        percentage: 80
+      memory:
+        value: "3"
+        percentage: 80
+  scaleIntervals:
+    - maxReplicas: 2
+      maxCpu: "1"
+      maxMemory: "1G"
+    - maxReplicas: 2
+      maxCpu: "3"
+      maxMemory: "2G"
   targetRef:
     apiVersion: apps/v1
     kind: Deployment

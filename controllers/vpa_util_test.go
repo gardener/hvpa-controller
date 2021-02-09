@@ -20,10 +20,11 @@ import (
 	"context"
 	"fmt"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/types"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -32,7 +33,7 @@ import (
 var _ = Describe("#Adopt VPA", func() {
 
 	DescribeTable("##AdoptVPA",
-		func(instance *autoscalingv1alpha1.Hvpa) {
+		func(instance *hvpav1alpha1.Hvpa) {
 			deploytest := target.DeepCopy()
 			// Overwrite name
 			deploytest.Name = "deploy-test-3"
@@ -45,6 +46,7 @@ var _ = Describe("#Adopt VPA", func() {
 			Expect(c.Create(context.TODO(), instance)).To(Succeed())
 			defer c.Delete(context.TODO(), instance)
 
+			var vpa *vpa_api.VerticalPodAutoscaler
 			hasSingleChildFn := func() error {
 				num := 0
 				objList := &vpa_api.VerticalPodAutoscalerList{}
@@ -54,6 +56,7 @@ var _ = Describe("#Adopt VPA", func() {
 				for _, obj := range objList.Items {
 					for _, owner := range obj.GetOwnerReferences() {
 						if owner.UID == instance.GetUID() {
+							vpa = obj.DeepCopy()
 							num = num + 1
 						}
 					}
@@ -65,6 +68,22 @@ var _ = Describe("#Adopt VPA", func() {
 			}
 
 			Eventually(hasSingleChildFn, timeout).Should(Succeed())
+
+			// Test if VPA spec is reconciled if changed
+			vpa.Spec.TargetRef.Name = "nameChanged"
+			Expect(c.Update(context.TODO(), vpa)).To(Succeed())
+			compareVpaSpecFn := func() error {
+				vpaFound := &vpa_api.VerticalPodAutoscaler{}
+				if err := c.Get(context.TODO(), types.NamespacedName{Namespace: vpa.Namespace, Name: vpa.Name}, vpaFound); err != nil {
+					return err
+				}
+
+				if vpaFound.Spec.TargetRef.Name != instance.Spec.TargetRef.Name {
+					return fmt.Errorf("VPA spec not reconciled: Expected %v. Found %v", instance.Spec.TargetRef.Name, vpaFound.Spec.TargetRef.Name)
+				}
+				return nil
+			}
+			Eventually(compareVpaSpecFn, timeout).Should(Succeed())
 
 			// Create new VPA for same HVPA
 			newVpa, err := getVpaFromHvpa(instance)
