@@ -17,11 +17,12 @@ package crd
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/gobuffalo/flect"
 
-	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -39,7 +40,7 @@ type SpecMarker interface {
 // NeedCRDFor requests the full CRD for the given group-kind.  It requires
 // that the packages containing the Go structs for that CRD have already
 // been loaded with NeedPackage.
-func (p *Parser) NeedCRDFor(groupKind schema.GroupKind) {
+func (p *Parser) NeedCRDFor(groupKind schema.GroupKind, maxDescLen *int) {
 	p.init()
 
 	if _, exists := p.CustomResourceDefinitions[groupKind]; exists {
@@ -66,9 +67,12 @@ func (p *Parser) NeedCRDFor(groupKind schema.GroupKind) {
 		Spec: apiext.CustomResourceDefinitionSpec{
 			Group: groupKind.Group,
 			Names: apiext.CustomResourceDefinitionNames{
-				Kind:   groupKind.Kind,
-				Plural: defaultPlural,
+				Kind:     groupKind.Kind,
+				ListKind: groupKind.Kind + "List",
+				Plural:   defaultPlural,
+				Singular: strings.ToLower(groupKind.Kind),
 			},
+			Scope: apiext.NamespaceScoped,
 		},
 	}
 
@@ -78,12 +82,17 @@ func (p *Parser) NeedCRDFor(groupKind schema.GroupKind) {
 		if typeInfo == nil {
 			continue
 		}
-		fullSchema := FlattenEmbedded(p.flattener.FlattenType(typeIdent), pkg)
+		p.NeedFlattenedSchemaFor(typeIdent)
+		fullSchema := p.FlattenedSchemata[typeIdent]
+		fullSchema = *fullSchema.DeepCopy() // don't mutate the cache (we might be truncating description, etc)
+		if maxDescLen != nil {
+			TruncateDescription(&fullSchema, *maxDescLen)
+		}
 		ver := apiext.CustomResourceDefinitionVersion{
 			Name:   p.GroupVersions[pkg].Version,
 			Served: true,
 			Schema: &apiext.CustomResourceValidation{
-				OpenAPIV3Schema: fullSchema,
+				OpenAPIV3Schema: &fullSchema, // fine to take a reference since we deepcopy above
 			},
 		}
 		crd.Spec.Versions = append(crd.Spec.Versions, ver)
@@ -111,13 +120,17 @@ func (p *Parser) NeedCRDFor(groupKind schema.GroupKind) {
 		}
 	}
 
-	// fix the name if the plural was changed (this is the form the name *has* to take, so no harm in chaning it).
+	// fix the name if the plural was changed (this is the form the name *has* to take, so no harm in changing it).
 	crd.Name = crd.Spec.Names.Plural + "." + groupKind.Group
 
 	// nothing to actually write
 	if len(crd.Spec.Versions) == 0 {
 		return
 	}
+
+	// it is necessary to make sure the order of CRD versions in crd.Spec.Versions is stable and explicitly set crd.Spec.Version.
+	// Otherwise, crd.Spec.Version may point to different CRD versions across different runs.
+	sort.Slice(crd.Spec.Versions, func(i, j int) bool { return crd.Spec.Versions[i].Name < crd.Spec.Versions[j].Name })
 
 	// make sure we have *a* storage version
 	// (default it if we only have one, otherwise, bail)
@@ -136,6 +149,19 @@ func (p *Parser) NeedCRDFor(groupKind schema.GroupKind) {
 		// just add the error to the first relevant package for this CRD,
 		// since there's no specific error location
 		packages[0].AddError(fmt.Errorf("CRD for %s has no storage version", groupKind))
+	}
+
+	served := false
+	for _, ver := range crd.Spec.Versions {
+		if ver.Served {
+			served = true
+			break
+		}
+	}
+	if !served {
+		// just add the error to the first relevant package for this CRD,
+		// since there's no specific error location
+		packages[0].AddError(fmt.Errorf("CRD for %s with version(s) %v does not serve any version", groupKind, crd.Spec.Versions))
 	}
 
 	// NB(directxman12): CRD's status doesn't have omitempty markers, which means things

@@ -27,7 +27,7 @@ import (
 	"time"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
-	validation "github.com/gardener/hvpa-controller/api/validation"
+	validation "github.com/gardener/hvpa-controller/internal/api/validation"
 	"github.com/gardener/hvpa-controller/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
@@ -145,8 +145,10 @@ type hvpaObj struct {
 	Selector labels.Selector
 }
 
-var cachedNames map[string][]*hvpaObj
-var cacheMux sync.Mutex
+var (
+	cachedNames map[string][]*hvpaObj
+	cacheMux    sync.Mutex
+)
 
 func (r *HvpaReconciler) getSelectorFromHvpa(instance *autoscalingv1alpha1.Hvpa) (labels.Selector, error) {
 	targetRef := instance.Spec.TargetRef
@@ -469,7 +471,6 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	autoscalingv1alpha1.VpaWeight,
 	*[]*autoscalingv1alpha1.BlockedScaling,
 	error) {
-
 	var newObj runtime.Object
 	var deploy *appsv1.Deployment
 	var ss *appsv1.StatefulSet
@@ -733,7 +734,6 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 
 	if hpaWeight == 0 {
 		blockReason = autoscalingv1alpha1.BlockingReasonWeight
-
 	} else if weightedReplicas > currentReplicas {
 		if scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
 			blockReason = autoscalingv1alpha1.BlockingReasonUpdatePolicy
@@ -746,7 +746,6 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 			outHpaStatus.DesiredReplicas = weightedReplicas
 			return outHpaStatus, err
 		}
-
 	} else if weightedReplicas < currentReplicas {
 		if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeOff {
 			blockReason = autoscalingv1alpha1.BlockingReasonUpdatePolicy

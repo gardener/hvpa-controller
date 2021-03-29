@@ -14,6 +14,7 @@
 
 VERSION             := $(shell cat VERSION)
 REGISTRY            := eu.gcr.io/gardener-project/gardener
+REPO_ROOT           := $(shell dirname "$(realpath $(lastword $(MAKEFILE_LIST)))")
 
 IMAGE_REPOSITORY    := $(REGISTRY)/hvpa-controller
 IMAGE_TAG           := $(VERSION)
@@ -34,16 +35,16 @@ endif
 all: manager
 
 # Run tests
-test: generate fmt vet manifests
-	go test ./api/... ./controllers/... ./utils/... -coverprofile cover.out
+test: generate fmt vet
+	@env GO111MODULE=on GOFLAGS=-mod=vendor go test ./internal/... ./controllers/... ./utils/... -coverprofile cover.out
 
 # Build manager binary
 manager: generate fmt vet
-	go build -o bin/manager main.go
+	@env GO111MODULE=on GOFLAGS=-mod=vendor go build -o bin/manager main.go
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate fmt vet
-	go run ./main.go --enable-detailed-metrics --logtostderr=true --v=2
+	@env GO111MODULE=on GOFLAGS=-mod=vendor go run ./main.go --enable-detailed-metrics --logtostderr=true --v=2
 
 # Install CRDs into a cluster
 install: manifests
@@ -56,19 +57,20 @@ deploy: manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
-	"$(CONTROLLER_GEN)" $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./api/..." output:crd:artifacts:config=config/crd/bases
+	cd "$(REPO_ROOT)/api" && $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=../config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role webhook paths="./controllers/..."
 
 # Run go fmt against code
 fmt:
-	go fmt ./...
+	@env GO111MODULE=on GOFLAGS=-mod=vendor go fmt ./...
 
 # Run go vet against code
 vet:
-	go vet ./...
+	@env GO111MODULE=on GOFLAGS=-mod=vendor go vet ./...
 
 # Generate code
 generate: controller-gen
-	"$(CONTROLLER_GEN)" object:headerFile=./hack/boilerplate.go.txt paths=./api/...
+	cd "$(REPO_ROOT)/api" && $(CONTROLLER_GEN) object:headerFile=../hack/boilerplate.go.txt paths=./...
 
 # Build the docker image
 docker-build: test
@@ -82,14 +84,15 @@ docker-push:
 
 # Revendor
 revendor:
-	@GO111MODULE=on go mod vendor
-	@GO111MODULE=on go mod tidy
+	@cd "$(REPO_ROOT)/api" && go mod tidy
+	@env GO111MODULE=on go mod tidy
+	@env GO111MODULE=on go mod vendor
 
 # find or download controller-gen
 # download controller-gen if necessary
 controller-gen:
 ifeq (, $(shell which controller-gen))
-	go get sigs.k8s.io/controller-tools/cmd/controller-gen@v0.2.0-beta.4
+	go install sigs.k8s.io/controller-tools/cmd/controller-gen
 CONTROLLER_GEN=$(GOBIN)/controller-gen
 else
 CONTROLLER_GEN=$(shell which controller-gen)
