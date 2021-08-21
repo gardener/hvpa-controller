@@ -63,7 +63,7 @@ type hvpaMetrics struct {
 }
 
 // AddMetrics initializes and registers the custom metrics for HVPA controller.
-func (r *HvpaReconciler) AddMetrics() error {
+func (r *HvpaReconciler) AddMetrics(registerMetrics bool) error {
 	var (
 		m             = &hvpaMetrics{}
 		allCollectors []prometheus.Collector
@@ -185,6 +185,10 @@ func (r *HvpaReconciler) AddMetrics() error {
 	}
 
 	r.metrics = m
+
+	if !registerMetrics {
+		return nil
+	}
 
 	for _, c := range allCollectors {
 		if err := metrics.Registry.Register(c); err != nil {

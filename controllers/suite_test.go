@@ -17,125 +17,53 @@ limitations under the License.
 package controllers
 
 import (
-	"path/filepath"
-	"sync"
+	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 
 	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	mockclient "github.com/gardener/hvpa-controller/mock/controller-runtime/client"
+	"github.com/golang/mock/gomock"
+	gomegatypes "github.com/onsi/gomega/types"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	// +kubebuilder:scaffold:imports
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
-var (
-	cfg        *rest.Config
-	k8sClient  client.Client
-	testEnv    *envtest.Environment
-	mgr        manager.Manager
-	stopMgr    chan struct{}
-	mgrStopped *sync.WaitGroup
-)
-
-func TestAPIs(t *testing.T) {
+func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Controller Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "Controller Suite")
 }
 
-var _ = BeforeSuite(func(done Done) {
-	logf.SetLogger(zap.LoggerTo(GinkgoWriter, true))
+var _ = BeforeSuite(func() {
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "config", "crd", "bases")},
-	}
-
-	var err error
-	cfg, err = testEnv.Start()
-	Expect(err).ToNot(HaveOccurred())
-	Expect(cfg).ToNot(BeNil())
-
-	err = hvpav1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(hvpav1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	// +kubebuilder:scaffold:scheme
-
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).ToNot(HaveOccurred())
-	Expect(k8sClient).ToNot(BeNil())
-
-	// Setup the Manager.
-	mgr, err = ctrl.NewManager(cfg, ctrl.Options{})
-	Expect(err).NotTo(HaveOccurred())
-
-	reconciler := HvpaReconciler{
-		Client:                mgr.GetClient(),
-		Scheme:                mgr.GetScheme(),
-		EnableDetailedMetrics: true,
-	}
-
-	err = reconciler.SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	stopMgr, mgrStopped = StartTestManager(mgr, &GomegaWithT{})
-
-	close(done)
-}, 60)
-
-var _ = AfterSuite(func() {
-	close(stopMgr)
-	mgrStopped.Wait()
-
-	By("tearing down the test environment")
-	err := testEnv.Stop()
-	Expect(err).ToNot(HaveOccurred())
 })
-
-// SetupTestReconcile returns a reconcile.Reconcile implementation that delegates to inner and
-// writes the request to requests after Reconcile is finished.
-func SetupTestReconcile(inner reconcile.Reconciler) (reconcile.Reconciler, chan reconcile.Request) {
-	requests := make(chan reconcile.Request)
-	fn := reconcile.Func(func(req reconcile.Request) (reconcile.Result, error) {
-		result, err := inner.Reconcile(req)
-		requests <- req
-		return result, err
-	})
-	return fn, requests
-}
-
-// StartTestManager adds recFn
-func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync.WaitGroup) {
-	stop := make(chan struct{})
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		Expect(mgr.Start(stop)).NotTo(HaveOccurred())
-	}()
-	return stop, wg
-}
 
 /* This hvpa results in following effective buckets after taking ScalingIntervalsOverlap into account:
  * {map[cpu:{10 1000} memory:{50M 2G} replicas:{1}]}
@@ -155,6 +83,7 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 			Annotations: map[string]string{
 				"hpa-controller": "hvpa",
 			},
+			UID: types.UID("1234567890"),
 		},
 		Spec: hvpav1alpha1.HvpaSpec{
 			Replicas: int32Ptr(1),
@@ -394,3 +323,144 @@ func resourcePtr(i string) *resource.Quantity {
 	q := resource.MustParse(i)
 	return &q
 }
+
+type nothingMatcher struct{}
+
+func (m nothingMatcher) Matches(x interface{}) bool {
+	return false
+}
+
+func (m nothingMatcher) String() string {
+	return "is nothing"
+}
+
+func Nothing() gomock.Matcher {
+	return nothingMatcher{}
+}
+
+type namespacedNameMatcher types.NamespacedName
+
+func (m namespacedNameMatcher) Matches(x interface{}) bool {
+	if k, ok := x.(types.NamespacedName); ok {
+		return m.equal(types.NamespacedName(m), k)
+	}
+	if obj, ok := x.(client.Object); ok {
+		return m.equal(types.NamespacedName(m), client.ObjectKeyFromObject(obj))
+	}
+
+	return false
+}
+
+func (m namespacedNameMatcher) equal(a, b types.NamespacedName) bool {
+	return a.String() == b.String()
+}
+
+func (m namespacedNameMatcher) String() string {
+	return fmt.Sprintf("matches key %q", types.NamespacedName(m).String())
+}
+
+func HasNamespacedName(key types.NamespacedName) gomock.Matcher {
+	return namespacedNameMatcher(key)
+}
+
+func SameNamespacedNameAs(obj client.Object) gomock.Matcher {
+	return HasNamespacedName(client.ObjectKeyFromObject(obj))
+}
+
+type groupKindMatcher struct {
+	schema.GroupKind
+	scheme *runtime.Scheme
+}
+
+func (m groupKindMatcher) Matches(x interface{}) bool {
+	if obj, ok := x.(runtime.Object); ok {
+		if gvk, err := apiutil.GVKForObject(obj, m.scheme); err != nil {
+			return false
+		} else {
+			return m.GroupKind == gvk.GroupKind()
+		}
+	}
+
+	return false
+}
+
+func (m groupKindMatcher) String() string {
+	return fmt.Sprintf("is of GroupKind %q", m.GroupKind)
+}
+
+func OfGroupKind(gk schema.GroupKind, s *runtime.Scheme) gomock.Matcher {
+	return groupKindMatcher{
+		GroupKind: gk,
+		scheme:    s,
+	}
+}
+
+func SameGroupKindAs(obj client.Object, s *runtime.Scheme) gomock.Matcher {
+	if gk, err := apiutil.GVKForObject(obj, s); err != nil {
+		return Nothing()
+	} else {
+		return OfGroupKind(gk.GroupKind(), s)
+	}
+}
+
+func mockGet(cl *mockclient.MockClient, src client.Object, errorFn func() error) *gomock.Call {
+	return cl.EXPECT().Get(gomock.Any(), SameNamespacedNameAs(src), SameGroupKindAs(src, cl.Scheme())).DoAndReturn(
+		func(_ context.Context, _ client.ObjectKey, target client.Object) error {
+			if err := errorFn(); err != nil {
+				return err
+			}
+
+			Expect(cl.Scheme().Convert(src, target, nil)).To(Succeed())
+			return nil
+		},
+	)
+}
+
+func newNotFoundError(sch *runtime.Scheme, obj client.Object) error {
+	gvk, err := apiutil.GVKForObject(obj, sch)
+	if err != nil {
+		return err
+	}
+
+	return apierrors.NewNotFound(
+		schema.GroupResource{
+			Group:    gvk.Group,
+			Resource: strings.ToLower(gvk.Kind),
+		},
+		obj.GetName(),
+	)
+}
+
+type quantityMatcher struct {
+	resource.Quantity
+}
+
+func (m *quantityMatcher) Match(actual interface{}) (success bool, err error) {
+	if q, ok := actual.(resource.Quantity); ok {
+		return m.Quantity.Equal(q), nil
+	}
+
+	return false, fmt.Errorf("EqualQuantity matcher expects resource.Quantity. Got: %t", actual)
+}
+
+func (m *quantityMatcher) FailureMessage(actual interface{}) (message string) {
+	return format.Message(actual, "to equal", m.Quantity)
+}
+
+func (m *quantityMatcher) NegatedFailureMessage(actual interface{}) (message string) {
+	return format.Message(actual, "not to equal", m.Quantity)
+}
+
+func (m *quantityMatcher) String() string {
+	return fmt.Sprintf("resource.Quantity.MustParse(%q)", m.Quantity.String())
+}
+
+func EqualQuantity(q *resource.Quantity) gomegatypes.GomegaMatcher {
+	if q == nil {
+		return BeNil()
+	}
+
+	return &quantityMatcher{Quantity: q.DeepCopy()}
+}
+
+var nop = func() {}

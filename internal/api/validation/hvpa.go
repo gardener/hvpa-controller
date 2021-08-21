@@ -86,6 +86,10 @@ func validateMaintenanceWindow(maintenance *v1alpha1.MaintenanceTimeWindow, fldP
 
 func validateHpaSpec(hpaSpec *v1alpha1.HpaSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
+	
+	if !hpaSpec.Deploy {
+		return allErrs
+	}
 
 	if hpaSpec.Selector == nil {
 		allErrs = append(allErrs, field.Required(fldPath.Child("selector"), ""))
@@ -167,6 +171,10 @@ func validateScaleType(scaleType *v1alpha1.ScaleType, fldPath *field.Path) field
 
 func validateVpaSpec(vpaSpec *v1alpha1.VpaSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
+
+	if !vpaSpec.Deploy { //TODO unit tests
+		return allErrs
+	}
 
 	if vpaSpec.Selector == nil {
 		allErrs = append(allErrs, field.Required(fldPath.Child("selector"), ""))

@@ -210,6 +210,7 @@ type ResourceChangeParams map[corev1.ResourceName]ChangeParams
 // HvpaSpec defines the desired state of Hvpa
 type HvpaSpec struct {
 	// Replicas is the number of replicas of target resource
+	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
 
 	// BaseResourcesPerReplica specifies base resources to be budgeted per replica

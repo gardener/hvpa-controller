@@ -17,110 +17,151 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
-	"fmt"
-
 	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+	gomegatypes "github.com/onsi/gomega/types"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 )
 
-var _ = Describe("#Adopt HPA", func() {
-
-	DescribeTable("##AdoptHPA",
-		func(instance *hvpav1alpha1.Hvpa) {
-			deploytest := target.DeepCopy()
-			// Overwrite name
-			deploytest.Name = "deploy-test-4"
-
-			c := mgr.GetClient()
-			// Create the test deployment
-			Expect(c.Create(context.TODO(), deploytest)).To(Succeed())
-
-			// Create the Hvpa object and expect the Reconcile and HPA to be created
-			Expect(c.Create(context.TODO(), instance)).To(Succeed())
-			defer c.Delete(context.TODO(), instance)
-
-			var hpa *autoscaling.HorizontalPodAutoscaler
-			hasSingleChildFn := func() error {
-				num := 0
-				objList := &autoscaling.HorizontalPodAutoscalerList{}
-				if err := c.List(context.TODO(), objList); err != nil {
-					return err
-				}
-				for _, obj := range objList.Items {
-					for _, owner := range obj.GetOwnerReferences() {
-						if owner.UID == instance.GetUID() {
-							hpa = obj.DeepCopy()
-							num = num + 1
-						}
-					}
-				}
-				if num == 1 {
-					return nil
-				}
-				return fmt.Errorf("Error: Number of HPAs expected: 1; found %v", num)
-			}
-
-			Eventually(hasSingleChildFn, timeout).Should(Succeed())
-
-			// Test if HPA spec is reconciled if changed
-			hpa.Spec.MaxReplicas = hpa.Spec.MaxReplicas + 1
-			Expect(c.Update(context.TODO(), hpa)).To(Succeed())
-			compareHpaSpecFn := func() error {
-				hpaFound := &autoscaling.HorizontalPodAutoscaler{}
-				if err := c.Get(context.TODO(), types.NamespacedName{Namespace: hpa.Namespace, Name: hpa.Name}, hpaFound); err != nil {
-					return err
-				}
-
-				if hpaFound.Spec.MaxReplicas != instance.Spec.Hpa.Template.Spec.MaxReplicas {
-					return fmt.Errorf("HPA spec not reconciled: Expected %v. Found %v", instance.Spec.Hpa.Template.Spec.MaxReplicas, hpaFound.Spec.MaxReplicas)
-				}
-				return nil
-			}
-			Eventually(compareHpaSpecFn, timeout).Should(Succeed())
-
-			// Create new HPA for same HVPA
-			newHpa, err := getHpaFromHvpa(instance)
-			Expect(err).NotTo(HaveOccurred())
-			err = c.Create(context.TODO(), newHpa)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Eventually one of the HPAs should be garbage collected
-			Eventually(hasSingleChildFn, timeout).Should(Succeed())
-
-			// Create new HPA for same HVPA
-			newHpa, err = getHpaFromHvpa(instance)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(controllerutil.SetControllerReference(instance, newHpa, mgr.GetScheme())).To(Succeed())
-
-			// Replace the labels. The HVPA controller should remove the owner reference
-			label := make(map[string]string)
-			label["orphanKeyHpa"] = "orphanValueHpa"
-			newHpa.SetLabels(label)
-
-			Expect(c.Create(context.TODO(), newHpa)).To(Succeed())
-
-			// Eventually the owner ref from HPA should be removed by the HVPA controller
-			Eventually(func() error {
-				hpaList := &autoscaling.HorizontalPodAutoscalerList{}
-				c.List(context.TODO(), hpaList, client.MatchingLabels(label))
-				for _, obj := range hpaList.Items {
-					for _, ref := range obj.GetOwnerReferences() {
-						if ref.UID == instance.GetUID() {
-							return fmt.Errorf("Error: HPA with label %v not released by HVPA %v", label, instance.Name)
-						}
-					}
-				}
-				return nil
-			}, timeout).Should(Succeed())
-		},
-		Entry("hpa", newHvpa("hvpa-4", "deploy-test-4", "label-4", minChange)),
+var _ = Describe("getHpaFromHvpa", func() {
+	var (
+		hvpa        *hvpav1alpha1.Hvpa
+		expectedHpa *autoscaling.HorizontalPodAutoscaler
+		matchErr    gomegatypes.GomegaMatcher
 	)
+
+	BeforeEach(func() {
+		hvpa = &hvpav1alpha1.Hvpa{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "instance",
+				Namespace: "default",
+			},
+		}
+
+		expectedHpa = nil
+		matchErr = Succeed()
+	})
+
+	JustBeforeEach(func() {
+		var hpa, err = getHpaFromHvpa(hvpa)
+
+		Expect(err).To(matchErr)
+		if expectedHpa == nil {
+			Expect(hpa).To(BeNil())
+		} else {
+			Expect(hpa).To(Equal(expectedHpa))
+		}
+	})
+
+	Describe("when HPA template has ownerReferences", func() {
+		BeforeEach(func() {
+			hvpa.Spec.Hpa.Template.ObjectMeta.OwnerReferences = []metav1.OwnerReference{{}}
+			matchErr = HaveOccurred()
+		})
+
+		It("should fail", func() {})
+	})
+
+	Describe("with default HPA template", func() {
+		BeforeEach(func() {
+			expectedHpa = &autoscaling.HorizontalPodAutoscaler{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: hvpa.Name + "-",
+					Namespace:    hvpa.Namespace,
+				},
+				Spec: autoscaling.HorizontalPodAutoscalerSpec{
+					MaxReplicas: hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
+					MinReplicas: hvpa.Spec.Hpa.Template.Spec.MinReplicas,
+					ScaleTargetRef: autoscaling.CrossVersionObjectReference{
+						APIVersion: hvpav1alpha1.SchemeGroupVersionHvpa.String(),
+						Kind:       "Hvpa",
+						Name:       hvpa.Name,
+					},
+					Metrics: append([]autoscaling.MetricSpec{}, hvpa.Spec.Hpa.Template.Spec.Metrics...),
+				},
+			}
+		})
+
+		It("should succeed", func() {})
+
+		Describe("with labels", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Hpa.Template.ObjectMeta.Labels = map[string]string{
+					"key": "value",
+				}
+
+				expectedHpa.ObjectMeta.Labels = hvpa.Spec.Hpa.Template.ObjectMeta.DeepCopy().Labels
+			})
+
+			It("should use the specified labels", func() {})
+		})
+
+		Describe("with name", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Hpa.Template.ObjectMeta.Name = "hpa"
+			})
+
+			It("should ignore the specified name", func() {})
+		})
+
+		Describe("with generateName", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Hpa.Template.ObjectMeta.GenerateName = "hpa"
+			})
+
+			It("should ignore the specified generateName", func() {})
+		})
+
+		Describe("with maxReplicas", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Hpa.Template.Spec.MaxReplicas = int32(4)
+				expectedHpa.Spec.MaxReplicas = int32(4)
+			})
+
+			It("should use the specified maxReplicas", func() {})
+		})
+
+		Describe("with minReplicas", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Hpa.Template.Spec.MinReplicas = pointer.Int32Ptr(4)
+				expectedHpa.Spec.MinReplicas = pointer.Int32Ptr(4)
+			})
+
+			It("should use the specified minReplicas", func() {})
+		})
+
+		Describe("with metrics spec", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Hpa.Template.Spec.Metrics = []autoscaling.MetricSpec{
+					{
+						Type: autoscaling.ResourceMetricSourceType,
+						Resource: &autoscaling.ResourceMetricSource{
+							Name:                     corev1.ResourceCPU,
+							TargetAverageUtilization: pointer.Int32Ptr(80),
+						},
+					},
+				}
+
+				expectedHpa.Spec.Metrics = append([]autoscaling.MetricSpec{}, hvpa.Spec.Hpa.Template.Spec.Metrics...)
+			})
+
+			It("should use the specified metrics", func() {})
+		})
+
+		Describe("with targetRef", func() {
+			BeforeEach(func() {
+				hvpa.Spec.TargetRef = &autoscaling.CrossVersionObjectReference{
+					APIVersion: corev1.SchemeGroupVersion.String(),
+					Kind:       "ReplicationController",
+					Name:       "target",
+				}
+			})
+
+			It("should use the HVPA as the target in the HPA", func() {})
+		})
+	})
 })

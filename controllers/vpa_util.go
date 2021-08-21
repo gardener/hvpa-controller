@@ -123,6 +123,12 @@ func getVpaFromHvpa(hvpa *hvpav1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscaler, er
 	// Updater policy set to "Off", as we don't want vpa-updater to act on recommendations
 	updatePolicy := vpa_api.UpdateModeOff
 
+	var resourcePolicy *vpa_api.PodResourcePolicy = nil
+
+	if hvpa.Spec.Vpa.Template.Spec.ResourcePolicy != nil {
+		resourcePolicy = hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.DeepCopy()
+	}
+
 	return &vpa_api.VerticalPodAutoscaler{
 		ObjectMeta: *metadata,
 		Spec: vpa_api.VerticalPodAutoscalerSpec{
@@ -131,7 +137,7 @@ func getVpaFromHvpa(hvpa *hvpav1alpha1.Hvpa) (*vpa_api.VerticalPodAutoscaler, er
 				APIVersion: hvpa.Spec.TargetRef.APIVersion,
 				Kind:       hvpa.Spec.TargetRef.Kind,
 			},
-			ResourcePolicy: hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.DeepCopy(),
+			ResourcePolicy: resourcePolicy,
 			UpdatePolicy: &vpa_api.PodUpdatePolicy{
 				UpdateMode: &updatePolicy,
 			},

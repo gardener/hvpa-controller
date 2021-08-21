@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func adjustForBaseUsage(newCPUPerReplica, currentperReplicaCPU, newMemPerReplica, currentperReplicaMem int64, finalReplica, currentReplicas int32, hvpa *hvpav1alpha1.Hvpa) (newCPU, newMem int64) {
@@ -48,7 +49,7 @@ func adjustForBaseUsage(newCPUPerReplica, currentperReplicaCPU, newMemPerReplica
 			currReq = &currentperReplicaMem
 			currReco = &newMemPerReplica
 		} else {
-			log.V(3).Info("WARNING:", "unsupported resource in BaseResourcesPerReplica", resourceName, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+			log.V(3).Info("WARNING:", "unsupported resource in BaseResourcesPerReplica", resourceName, "hvpa", client.ObjectKeyFromObject(hvpa))
 			continue
 		}
 		perc := params.Percentage
@@ -391,7 +392,7 @@ func estimateScalingParameters(
 				if isScaleDown && maxReplica < currentReplicas {
 					if (currentperReplicaCPU != 0 && currentperReplicaCPU < newPerReplicaCPU) && (currentperReplicaMem != 0 && currentperReplicaMem < newPerReplicaMem) {
 						// Paradoxical Scaling - block scaling for this container
-						log.V(2).Info("Paradoxical scaling: No scaling recommended because recommendation for horizontal scale is \"scale in\", while for vertical scale is \"scale up\"", "recommended replica", maxReplica, "recommended cpu", newPerReplicaCPU, "recommended memory", newPerReplicaMem, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+						log.V(2).Info("Paradoxical scaling: No scaling recommended because recommendation for horizontal scale is \"scale in\", while for vertical scale is \"scale up\"", "recommended replica", maxReplica, "recommended cpu", newPerReplicaCPU, "recommended memory", newPerReplicaMem, "hvpa", client.ObjectKeyFromObject(hvpa))
 						blockedScalingReason[container.Name] = hvpav1alpha1.BlockingReasonParadoxicalScaling
 						break
 					}
@@ -424,11 +425,11 @@ func getScalingRecommendations(
 	err error,
 ) {
 	if vpaStatus == nil || vpaStatus.Recommendation == nil {
-		log.V(3).Info("VPA is not ready yet. Will not scale", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+		log.V(3).Info("VPA is not ready yet. Will not scale", "hvpa", client.ObjectKeyFromObject(hvpa))
 		return nil, nil, false, nil, nil
 	}
 
-	if !vpaStatusConditionsSupported(vpaStatus, hvpa.Namespace+"/"+hvpa.Name) {
+	if !vpaStatusConditionsSupported(vpaStatus, client.ObjectKeyFromObject(hvpa).String()) {
 		return nil, nil, false, nil, errors.New("VPA status conditions not supported")
 	}
 
@@ -439,12 +440,12 @@ func getScalingRecommendations(
 		desiredReplicas = hpaStatus.DesiredReplicas
 	}
 
-	containerBuckets, err := GetBuckets(hvpa, currentReplicas)
+	containerBuckets, err := GetEffectiveScalingIntervals(hvpa, currentReplicas)
 	if err != nil {
 		return nil, nil, false, nil, err
 	}
 	if containerBuckets == nil {
-		log.V(3).Info("hvpa", "No scaling because buckets were not generated", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+		log.V(3).Info("hvpa", "No scaling because buckets were not generated", "hvpa", client.ObjectKeyFromObject(hvpa))
 		return nil, nil, false, nil, nil
 	}
 

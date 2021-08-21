@@ -56,10 +56,7 @@ func (r *HvpaReconciler) claimHpas(hvpa *hvpav1alpha1.Hvpa, selector labels.Sele
 func hpaSpecNeedChange(hvpa *hvpav1alpha1.Hvpa, hpa *autoscaling.HorizontalPodAutoscaler) (*autoscaling.HorizontalPodAutoscaler, bool) {
 	desiredHpa, _ := getHpaFromHvpa(hvpa)
 
-	return desiredHpa, *desiredHpa.Spec.MinReplicas != *hpa.Spec.MinReplicas ||
-		desiredHpa.Spec.MaxReplicas != hpa.Spec.MaxReplicas ||
-		!reflect.DeepEqual(desiredHpa.Spec.Metrics, hpa.Spec.Metrics) ||
-		!reflect.DeepEqual(desiredHpa.Spec.ScaleTargetRef, hpa.Spec.ScaleTargetRef)
+	return desiredHpa, !reflect.DeepEqual(&desiredHpa.Spec, &hpa.Spec)
 }
 
 // UpdateHpaWithRetries updates a hpa with given applyUpdate function. Note that hpa not found error is ignored.
