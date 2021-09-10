@@ -14,10 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains API Schema definitions for the autoscaling v1alpha1 API group
+// Package v1alpha2 contains API Schema definitions for the autoscaling v1alpha2 API group
 // +kubebuilder:object:generate=true
-// +groupName=autoscaling.k8s.io
-package v1alpha1
+// +groupName=autoscaling.gardener.cloud
+package v1alpha2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,13 +28,15 @@ import (
 
 var (
 	// GroupName is the group name use in this package
-	GroupName = "autoscaling.k8s.io"
+	GroupName = "autoscaling.gardener.cloud"
 
+	// GroupNameVpa is the group name used to register these objects
+	GroupNameVpa = "autoscaling.k8s.io"
 	// SchemeGroupVersionVpa is group version used to register these objects
-	SchemeGroupVersionVpa = schema.GroupVersion{Group: GroupName, Version: "v1beta2"}
+	SchemeGroupVersionVpa = schema.GroupVersion{Group: GroupNameVpa, Version: "v1beta2"}
 
 	// SchemeGroupVersionHvpa is group version used to register these objects
-	SchemeGroupVersionHvpa = schema.GroupVersion{Group: GroupName, Version: "v1alpha1"}
+	SchemeGroupVersionHvpa = schema.GroupVersion{Group: GroupName, Version: "v1alpha2"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)

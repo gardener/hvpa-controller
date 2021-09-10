@@ -20,7 +20,7 @@ import (
 	"flag"
 	"os"
 
-	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha2 "github.com/gardener/hvpa-controller/api/v1alpha2"
 	"github.com/gardener/hvpa-controller/controllers"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -39,7 +39,7 @@ var (
 func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
 
-	_ = hvpav1alpha1.AddToScheme(scheme)
+	_ = hvpav1alpha2.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -81,7 +81,7 @@ func main() {
 
 	// TODO: Enable webhooks
 	/*
-		if err = (&hvpav1alpha1.Hvpa{}).SetupWebhookWithManager(mgr); err != nil {
+		if err = (&hvpav1alpha2.Hvpa{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Hvpa")
 			os.Exit(1)
 		}

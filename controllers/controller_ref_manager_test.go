@@ -21,7 +21,7 @@ import (
 	"errors"
 	"time"
 
-	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha2 "github.com/gardener/hvpa-controller/api/v1alpha2"
 	mockclient "github.com/gardener/hvpa-controller/mock/controller-runtime/client"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
@@ -51,7 +51,7 @@ var _ = Describe("LabelSelectorAsSelector", func() {
 var _ = Describe("BaseControllerRefManager", func() {
 	var (
 		sch                *runtime.Scheme
-		controller         *hvpav1alpha1.Hvpa
+		controller         *hvpav1alpha2.Hvpa
 		m                  *BaseControllerRefManager
 		obj                *autoscaling.HorizontalPodAutoscaler
 		matchFn            func(metav1.Object) bool
@@ -76,7 +76,7 @@ var _ = Describe("BaseControllerRefManager", func() {
 	BeforeEach(func() {
 		sch = scheme.Scheme
 
-		controller = &hvpav1alpha1.Hvpa{
+		controller = &hvpav1alpha2.Hvpa{
 			ObjectMeta: metav1.ObjectMeta{
 				UID: types.UID("1234"),
 			},
@@ -261,7 +261,7 @@ var _ = Describe("BaseControllerRefManager", func() {
 var _ = Describe("HvpaControllerRefManager", func() {
 	var (
 		cl         *mockclient.MockClient
-		controller *hvpav1alpha1.Hvpa
+		controller *hvpav1alpha2.Hvpa
 		cm         *HvpaControllerRefManager
 	)
 
@@ -270,7 +270,7 @@ var _ = Describe("HvpaControllerRefManager", func() {
 
 		cl.EXPECT().Scheme().Return(scheme.Scheme).AnyTimes()
 
-		controller = &hvpav1alpha1.Hvpa{
+		controller = &hvpav1alpha2.Hvpa{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "controller",
 				Namespace: "default",
@@ -290,7 +290,7 @@ var _ = Describe("HvpaControllerRefManager", func() {
 
 				return labels.NewSelector().Add(*req)
 			}(),
-			hvpav1alpha1.SchemeGroupVersionHvpa.WithKind("Hvpa"),
+			hvpav1alpha2.SchemeGroupVersionHvpa.WithKind("Hvpa"),
 			func() error { return nil },
 		)
 	})
@@ -323,7 +323,7 @@ var _ = Describe("HvpaControllerRefManager", func() {
 							},
 							OwnerReferences: []metav1.OwnerReference{
 								{
-									APIVersion:         hvpav1alpha1.SchemeGroupVersionHvpa.String(),
+									APIVersion:         hvpav1alpha2.SchemeGroupVersionHvpa.String(),
 									Kind:               "Hvpa",
 									Name:               controller.GetName(),
 									UID:                controller.GetUID(),
@@ -451,7 +451,7 @@ var _ = Describe("HvpaControllerRefManager", func() {
 							},
 							OwnerReferences: []metav1.OwnerReference{
 								{
-									APIVersion:         hvpav1alpha1.SchemeGroupVersionHvpa.String(),
+									APIVersion:         hvpav1alpha2.SchemeGroupVersionHvpa.String(),
 									Kind:               "Hvpa",
 									Name:               controller.GetName(),
 									UID:                controller.GetUID(),

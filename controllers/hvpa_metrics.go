@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"math"
 
-	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha2 "github.com/gardener/hvpa-controller/api/v1alpha2"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -89,7 +89,7 @@ func (r *HvpaReconciler) AddMetrics(registerMetrics bool) error {
 		},
 		[]string{labelReason},
 	)
-	for _, reason := range []hvpav1alpha1.BlockingReason{hvpav1alpha1.BlockingReasonParadoxicalScaling, hvpav1alpha1.BlockingReasonMaintenanceWindow, hvpav1alpha1.BlockingReasonMinChange, hvpav1alpha1.BlockingReasonStabilizationWindow, hvpav1alpha1.BlockingReasonUpdatePolicy} {
+	for _, reason := range []hvpav1alpha2.BlockingReason{hvpav1alpha2.BlockingReasonParadoxicalScaling, hvpav1alpha2.BlockingReasonMaintenanceWindow, hvpav1alpha2.BlockingReasonMinChange, hvpav1alpha2.BlockingReasonStabilizationWindow, hvpav1alpha2.BlockingReasonUpdatePolicy} {
 		m.aggrBlockedScalingsTotal.WithLabelValues(string(reason)).Set(0)
 	}
 	allCollectors = append(allCollectors, m.aggrBlockedScalingsTotal)
@@ -212,7 +212,7 @@ func copyLabels(s prometheus.Labels) prometheus.Labels {
 	return t
 }
 
-func basicLabels(hvpa *hvpav1alpha1.Hvpa) prometheus.Labels {
+func basicLabels(hvpa *hvpav1alpha2.Hvpa) prometheus.Labels {
 	return prometheus.Labels{
 		labelNamespace:     hvpa.Namespace,
 		labelName:          hvpa.Name,
@@ -221,12 +221,12 @@ func basicLabels(hvpa *hvpav1alpha1.Hvpa) prometheus.Labels {
 	}
 }
 
-func basicDetailedLabels(hvpa *hvpav1alpha1.Hvpa) prometheus.Labels {
+func basicDetailedLabels(hvpa *hvpav1alpha2.Hvpa) prometheus.Labels {
 	l := basicLabels(hvpa)
 
 	// Initialise to default update mode
-	l[labelScaleUpUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
-	l[labelScaleDownUpdatePolicy] = hvpav1alpha1.UpdateModeDefault
+	l[labelScaleUpUpdatePolicy] = hvpav1alpha2.UpdateModeDefault
+	l[labelScaleDownUpdatePolicy] = hvpav1alpha2.UpdateModeDefault
 
 	if hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode != nil {
 		l[labelScaleUpUpdatePolicy] = *hvpa.Spec.ScaleUp.UpdatePolicy.UpdateMode
@@ -238,13 +238,13 @@ func basicDetailedLabels(hvpa *hvpav1alpha1.Hvpa) prometheus.Labels {
 	return l
 }
 
-func basicBlockedLabels(hvpa *hvpav1alpha1.Hvpa, reason hvpav1alpha1.BlockingReason) prometheus.Labels {
+func basicBlockedLabels(hvpa *hvpav1alpha2.Hvpa, reason hvpav1alpha2.BlockingReason) prometheus.Labels {
 	l := basicDetailedLabels(hvpa)
 	l[labelReason] = string(reason)
 	return l
 }
 
-func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaStatus *hvpav1alpha1.VpaStatus, baseLabelsFn func() prometheus.Labels) {
+func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaStatus *hvpav1alpha2.VpaStatus, baseLabelsFn func() prometheus.Labels) {
 	if gv == nil || vpaStatus == nil || vpaStatus.ContainerResources == nil {
 		return
 	}
@@ -270,7 +270,7 @@ func updateVPARecommendations(gv *prometheus.GaugeVec, containers []string, vpaS
 		}
 	}
 
-	recoMap := make(map[string]*hvpav1alpha1.ContainerResources)
+	recoMap := make(map[string]*hvpav1alpha2.ContainerResources)
 	for i := range vpaStatus.ContainerResources {
 		cr := &vpaStatus.ContainerResources[i]
 		recoMap[cr.ContainerName] = cr
@@ -344,7 +344,7 @@ func (r *HvpaReconciler) getContainers(target runtime.Object) ([]string, error) 
 	return containers, nil
 }
 
-func (r *HvpaReconciler) deleteScalingMetrics(hvpa *hvpav1alpha1.Hvpa, target runtime.Object) error {
+func (r *HvpaReconciler) deleteScalingMetrics(hvpa *hvpav1alpha2.Hvpa, target runtime.Object) error {
 	if hvpa == nil || hvpa.Spec.TargetRef == nil {
 		log.V(3).Info("Invalid HVPA resource", "hvpa", hvpa)
 		return nil
@@ -378,7 +378,7 @@ func (r *HvpaReconciler) deleteScalingMetrics(hvpa *hvpav1alpha1.Hvpa, target ru
 			return basicDetailedLabels(hvpa)
 		})
 
-		for _, reason := range hvpav1alpha1.BlockingReasons {
+		for _, reason := range hvpav1alpha2.BlockingReasons {
 			if m.statusBlockedHPACurrentReplicas != nil {
 				m.statusBlockedHPACurrentReplicas.Delete(basicBlockedLabels(hvpa, reason))
 			}
@@ -394,7 +394,7 @@ func (r *HvpaReconciler) deleteScalingMetrics(hvpa *hvpav1alpha1.Hvpa, target ru
 	return nil
 }
 
-func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled, vpaScaled bool, target runtime.Object) error {
+func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha2.Hvpa, hpaScaled, vpaScaled bool, target runtime.Object) error {
 	if hvpa == nil || hvpa.Spec.TargetRef == nil {
 		log.V(3).Info("Invalid HVPA resource", "hvpa", hvpa)
 		return nil
@@ -449,12 +449,12 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 				return basicDetailedLabels(hvpa)
 			})
 		} else {
-			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &hvpav1alpha1.VpaStatus{}, func() prometheus.Labels {
+			updateVPARecommendations(m.statusAppliedVPARecommendation, containers, &hvpav1alpha2.VpaStatus{}, func() prometheus.Labels {
 				return basicDetailedLabels(hvpa)
 			})
 		}
 
-		blockedMap := make(map[hvpav1alpha1.BlockingReason]*hvpav1alpha1.BlockedScaling)
+		blockedMap := make(map[hvpav1alpha2.BlockingReason]*hvpav1alpha2.BlockedScaling)
 		for _, blocked := range hvpa.Status.LastBlockedScaling {
 			if blocked == nil {
 				log.V(4).Info("Invalid blocked scaling entry", "hvpa", hvpa)
@@ -463,7 +463,7 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 			blockedMap[blocked.Reason] = blocked
 		}
 
-		for _, blockingReason := range hvpav1alpha1.BlockingReasons {
+		for _, blockingReason := range hvpav1alpha2.BlockingReasons {
 			blocked, ok := blockedMap[blockingReason]
 			if m.statusBlockedHPACurrentReplicas != nil {
 				if ok {
@@ -485,7 +485,7 @@ func (r *HvpaReconciler) updateScalingMetrics(hvpa *hvpav1alpha1.Hvpa, hpaScaled
 						return basicBlockedLabels(hvpa, blockingReason)
 					})
 				} else {
-					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &hvpav1alpha1.VpaStatus{}, func() prometheus.Labels {
+					updateVPARecommendations(m.statusBlockedVPARecommendation, containers, &hvpav1alpha2.VpaStatus{}, func() prometheus.Labels {
 						return basicBlockedLabels(hvpa, blockingReason)
 					})
 				}

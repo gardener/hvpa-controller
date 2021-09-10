@@ -14,7 +14,7 @@ github.com/fatih/color
 github.com/fsnotify/fsnotify
 # github.com/gardener/hvpa-controller/api v0.0.0 => ./api
 ## explicit
-github.com/gardener/hvpa-controller/api/v1alpha1
+github.com/gardener/hvpa-controller/api/v1alpha2
 # github.com/go-logr/logr v0.4.0
 github.com/go-logr/logr
 # github.com/go-logr/zapr v0.4.0
@@ -274,6 +274,7 @@ google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
 google.golang.org/protobuf/types/known/timestamppb
 # gopkg.in/inf.v0 v0.9.1
+## explicit
 gopkg.in/inf.v0
 # gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7
 gopkg.in/tomb.v1
@@ -524,6 +525,7 @@ k8s.io/klog/v2
 # k8s.io/kube-openapi v0.0.0-20210305001622-591a79e4bda7
 k8s.io/kube-openapi/pkg/util/proto
 # k8s.io/utils v0.0.0-20210722164352-7f3ee0f31471
+## explicit
 k8s.io/utils/buffer
 k8s.io/utils/integer
 k8s.io/utils/pointer

@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
-	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha2 "github.com/gardener/hvpa-controller/api/v1alpha2"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -34,11 +34,11 @@ import (
 //       see https://github.com/kubernetes/kubernetes/issues/21479
 type updateHpaFunc func(hpa *autoscaling.HorizontalPodAutoscaler)
 
-func (r *HvpaReconciler) claimHpas(hvpa *hvpav1alpha1.Hvpa, selector labels.Selector, hpas *autoscaling.HorizontalPodAutoscalerList) ([]*autoscaling.HorizontalPodAutoscaler, error) {
+func (r *HvpaReconciler) claimHpas(hvpa *hvpav1alpha2.Hvpa, selector labels.Selector, hpas *autoscaling.HorizontalPodAutoscalerList) ([]*autoscaling.HorizontalPodAutoscaler, error) {
 	// If any adoptions are attempted, we should first recheck for deletion with
 	// an uncached quorum read sometime after listing Machines (see #42639).
 	canAdoptFunc := RecheckDeletionTimestamp(func() (metav1.Object, error) {
-		foundHvpa := &hvpav1alpha1.Hvpa{}
+		foundHvpa := &hvpav1alpha2.Hvpa{}
 		err := r.Get(context.TODO(), types.NamespacedName{Name: hvpa.Name, Namespace: hvpa.Namespace}, foundHvpa)
 		if err != nil {
 			return nil, err
@@ -53,7 +53,7 @@ func (r *HvpaReconciler) claimHpas(hvpa *hvpav1alpha1.Hvpa, selector labels.Sele
 }
 
 // The returned bool value can be used to tell if the hpa is actually updated.
-func hpaSpecNeedChange(hvpa *hvpav1alpha1.Hvpa, hpa *autoscaling.HorizontalPodAutoscaler) (*autoscaling.HorizontalPodAutoscaler, bool) {
+func hpaSpecNeedChange(hvpa *hvpav1alpha2.Hvpa, hpa *autoscaling.HorizontalPodAutoscaler) (*autoscaling.HorizontalPodAutoscaler, bool) {
 	desiredHpa, _ := getHpaFromHvpa(hvpa)
 
 	return desiredHpa, !reflect.DeepEqual(&desiredHpa.Spec, &hpa.Spec)
@@ -84,7 +84,7 @@ func (r *HvpaReconciler) UpdateHpaWithRetries(namespace, name string, applyUpdat
 	return hpa, retryErr
 }
 
-func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutoscaler, hvpa *hvpav1alpha1.Hvpa) error {
+func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutoscaler, hvpa *hvpav1alpha2.Hvpa) error {
 	for _, hpa := range hpaList {
 		if desiredHpa, hpaChanged := hpaSpecNeedChange(hvpa, hpa); hpaChanged {
 			_, err := r.UpdateHpaWithRetries(hpa.Namespace, hpa.Name,
@@ -100,7 +100,7 @@ func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutosca
 	return nil
 }
 
-func getHpaFromHvpa(hvpa *hvpav1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscaler, error) {
+func getHpaFromHvpa(hvpa *hvpav1alpha2.Hvpa) (*autoscaling.HorizontalPodAutoscaler, error) {
 	metadata := hvpa.Spec.Hpa.Template.ObjectMeta.DeepCopy()
 
 	if ownerRef := metadata.GetOwnerReferences(); len(ownerRef) != 0 {
@@ -126,7 +126,7 @@ func getHpaFromHvpa(hvpa *hvpav1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscal
 			MaxReplicas: hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
 			MinReplicas: hvpa.Spec.Hpa.Template.Spec.MinReplicas,
 			ScaleTargetRef: autoscaling.CrossVersionObjectReference{
-				APIVersion: hvpav1alpha1.SchemeGroupVersionHvpa.String(),
+				APIVersion: hvpav1alpha2.SchemeGroupVersionHvpa.String(),
 				Kind:       "Hvpa",
 				Name:       hvpa.Name,
 			},

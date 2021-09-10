@@ -14,10 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package v1alpha2
 
 import (
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 )
@@ -86,22 +88,6 @@ type HpaTemplateSpec struct {
 	Metrics []autoscaling.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,rep,name=metrics"`
 }
 
-// WeightBasedScalingInterval defines the interval of replica counts in which VpaWeight is applied to VPA scaling
-type WeightBasedScalingInterval struct {
-	// VpaWeight defines the weight (in percentage) to be given to VPA's recommendationd for the interval of number of replicas provided
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=100
-	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
-	// StartReplicaCount is the number of replicas from which VpaWeight is applied to VPA scaling
-	// If this field is not provided, it will default to minReplicas of HPA
-	// +optional
-	StartReplicaCount int32 `json:"startReplicaCount,omitempty"`
-	// LastReplicaCount is the number of replicas till which VpaWeight is applied to VPA scaling
-	// If this field is not provided, it will default to maxReplicas of HPA
-	// +optional
-	LastReplicaCount int32 `json:"lastReplicaCount,omitempty"`
-}
-
 // VpaSpec defines spec for VPA
 type VpaSpec struct {
 	// Selector is a label query that should match VPA.
@@ -113,12 +99,6 @@ type VpaSpec struct {
 
 	// Deploy defines whether the VPA is deployed or not
 	Deploy bool `json:"deploy,omitempty"`
-
-	// ScaleUp defines the parameters for scale up
-	ScaleUp ScaleType `json:"scaleUp,omitempty"`
-
-	// ScaleDown defines the parameters for scale down
-	ScaleDown ScaleType `json:"scaleDown,omitempty"`
 
 	// Template is the object that describes the VPA that will be created.
 	// +optional
@@ -155,6 +135,36 @@ type ScaleParams struct {
 	Replicas ChangeParams `json:"replicas,omitempty"`
 }
 
+// ScaleInterval defines the scaling interval for resources
+type ScaleInterval struct {
+	// Scale parameters for CPU
+	// +optional
+	MaxCPU *resource.Quantity `json:"maxCpu,omitempty"`
+	// Scale parameters for memory
+	// +optional
+	MaxMemory *resource.Quantity `json:"maxMemory,omitempty"`
+	// Scale patameters for replicas
+	MaxReplicas int32 `json:"maxReplicas,omitempty"`
+	// This field defines how to compute multiple effective scaling intervals from the total
+	// resource interval defined by this interval.
+	// Default is 'linear'
+	// +optional
+	EffectiveIntervalExtrapolation *EffectiveIntervalExtrapolationType `json:"effectiveIntervalExtrapolation,omitempty"`
+}
+
+// EffectiveIntervalExtrapolationType - Defines type of interval
+type EffectiveIntervalExtrapolationType string
+
+const (
+	// EffectiveIntervalExtrapolicationLinear - Linearly divide the specified wider scaling interval into effective scaling
+	// intervals per replica possible by dividing the range of the total resources
+	// specified in the interval linearly (equally) among each possible replica.
+	EffectiveIntervalExtrapolicationLinear = "linear"
+	// EffectiveIntervalExtrapolicationHorizontalOnly - Special case of `linear` extrapolation which also indicates that only
+	// horizontal scaling is to be done using the computed `EffectiveScalingInterval`s.
+	EffectiveIntervalExtrapolicationHorizontalOnly = "horizontalOnly"
+)
+
 // VpaTemplate defines the template for VPA
 type VpaTemplate struct {
 	// Metadata of the pods created from this template.
@@ -189,21 +199,23 @@ type HpaSpec struct {
 	// Deploy defines whether the HPA is deployed or not
 	Deploy bool `json:"deploy,omitempty"`
 
-	// ScaleUp defines the parameters for scale up
-	ScaleUp ScaleType `json:"scaleUp,omitempty"`
-
-	// ScaleDown defines the parameters for scale down
-	ScaleDown ScaleType `json:"scaleDown,omitempty"`
-
 	// Template is the object that describes the HPA that will be created.
 	// +optional
 	Template HpaTemplate `json:"template,omitempty"`
 }
 
+// ResourceChangeParams specifies resource-wise ChangeParams
+type ResourceChangeParams map[corev1.ResourceName]ChangeParams
+
 // HvpaSpec defines the desired state of Hvpa
 type HvpaSpec struct {
 	// Replicas is the number of replicas of target resource
+	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// BaseResourcesPerReplica specifies base resources to be budgeted per replica
+	// while scaling horizontally
+	BaseResourcesPerReplica ResourceChangeParams `json:"baseResourcesPerReplica,omitempty"`
 
 	// Hpa defines the spec of HPA
 	Hpa HpaSpec `json:"hpa,omitempty"`
@@ -211,9 +223,22 @@ type HvpaSpec struct {
 	// Vpa defines the spec of VPA
 	Vpa VpaSpec `json:"vpa,omitempty"`
 
-	// WeightBasedScalingIntervals defines the intervals of replica counts, and the weights for scaling a deployment vertically
-	// If there are overlapping intervals, then the vpaWeight will be taken from the first matching interval
-	WeightBasedScalingIntervals []WeightBasedScalingInterval `json:"weightBasedScalingIntervals,omitempty"`
+	// ScaleUp defines the parameters for scale up
+	ScaleUp ScaleType `json:"scaleUp,omitempty"`
+
+	// ScaleDown defines the parameters for scale down
+	ScaleDown ScaleType `json:"scaleDown,omitempty"`
+
+	// ScalingIntervals indirectly define potentially multiple intervals in total
+	// resources for each of which there is a corresponding well-defined single desired
+	// "replicas" value.
+	// The intervals are expected not to have gaps and any overlap is determinied by
+	// explicit ScalingIntervalsOverlap configuration or any other implicit form of
+	// hysteresis.
+	ScaleIntervals []ScaleInterval `json:"scaleIntervals,omitempty"`
+
+	// ScalingIntervalsOverlap is used to compute the effective scaling intervals
+	ScalingIntervalsOverlap ResourceChangeParams `json:"scalingIntervalsOverlap,omitempty"`
 
 	// TargetRef points to the controller managing the set of pods for the autoscaler to control
 	TargetRef *autoscaling.CrossVersionObjectReference `json:"targetRef"`
@@ -233,16 +258,6 @@ type ChangeParams struct {
 	Percentage *int32 `json:"percentage,omitempty"`
 }
 
-// VpaWeight - weight to provide to VPA scaling
-type VpaWeight int32
-
-const (
-	// VpaOnly - only vertical scaling
-	VpaOnly VpaWeight = 100
-	// HpaOnly - only horizontal scaling
-	HpaOnly VpaWeight = 0
-)
-
 // LastError has detailed information of the error
 type LastError struct {
 	// Description of the error
@@ -261,23 +276,17 @@ type HvpaStatus struct {
 	Replicas *int32 `json:"replicas,omitempty"`
 	// TargetSelector is the string form of the label selector of HPA. This is required for HPA to work with scale subresource.
 	TargetSelector *string `json:"targetSelector,omitempty"`
-	// Current HPA UpdatePolicy set in the spec
-	HpaScaleUpUpdatePolicy *UpdatePolicy `json:"hpaScaleUpUpdatePolicy,omitempty"`
-	// Current HPA UpdatePolicy set in the spec
-	HpaScaleDownUpdatePolicy *UpdatePolicy `json:"hpaScaleDownUpdatePolicy,omitempty"`
-	// Current VPA UpdatePolicy set in the spec
-	VpaScaleUpUpdatePolicy *UpdatePolicy `json:"vpaScaleUpUpdatePolicy,omitempty"`
-	// Current VPA UpdatePolicy set in the spec
-	VpaScaleDownUpdatePolicy *UpdatePolicy `json:"vpaScaleDownUpdatePolicy,omitempty"`
+	// Current UpdatePolicy set in the spec
+	ScaleUpUpdatePolicy *UpdatePolicy `json:"scaleUpUpdatePolicy,omitempty"`
+	// Current UpdatePolicy set in the spec
+	ScaleDownUpdatePolicy *UpdatePolicy `json:"scaleDownUpdatePolicy,omitempty"`
 
-	HpaWeight VpaWeight `json:"hpaWeight,omitempty"`
-	VpaWeight VpaWeight `json:"vpaWeight,omitempty"`
-
-	// Override scale up stabilization window
+	// Override scale up stabilization
 	OverrideScaleUpStabilization bool `json:"overrideScaleUpStabilization,omitempty"`
 
-	LastBlockedScaling []*BlockedScaling `json:"lastBlockedScaling,omitempty"`
-	LastScaling        ScalingStatus     `json:"lastScaling,omitempty"`
+	LastBlockedScaling           []*BlockedScaling `json:"lastBlockedScaling,omitempty"`
+	LastScaling                  ScalingStatus     `json:"lastScaling,omitempty"`
+	LastProcessedRecommendations ScalingStatus     `json:"lastProcessedRecommendations,omitempty"`
 
 	// LastError has details of any errors that occurred
 	LastError *LastError `json:"lastError,omitempty"`
@@ -293,10 +302,10 @@ const (
 	BlockingReasonMaintenanceWindow BlockingReason = "MaintenanceWindow"
 	// BlockingReasonUpdatePolicy - Update policy doesn't support scaling
 	BlockingReasonUpdatePolicy BlockingReason = "UpdatePolicy"
-	// BlockingReasonWeight  - VpaWeight doesn't support scaling
-	BlockingReasonWeight BlockingReason = "Weight"
 	// BlockingReasonMinChange - Min change doesn't support scaling
 	BlockingReasonMinChange BlockingReason = "MinChange"
+	// BlockingReasonParadoxicalScaling - paradoxical scaling
+	BlockingReasonParadoxicalScaling BlockingReason = "ParadoxicalScaling"
 )
 
 // BlockingReasons lists all the blocking reasons
@@ -305,7 +314,6 @@ var BlockingReasons = [...]BlockingReason{
 	BlockingReasonMinChange,
 	BlockingReasonStabilizationWindow,
 	BlockingReasonUpdatePolicy,
-	BlockingReasonWeight,
 }
 
 // BlockedScaling defines the details for blocked scaling
@@ -316,15 +324,27 @@ type BlockedScaling struct {
 
 // ScalingStatus defines the status of scaling
 type ScalingStatus struct {
-	LastScaleTime *metav1.Time                        `json:"lastScaleTime,omitempty"`
-	HpaStatus     HpaStatus                           `json:"hpaStatus,omitempty" protobuf:"bytes,1,opt,name=hpaStatus"`
-	VpaStatus     vpa_api.VerticalPodAutoscalerStatus `json:"vpaStatus,omitempty" protobuf:"bytes,2,opt,name=vpaStatus"`
+	LastUpdated *metav1.Time `json:"lastUpdated,omitempty"`
+	HpaStatus   HpaStatus    `json:"hpaStatus,omitempty" protobuf:"bytes,1,opt,name=hpaStatus"`
+	VpaStatus   VpaStatus    `json:"vpaStatus,omitempty" protobuf:"bytes,2,opt,name=vpaStatus"`
 }
 
 // HpaStatus defines the status of HPA
 type HpaStatus struct {
 	CurrentReplicas int32 `json:"currentReplicas,omitempty"`
 	DesiredReplicas int32 `json:"desiredReplicas,omitempty"`
+}
+
+// VpaStatus defines the status of VPA
+type VpaStatus struct {
+	ContainerResources []ContainerResources `json:"containerResources,omitempty"`
+}
+
+// ContainerResources has the details of the container resources
+type ContainerResources struct {
+	// Name of the container.
+	ContainerName string                      `json:"containerName,omitempty" protobuf:"bytes,1,opt,name=containerName"`
+	Resources     corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // Hvpa is the Schema for the hvpas API

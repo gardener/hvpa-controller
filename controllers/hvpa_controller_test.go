@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"time"
 
-	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha2 "github.com/gardener/hvpa-controller/api/v1alpha2"
 	mockclient "github.com/gardener/hvpa-controller/mock/controller-runtime/client"
 	"github.com/gardener/hvpa-controller/utils"
 	"github.com/golang/mock/gomock"
@@ -105,23 +105,23 @@ var (
 	}
 	target = newTarget("deployment", unscaled, 2)
 
-	minChange = hvpav1alpha1.ScaleParams{
-		CPU: hvpav1alpha1.ChangeParams{
+	minChange = hvpav1alpha2.ScaleParams{
+		CPU: hvpav1alpha2.ChangeParams{
 			Value:      stringPtr("100m"),
 			Percentage: int32Ptr(80),
 		},
-		Memory: hvpav1alpha1.ChangeParams{
+		Memory: hvpav1alpha2.ChangeParams{
 			Value:      stringPtr("100M"),
 			Percentage: int32Ptr(80),
 		},
 	}
 
-	limitScale = hvpav1alpha1.ScaleParams{
-		CPU: hvpav1alpha1.ChangeParams{
+	limitScale = hvpav1alpha2.ScaleParams{
+		CPU: hvpav1alpha2.ChangeParams{
 			Value:      stringPtr("1"),
 			Percentage: int32Ptr(80),
 		},
-		Memory: hvpav1alpha1.ChangeParams{
+		Memory: hvpav1alpha2.ChangeParams{
 			Value:      stringPtr("1"),
 			Percentage: int32Ptr(80),
 		},
@@ -160,7 +160,7 @@ var _ = Describe("setup", func() {
 
 		Describe("reconcileHpa", func() {
 			var (
-				hvpa                    *hvpav1alpha1.Hvpa
+				hvpa                    *hvpav1alpha2.Hvpa
 				reconcileHpaStatus      *autoscaling.HorizontalPodAutoscalerStatus
 				reconcileErr            error
 				matchReconcileHpaStatus gomegatypes.GomegaMatcher
@@ -339,7 +339,7 @@ var _ = Describe("setup", func() {
 
 								BeforeEach(func() {
 									hvpaGetCall = cl.EXPECT().Get(gomock.Any(), client.ObjectKeyFromObject(hvpa), gomock.AssignableToTypeOf(hvpa)).DoAndReturn(
-										func(_ context.Context, _ types.NamespacedName, target *hvpav1alpha1.Hvpa) error {
+										func(_ context.Context, _ types.NamespacedName, target *hvpav1alpha2.Hvpa) error {
 											if hvpaGetErr != nil {
 												return hvpaGetErr
 											}
@@ -686,7 +686,7 @@ var _ = Describe("setup", func() {
 
 		Describe("reconcileVpa", func() {
 			var (
-				hvpa                    *hvpav1alpha1.Hvpa
+				hvpa                    *hvpav1alpha2.Hvpa
 				reconcileVpaStatus      *vpa_api.VerticalPodAutoscalerStatus
 				reconcileErr            error
 				matchReconcileVpaStatus gomegatypes.GomegaMatcher
@@ -865,7 +865,7 @@ var _ = Describe("setup", func() {
 
 								BeforeEach(func() {
 									hvpaGetCall = cl.EXPECT().Get(gomock.Any(), client.ObjectKeyFromObject(hvpa), gomock.AssignableToTypeOf(hvpa)).DoAndReturn(
-										func(_ context.Context, _ types.NamespacedName, target *hvpav1alpha1.Hvpa) error {
+										func(_ context.Context, _ types.NamespacedName, target *hvpav1alpha2.Hvpa) error {
 											if hvpaGetErr != nil {
 												return hvpaGetErr
 											}
@@ -1214,7 +1214,7 @@ var _ = Describe("setup", func() {
 
 		Describe("doScaleTarget", func() {
 			var (
-				hvpa                                                   *hvpav1alpha1.Hvpa
+				hvpa                                                   *hvpav1alpha2.Hvpa
 				targetName                                             = "target"
 				target                                                 *unstructured.Unstructured
 				targetTyped                                            client.Object
@@ -1613,10 +1613,10 @@ var _ = Describe("setup", func() {
 
 		Describe("applyLastApplied", func() {
 			var (
-				hvpa                   *hvpav1alpha1.Hvpa
+				hvpa                   *hvpav1alpha2.Hvpa
 				targetName             string
 				target, expectedTarget *appsv1.Deployment
-				lastApplied            *hvpav1alpha1.ScalingStatus
+				lastApplied            *hvpav1alpha2.ScalingStatus
 				matchErr               gomegatypes.GomegaMatcher
 			)
 
@@ -1625,7 +1625,7 @@ var _ = Describe("setup", func() {
 				hvpa = newHvpa("instance", targetName, "instance", minChange)
 				target = newTarget(targetName, unscaled, 2)
 				expectedTarget = target.DeepCopy()
-				lastApplied = &hvpav1alpha1.ScalingStatus{}
+				lastApplied = &hvpav1alpha2.ScalingStatus{}
 			})
 
 			JustBeforeEach(func() {
@@ -1651,7 +1651,7 @@ var _ = Describe("setup", func() {
 							tc = &target.Spec.Template.Spec.Containers[i]
 						)
 
-						lastApplied.VpaStatus.ContainerResources = append(lastApplied.VpaStatus.ContainerResources, hvpav1alpha1.ContainerResources{
+						lastApplied.VpaStatus.ContainerResources = append(lastApplied.VpaStatus.ContainerResources, hvpav1alpha2.ContainerResources{
 							ContainerName: tc.Name,
 							Resources:     v1.ResourceRequirements{},
 						})
@@ -1674,7 +1674,7 @@ var _ = Describe("setup", func() {
 							tc = &target.Spec.Template.Spec.Containers[i]
 						)
 
-						lastApplied.VpaStatus.ContainerResources = append(lastApplied.VpaStatus.ContainerResources, hvpav1alpha1.ContainerResources{
+						lastApplied.VpaStatus.ContainerResources = append(lastApplied.VpaStatus.ContainerResources, hvpav1alpha2.ContainerResources{
 							ContainerName: tc.Name,
 							Resources:     scaledLarge,
 						})
@@ -1723,17 +1723,17 @@ var _ = Describe("setup", func() {
 			Describe("HVPA instance", func() {
 				var (
 					targetName     = "target"
-					instance       *hvpav1alpha1.Hvpa
+					instance       *hvpav1alpha2.Hvpa
 					instanceGetErr error
 					instanceGet    *gomock.Call
-					expectedStatus *hvpav1alpha1.HvpaStatus
+					expectedStatus *hvpav1alpha2.HvpaStatus
 				)
 
 				BeforeEach(func() {
 					instance = newHvpa("instance", targetName, "instance", minChange)
 					instanceKey = client.ObjectKeyFromObject(instance)
 					instanceGet = mockGet(cl, instance, func() error { return instanceGetErr })
-					expectedStatus = &hvpav1alpha1.HvpaStatus{}
+					expectedStatus = &hvpav1alpha2.HvpaStatus{}
 				})
 
 				AfterEach(func() {
@@ -1878,37 +1878,6 @@ var _ = Describe("setup", func() {
 							Describe("when target get succeeds", func() {
 								var (
 									expectedTarget *appsv1.Deployment
-
-									matcherForResourceList = func(rl v1.ResourceList) gomegatypes.GomegaMatcher {
-										if rl == nil {
-											return BeNil()
-										}
-
-										if len(rl) <= 0 {
-											return BeEmpty()
-										}
-
-										var r = &KeysMatcher{IgnoreExtras: true, Keys: Keys{}}
-
-										for k, v := range rl {
-											r.Keys[k] = EqualQuantity(&v)
-										}
-
-										return r
-									}
-
-									matcherForResources = func(res *v1.ResourceRequirements) gomegatypes.GomegaMatcher {
-										if res == nil {
-											return BeNil()
-										}
-
-										var r = &FieldsMatcher{IgnoreExtras: true, Fields: Fields{}}
-
-										r.Fields["Requests"] = matcherForResourceList(res.Requests)
-										r.Fields["Limits"] = matcherForResourceList(res.Limits)
-
-										return r
-									}
 								)
 
 								BeforeEach(func() {
@@ -1998,8 +1967,8 @@ var _ = Describe("setup", func() {
 														var hvpaStatusUpdateErr error
 
 														BeforeEach(func() {
-															var hvpaStatusUpdate = sw.EXPECT().Update(gomock.Any(), gomock.AssignableToTypeOf(&hvpav1alpha1.Hvpa{})).DoAndReturn(
-																func(_ context.Context, src *hvpav1alpha1.Hvpa) error {
+															var hvpaStatusUpdate = sw.EXPECT().Update(gomock.Any(), gomock.AssignableToTypeOf(&hvpav1alpha2.Hvpa{})).DoAndReturn(
+																func(_ context.Context, src *hvpav1alpha2.Hvpa) error {
 																	if hvpaStatusUpdateErr != nil {
 																		return hvpaStatusUpdateErr
 																	}
@@ -2184,13 +2153,13 @@ var _ = Describe("setup", func() {
 															BeforeEach(func() {
 																var ec = &expectedTarget.Spec.Template.Spec.Containers[0]
 
-																expectedStatus.LastProcessedRecommendations = hvpav1alpha1.ScalingStatus{
-																	HpaStatus: hvpav1alpha1.HpaStatus{
+																expectedStatus.LastProcessedRecommendations = hvpav1alpha2.ScalingStatus{
+																	HpaStatus: hvpav1alpha2.HpaStatus{
 																		CurrentReplicas: hpaStatus.CurrentReplicas,
 																		DesiredReplicas: hpaStatus.DesiredReplicas,
 																	},
-																	VpaStatus: hvpav1alpha1.VpaStatus{
-																		ContainerResources: []hvpav1alpha1.ContainerResources{
+																	VpaStatus: hvpav1alpha2.VpaStatus{
+																		ContainerResources: []hvpav1alpha2.ContainerResources{
 																			{
 																				ContainerName: ec.Name,
 																				Resources:     *ec.Resources.DeepCopy(),
@@ -2199,9 +2168,9 @@ var _ = Describe("setup", func() {
 																	},
 																}
 
-																expectedStatus.LastScaling = hvpav1alpha1.ScalingStatus{
-																	VpaStatus: hvpav1alpha1.VpaStatus{
-																		ContainerResources: []hvpav1alpha1.ContainerResources{
+																expectedStatus.LastScaling = hvpav1alpha2.ScalingStatus{
+																	VpaStatus: hvpav1alpha2.VpaStatus{
+																		ContainerResources: []hvpav1alpha2.ContainerResources{
 																			{
 																				ContainerName: ec.Name,
 																				Resources: v1.ResourceRequirements{
@@ -2299,13 +2268,13 @@ var _ = Describe("setup", func() {
 
 						Describe("getting HVPA", func() {
 							var (
-								hvpa        *hvpav1alpha1.Hvpa
+								hvpa        *hvpav1alpha2.Hvpa
 								hvpaGetErr  error
 								hvpaGetCall *gomock.Call
 							)
 
 							BeforeEach(func() {
-								hvpa = &hvpav1alpha1.Hvpa{
+								hvpa = &hvpav1alpha2.Hvpa{
 									ObjectMeta: metav1.ObjectMeta{
 										Name:      hvpaName,
 										Namespace: ns,
@@ -2313,7 +2282,7 @@ var _ = Describe("setup", func() {
 								}
 
 								hvpaGetCall = cl.EXPECT().Get(gomock.Any(), client.ObjectKeyFromObject(hvpa), gomock.AssignableToTypeOf(hvpa)).DoAndReturn(
-									func(_ context.Context, _ types.NamespacedName, target *hvpav1alpha1.Hvpa) error {
+									func(_ context.Context, _ types.NamespacedName, target *hvpav1alpha2.Hvpa) error {
 										if hvpaGetErr != nil {
 											return hvpaGetErr
 										}
@@ -2464,7 +2433,7 @@ var _ = Describe("setup", func() {
 
 																BeforeEach(func() {
 																	sw.EXPECT().Update(gomock.Any(), gomock.AssignableToTypeOf(hvpa)).DoAndReturn(
-																		func(_ context.Context, src *hvpav1alpha1.Hvpa) error {
+																		func(_ context.Context, src *hvpav1alpha2.Hvpa) error {
 																			if hvpaStatusUpdateErr != nil {
 																				return hvpaStatusUpdateErr
 																			}
@@ -2641,7 +2610,7 @@ var _ = Describe("setup", func() {
 var _ = Describe("nil ResourceList", func() {
 	var (
 		rl                   v1.ResourceList
-		matchDefaultQuantity = EqualQuantity(&resource.Quantity{})
+		matchDefaultQuantity = EqualQuantity(resource.Quantity{})
 	)
 
 	BeforeEach(func() {
@@ -2657,12 +2626,20 @@ var _ = Describe("nil ResourceList", func() {
 	})
 })
 
+var _ = Describe("empty resource.Quantity", func() {
+	var q = &resource.Quantity{}
+
+	It("should be zero", func() {
+		Expect(q.IsZero()).To(BeTrue())
+	})
+})
+
 var mgr manager.Manager
 
 var _ = XDescribe("#TestReconcile", func() {
 
 	DescribeTable("##ReconcileHPAandVPA",
-		func(instance *hvpav1alpha1.Hvpa) {
+		func(instance *hvpav1alpha2.Hvpa) {
 			deploytest := newTarget("deploy-test-1", unscaled, 2)
 
 			c := mgr.GetClient()
@@ -2682,7 +2659,7 @@ var _ = XDescribe("#TestReconcile", func() {
 			testScalingOnVPAReco(c, vpa, instance, deploytest)
 
 			// Status cleanup to prevent blocking due to stabilization window
-			hvpa := &hvpav1alpha1.Hvpa{}
+			hvpa := &hvpav1alpha2.Hvpa{}
 			Eventually(func() error {
 				if err = c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
 					return err
@@ -2712,7 +2689,7 @@ var _ = XDescribe("#TestReconcile", func() {
 
 	Describe("#ScaleTests", func() {
 		type setup struct {
-			hvpa      *hvpav1alpha1.Hvpa
+			hvpa      *hvpav1alpha2.Hvpa
 			hpaStatus *autoscaling.HorizontalPodAutoscalerStatus
 			vpaStatus *vpa_api.VerticalPodAutoscalerStatus
 			target    *appsv1.Deployment
@@ -2721,15 +2698,15 @@ var _ = XDescribe("#TestReconcile", func() {
 			desiredReplicas int32
 			resourceChange  bool
 			resources       v1.ResourceRequirements
-			blockedReasons  []hvpav1alpha1.BlockingReason
+			blockedReasons  []hvpav1alpha2.BlockingReason
 		}
 		type action struct {
-			maintenanceWindow       *hvpav1alpha1.MaintenanceTimeWindow
+			maintenanceWindow       *hvpav1alpha2.MaintenanceTimeWindow
 			updateMode              string
-			limitScaling            hvpav1alpha1.ScaleParams
-			scaleIntervals          []hvpav1alpha1.ScaleIntervals
+			limitScaling            hvpav1alpha2.ScaleParams
+			scaleIntervals          []hvpav1alpha2.ScaleInterval
 			vpaStatusCondition      []vpa_api.VerticalPodAutoscalerCondition
-			baseResourcesPerReplica hvpav1alpha1.ResourceChangeParams
+			baseResourcesPerReplica hvpav1alpha2.ResourceChangeParams
 		}
 		type data struct {
 			setup  setup
@@ -2808,7 +2785,7 @@ var _ = XDescribe("#TestReconcile", func() {
 					desiredReplicas: 2,
 					resourceChange:  false,
 					resources:       unscaledSmall,
-					blockedReasons:  []hvpav1alpha1.BlockingReason{},
+					blockedReasons:  []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("UpdateMode Auto, scaled down, no scaling because of paradoxical scaling recommendations", &data{
@@ -2824,8 +2801,8 @@ var _ = XDescribe("#TestReconcile", func() {
 				expect: expect{
 					desiredReplicas: 3,
 					resourceChange:  false,
-					blockedReasons: []hvpav1alpha1.BlockingReason{
-						hvpav1alpha1.BlockingReasonParadoxicalScaling,
+					blockedReasons: []hvpav1alpha2.BlockingReason{
+						hvpav1alpha2.BlockingReasonParadoxicalScaling,
 					},
 				},
 			}),
@@ -2851,7 +2828,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("6000000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("UpdateMode Auto, overall scale down, paradoxical scaling, but replicas increase - should not be considered paradoxical", &data{
@@ -2876,7 +2853,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("2000000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("UpdateMode Auto, scale up blocked due to minChange", &data{
@@ -2892,8 +2869,8 @@ var _ = XDescribe("#TestReconcile", func() {
 				expect: expect{
 					desiredReplicas: 1,
 					resourceChange:  false,
-					blockedReasons: []hvpav1alpha1.BlockingReason{
-						hvpav1alpha1.BlockingReasonMinChange,
+					blockedReasons: []hvpav1alpha2.BlockingReason{
+						hvpav1alpha2.BlockingReasonMinChange,
 					},
 				},
 			}),
@@ -2905,17 +2882,17 @@ var _ = XDescribe("#TestReconcile", func() {
 					target:    newTarget("deployment", unscaledLarge, 3),
 				},
 				action: action{
-					maintenanceWindow: &hvpav1alpha1.MaintenanceTimeWindow{
+					maintenanceWindow: &hvpav1alpha2.MaintenanceTimeWindow{
 						Begin: utils.NewMaintenanceTime((time.Now().UTC().Hour()+3)%24, 0, 0).Formatted(),
 						End:   utils.NewMaintenanceTime((time.Now().UTC().Hour()+4)%24, 0, 0).Formatted(),
 					},
-					updateMode: hvpav1alpha1.UpdateModeMaintenanceWindow,
+					updateMode: hvpav1alpha2.UpdateModeMaintenanceWindow,
 				},
 				expect: expect{
 					desiredReplicas: 3,
 					resourceChange:  false,
-					blockedReasons: []hvpav1alpha1.BlockingReason{
-						hvpav1alpha1.BlockingReasonMaintenanceWindow,
+					blockedReasons: []hvpav1alpha2.BlockingReason{
+						hvpav1alpha2.BlockingReasonMaintenanceWindow,
 					},
 				},
 			}),
@@ -2927,18 +2904,18 @@ var _ = XDescribe("#TestReconcile", func() {
 					target:    newTarget("deployment", unscaledLarge, 3),
 				},
 				action: action{
-					maintenanceWindow: &hvpav1alpha1.MaintenanceTimeWindow{
+					maintenanceWindow: &hvpav1alpha2.MaintenanceTimeWindow{
 						Begin: utils.NewMaintenanceTime((time.Now().UTC().Hour()-1)%24, 0, 0).Formatted(),
 						End:   utils.NewMaintenanceTime((time.Now().UTC().Hour()+1)%24, 0, 0).Formatted(),
 					},
-					updateMode:   hvpav1alpha1.UpdateModeMaintenanceWindow,
+					updateMode:   hvpav1alpha2.UpdateModeMaintenanceWindow,
 					limitScaling: limitScale,
 				},
 				expect: expect{
 					desiredReplicas: 2,
 					resourceChange:  true,
 					resources:       scaledLarge,
-					blockedReasons:  []hvpav1alpha1.BlockingReason{},
+					blockedReasons:  []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("VPA unsupported condition", &data{
@@ -2958,7 +2935,7 @@ var _ = XDescribe("#TestReconcile", func() {
 				},
 				expect: expect{
 					resourceChange: false,
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("UpdateMode Auto, scale down hysteresis based on scaling intervals overlap", &data{
@@ -2977,7 +2954,7 @@ var _ = XDescribe("#TestReconcile", func() {
 				expect: expect{
 					desiredReplicas: 3,
 					resourceChange:  true,
-					blockedReasons:  []hvpav1alpha1.BlockingReason{},
+					blockedReasons:  []hvpav1alpha2.BlockingReason{},
 					resources: v1.ResourceRequirements{
 						Requests: v1.ResourceList{
 							"cpu":    resource.MustParse("2828m"),
@@ -3002,7 +2979,7 @@ var _ = XDescribe("#TestReconcile", func() {
 				expect: expect{
 					desiredReplicas: 3,
 					resourceChange:  true,
-					blockedReasons:  []hvpav1alpha1.BlockingReason{},
+					blockedReasons:  []hvpav1alpha2.BlockingReason{},
 					resources: v1.ResourceRequirements{
 						Requests: v1.ResourceList{
 							"cpu":    resource.MustParse("9500m"),
@@ -3025,11 +3002,11 @@ var _ = XDescribe("#TestReconcile", func() {
 						}, 1),
 				},
 				action: action{
-					baseResourcesPerReplica: hvpav1alpha1.ResourceChangeParams{
-						"cpu": hvpav1alpha1.ChangeParams{
+					baseResourcesPerReplica: hvpav1alpha2.ResourceChangeParams{
+						"cpu": hvpav1alpha2.ChangeParams{
 							Value: stringPtr("100m"),
 						},
-						"memory": hvpav1alpha1.ChangeParams{
+						"memory": hvpav1alpha2.ChangeParams{
 							Percentage: int32Ptr(10),
 						},
 					},
@@ -3043,7 +3020,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("2110000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("UpdateMode Auto, prevent scale down below minAllowed, allow scale up after last scaleInterval's maxCPU/maxMem", &data{
@@ -3068,7 +3045,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("50000000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("UpdateMode Auto, scale down, base resource usage adjusted", &data{
@@ -3085,11 +3062,11 @@ var _ = XDescribe("#TestReconcile", func() {
 						}, 3),
 				},
 				action: action{
-					baseResourcesPerReplica: hvpav1alpha1.ResourceChangeParams{
-						"cpu": hvpav1alpha1.ChangeParams{
+					baseResourcesPerReplica: hvpav1alpha2.ResourceChangeParams{
+						"cpu": hvpav1alpha2.ChangeParams{
 							Value: stringPtr("100m"),
 						},
-						"memory": hvpav1alpha1.ChangeParams{
+						"memory": hvpav1alpha2.ChangeParams{
 							Percentage: int32Ptr(10),
 						},
 					},
@@ -3103,7 +3080,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("990000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("UpdateMode Auto, scale up, nil base resource usage", &data{
@@ -3128,7 +3105,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("2000000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale up 1", &data{
@@ -3156,7 +3133,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("600000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale up 2", &data{
@@ -3184,7 +3161,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("1600000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale up 3", &data{
@@ -3212,7 +3189,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("2250000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale up 4", &data{
@@ -3240,7 +3217,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("3360000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale up 5", &data{
@@ -3268,7 +3245,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("5500000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale down 5", &data{
@@ -3296,7 +3273,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("3600000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale down 4", &data{
@@ -3324,7 +3301,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("2500000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale down 3", &data{
@@ -3352,7 +3329,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("1600000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale down 2", &data{
@@ -3380,7 +3357,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("1350000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("Full round scale test - scale down 1", &data{
@@ -3408,7 +3385,7 @@ var _ = XDescribe("#TestReconcile", func() {
 							"memory": resource.MustParse("800000k"),
 						},
 					},
-					blockedReasons: []hvpav1alpha1.BlockingReason{},
+					blockedReasons: []hvpav1alpha2.BlockingReason{},
 				},
 			}),
 		)
@@ -3474,7 +3451,7 @@ func testVpaReconcile(k8sClient client.Client) *vpa_api.VerticalPodAutoscaler {
 	return vpa
 }
 
-func testOverrideStabilization(k8sClient client.Client, deploytest *appsv1.Deployment, instance *hvpav1alpha1.Hvpa) {
+func testOverrideStabilization(k8sClient client.Client, deploytest *appsv1.Deployment, instance *hvpav1alpha2.Hvpa) {
 	// Create a pod for the target deployment, and update status to "OOMKilled".
 	// The field hvpa.status.overrideScaleUpStabilization should be set to true.
 	p := v1.Pod{
@@ -3506,15 +3483,15 @@ func testOverrideStabilization(k8sClient client.Client, deploytest *appsv1.Deplo
 	Expect(k8sClient.Status().Update(context.TODO(), &p)).To(Succeed())
 
 	Eventually(func() bool {
-		h := &hvpav1alpha1.Hvpa{}
+		h := &hvpav1alpha2.Hvpa{}
 		k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, h)
 		return h.Status.OverrideScaleUpStabilization
 	}, timeout).Should(BeTrue())
 }
 
-func testScalingOnVPAReco(k8sClient client.Client, vpa *vpa_api.VerticalPodAutoscaler, instance *hvpav1alpha1.Hvpa, deploytest *appsv1.Deployment) {
+func testScalingOnVPAReco(k8sClient client.Client, vpa *vpa_api.VerticalPodAutoscaler, instance *hvpav1alpha2.Hvpa, deploytest *appsv1.Deployment) {
 	// Update VPA status, let HVPA scale
-	hvpa := &hvpav1alpha1.Hvpa{}
+	hvpa := &hvpav1alpha2.Hvpa{}
 	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa)).To(Succeed())
 	Expect(hvpa.Status.LastScaling.LastUpdated).To(BeNil())
 	Eventually(func() error {
@@ -3526,7 +3503,7 @@ func testScalingOnVPAReco(k8sClient client.Client, vpa *vpa_api.VerticalPodAutos
 	}, timeout).Should(Succeed())
 
 	Eventually(func() error {
-		hvpa = &hvpav1alpha1.Hvpa{}
+		hvpa = &hvpav1alpha2.Hvpa{}
 		if err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
 			return err
 		}
@@ -3537,9 +3514,9 @@ func testScalingOnVPAReco(k8sClient client.Client, vpa *vpa_api.VerticalPodAutos
 	}, timeout).Should(Succeed())
 }
 
-func testScalingOnHPAReco(k8sClient client.Client, hpa *autoscaling.HorizontalPodAutoscaler, instance *hvpav1alpha1.Hvpa, deploytest *appsv1.Deployment) {
+func testScalingOnHPAReco(k8sClient client.Client, hpa *autoscaling.HorizontalPodAutoscaler, instance *hvpav1alpha2.Hvpa, deploytest *appsv1.Deployment) {
 	// Update HPA status, let HVPA scale
-	hvpa := &hvpav1alpha1.Hvpa{}
+	hvpa := &hvpav1alpha2.Hvpa{}
 	Eventually(func() error {
 		if err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
 			return err
@@ -3559,7 +3536,7 @@ func testScalingOnHPAReco(k8sClient client.Client, hpa *autoscaling.HorizontalPo
 	}, timeout).Should(Succeed())
 
 	Eventually(func() error {
-		hvpa = &hvpav1alpha1.Hvpa{}
+		hvpa = &hvpav1alpha2.Hvpa{}
 		if err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa); err != nil {
 			return err
 		}
@@ -3570,13 +3547,13 @@ func testScalingOnHPAReco(k8sClient client.Client, hpa *autoscaling.HorizontalPo
 	}, timeout).Should(Succeed())
 }
 
-func testNoScalingOnHvpaSpecUpdate(k8sClient client.Client, instance *hvpav1alpha1.Hvpa) {
+func testNoScalingOnHvpaSpecUpdate(k8sClient client.Client, instance *hvpav1alpha2.Hvpa) {
 	// Change hvpa spec without changing hpa and vpa status. hvpa recommendations should not change
-	hvpa := &hvpav1alpha1.Hvpa{}
+	hvpa := &hvpav1alpha2.Hvpa{}
 	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa)).To(Succeed())
 	lastScaling := hvpa.Status.LastScaling.DeepCopy()
 
-	newScaleIntervals := []hvpav1alpha1.ScaleIntervals{
+	newScaleIntervals := []hvpav1alpha2.ScaleInterval{
 		{
 			MaxCPU:      resourcePtr("10"),
 			MaxMemory:   resourcePtr("20G"),

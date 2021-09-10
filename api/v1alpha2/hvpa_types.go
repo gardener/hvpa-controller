@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package v1alpha2
 
 import (
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
@@ -135,8 +135,8 @@ type ScaleParams struct {
 	Replicas ChangeParams `json:"replicas,omitempty"`
 }
 
-// ScaleIntervals defines the scaling interval for resources
-type ScaleIntervals struct {
+// ScaleInterval defines the scaling interval for resources
+type ScaleInterval struct {
 	// Scale parameters for CPU
 	// +optional
 	MaxCPU *resource.Quantity `json:"maxCpu,omitempty"`
@@ -235,7 +235,7 @@ type HvpaSpec struct {
 	// The intervals are expected not to have gaps and any overlap is determinied by
 	// explicit ScalingIntervalsOverlap configuration or any other implicit form of
 	// hysteresis.
-	ScaleIntervals []ScaleIntervals `json:"scaleIntervals,omitempty"`
+	ScaleIntervals []ScaleInterval `json:"scaleIntervals,omitempty"`
 
 	// ScalingIntervalsOverlap is used to compute the effective scaling intervals
 	ScalingIntervalsOverlap ResourceChangeParams `json:"scalingIntervalsOverlap,omitempty"`

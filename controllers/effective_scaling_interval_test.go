@@ -21,13 +21,16 @@ import (
 	"errors"
 	"time"
 
-	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha2 "github.com/gardener/hvpa-controller/api/v1alpha2"
 	mockclient "github.com/gardener/hvpa-controller/mock/controller-runtime/client"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	gomegatypes "github.com/onsi/gomega/types"
+	inf "gopkg.in/inf.v0"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,10 +43,709 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var _ = Describe("GetEffectiveScalingIntervals", func() {
+var _ = Describe("NewQuantity", func() {
+	var (
+		mutateFn         func(q *resource.Quantity)
+		expectedQuantity resource.Quantity
+
+		itShouldSucceed = func() {
+			It("should succeed", nop)
+		}
+	)
+
+	JustBeforeEach(func() {
+		var q = *NewQuantity(resource.DecimalSI, mutateFn)
+		Expect(q).To(EqualQuantity(expectedQuantity))
+	})
+
+	Describe("Add", func() {
+		BeforeEach(func() {
+			mutateFn = func(q *resource.Quantity) {
+				q.AsDec().Add(
+					inf.NewDec(int64(1), inf.Scale(0)),
+					inf.NewDec(int64(1), inf.Scale(0)),
+				)
+			}
+
+			expectedQuantity = resource.MustParse("2")
+		})
+
+		itShouldSucceed()
+	})
+
+	Describe("Sub", func() {
+		BeforeEach(func() {
+			mutateFn = func(q *resource.Quantity) {
+				q.AsDec().Sub(
+					inf.NewDec(int64(2), inf.Scale(0)),
+					inf.NewDec(int64(1), inf.Scale(0)),
+				)
+			}
+
+			expectedQuantity = resource.MustParse("1")
+		})
+
+		itShouldSucceed()
+	})
+
+	Describe("Mul", func() {
+		BeforeEach(func() {
+			mutateFn = func(q *resource.Quantity) {
+				q.AsDec().Mul(
+					inf.NewDec(int64(2), inf.Scale(0)),
+					inf.NewDec(int64(2), inf.Scale(0)),
+				)
+			}
+
+			expectedQuantity = resource.MustParse("4")
+		})
+
+		itShouldSucceed()
+	})
+})
+
+var _ = Describe("getIntervalMaxResources", func() {
+	var (
+		si                          hvpav1alpha2.ScaleInterval
+		maxAllowed                  corev1.ResourceList
+		hvpaKey                     = types.NamespacedName{Name: "instance", Namespace: "default"}.String()
+		matchResourceList, matchErr gomegatypes.GomegaMatcher
+
+		itShouldFail = func() {
+			It("should fail", nop)
+		}
+	)
+
+	BeforeEach(func() {
+		si = hvpav1alpha2.ScaleInterval{}
+	})
+
+	JustBeforeEach(func() {
+		var rl, err = getIntervalMaxResources(si, maxAllowed, hvpaKey)
+		Expect(err).To(matchErr)
+		Expect(rl).To(matchResourceList)
+	})
+
+	Describe("without MaxCPU", func() {
+		BeforeEach(func() {
+			si.MaxCPU = nil
+			si.MaxMemory = resourcePtr("1G")
+		})
+
+		Describe("without maxAllowed", func() {
+			BeforeEach(func() {
+				maxAllowed = nil
+
+				matchResourceList = BeNil()
+				matchErr = HaveOccurred()
+			})
+
+			itShouldFail()
+		})
+
+		Describe("with maxAllowed", func() {
+			BeforeEach(func() {
+				maxAllowed = corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("1"),
+				}
+
+				matchResourceList = matcherForResourceList(corev1.ResourceList{
+					corev1.ResourceCPU:    maxAllowed.Cpu().DeepCopy(),
+					corev1.ResourceMemory: si.MaxMemory.DeepCopy(),
+				})
+				matchErr = Succeed()
+			})
+
+			It("should use the supplied maxAllowed", nop)
+		})
+	})
+
+	Describe("with MaxCPU", func() {
+		BeforeEach(func() {
+			si.MaxCPU = resourcePtr("1")
+			si.MaxMemory = resourcePtr("1G")
+
+			maxAllowed = corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("2"),
+			}
+
+			matchResourceList = matcherForResourceList(corev1.ResourceList{
+				corev1.ResourceCPU:    si.MaxCPU.DeepCopy(),
+				corev1.ResourceMemory: si.MaxMemory.DeepCopy(),
+			})
+			matchErr = Succeed()
+		})
+
+		It("should use the supplied MaxCPU", nop)
+	})
+
+	Describe("without MaxMemory", func() {
+		BeforeEach(func() {
+			si.MaxCPU = resourcePtr("1")
+			si.MaxMemory = nil
+		})
+
+		Describe("without maxAllowed", func() {
+			BeforeEach(func() {
+				maxAllowed = nil
+
+				matchResourceList = BeNil()
+				matchErr = HaveOccurred()
+			})
+
+			itShouldFail()
+		})
+
+		Describe("with maxAllowed", func() {
+			BeforeEach(func() {
+				maxAllowed = corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1G"),
+				}
+
+				matchResourceList = matcherForResourceList(corev1.ResourceList{
+					corev1.ResourceCPU:    si.MaxCPU.DeepCopy(),
+					corev1.ResourceMemory: maxAllowed.Memory().DeepCopy(),
+				})
+				matchErr = Succeed()
+			})
+
+			It("should use the supplied maxAllowed", nop)
+		})
+	})
+
+	Describe("with MaxMemory", func() {
+		BeforeEach(func() {
+			si.MaxCPU = resourcePtr("1")
+			si.MaxMemory = resourcePtr("1G")
+
+			maxAllowed = corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("2G"),
+			}
+
+			matchResourceList = matcherForResourceList(corev1.ResourceList{
+				corev1.ResourceCPU:    si.MaxCPU.DeepCopy(),
+				corev1.ResourceMemory: si.MaxMemory.DeepCopy(),
+			})
+			matchErr = Succeed()
+		})
+
+		It("should use the supplied MaxMemory", nop)
+	})
+})
+
+var _ = Describe("getLinearDeltaResources", func() {
+	var (
+		minResources, maxResources                             corev1.ResourceList
+		minReplicas, maxReplicas                               int32
+		hvpaKey                                                = types.NamespacedName{Name: "instance", Namespace: "default"}.String()
+		matchResourceList, matchNumberOfSubIntervals, matchErr gomegatypes.GomegaMatcher
+
+		itShouldFail = func() {
+			It("should fail", nop)
+		}
+	)
+
+	BeforeEach(func() {
+		minResources = nil
+		maxResources = nil
+	})
+
+	JustBeforeEach(func() {
+		var rl, numOfSubIntervals, err = getLinearDeltaResources(minResources, maxResources, minReplicas, maxReplicas, hvpaKey)
+
+		Expect(err).To(matchErr)
+		Expect(rl).To(matchResourceList)
+		Expect(numOfSubIntervals).To(matchNumberOfSubIntervals)
+	})
+
+	Describe("minReplicas == maxReplicas", func() {
+		BeforeEach(func() {
+			minReplicas = int32(1)
+			maxReplicas = minReplicas
+
+			matchResourceList = BeNil()
+			matchNumberOfSubIntervals = Equal(int32(0))
+			matchErr = HaveOccurred()
+		})
+
+		itShouldFail()
+	})
+
+	Describe("minReplicas > maxReplicas", func() {
+		BeforeEach(func() {
+			minReplicas = int32(2)
+			maxReplicas = minReplicas - 1
+
+			matchResourceList = BeNil()
+			matchNumberOfSubIntervals = Equal(int32(0))
+			matchErr = HaveOccurred()
+		})
+
+		itShouldFail()
+	})
+
+	Describe("minReplicas < maxReplicas", func() {
+		BeforeEach(func() {
+			minReplicas = int32(1)
+			maxReplicas = int32(4)
+
+			matchNumberOfSubIntervals = Equal(maxReplicas - minReplicas)
+			matchErr = Succeed()
+		})
+
+		Describe("without resources", func() {
+			BeforeEach(func() {
+				matchResourceList = matcherForResourceList(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.Quantity{Format: resource.DecimalSI},
+					corev1.ResourceMemory: resource.Quantity{Format: resource.BinarySI},
+				})
+			})
+
+			It("return zero quantities", nop)
+		})
+
+		Describe("with resources", func() {
+			BeforeEach(func() {
+				minResources = corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("50M"),
+				}
+				maxResources = corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("3G"),
+				}
+
+				matchResourceList = matcherForResourceList(corev1.ResourceList{
+					corev1.ResourceCPU: *NewQuantity(resource.DecimalSI, func(q *resource.Quantity) {
+						var s = getScaleFor(corev1.ResourceCPU)
+						q.SetScaled((maxResources.Cpu().ScaledValue(s)-minResources.Cpu().ScaledValue(s))/int64(maxReplicas-minReplicas), s)
+					}),
+					corev1.ResourceMemory: *NewQuantity(resource.BinarySI, func(q *resource.Quantity) {
+						var s = getScaleFor(corev1.ResourceMemory)
+						q.SetScaled((maxResources.Memory().ScaledValue(s)-minResources.Memory().ScaledValue(s))/int64(maxReplicas-minReplicas), s)
+					}),
+				})
+			})
+
+			It("should return the right linear delta resources and the right number of  sub-intervals", nop)
+		})
+	})
+})
+
+var _ = Describe("getChangeQuantity", func() {
+	var (
+		cp *hvpav1alpha2.ChangeParams
+		refQ resource.Quantity
+		s resource.Scale
+		chooseFn func(x, y int64) int64
+		expectedQ resource.Quantity
+
+		describeChangeParamsVariations = func(value string) {
+			Describe("default ChangeParams", func() {
+				BeforeEach(func() {
+					cp = &hvpav1alpha2.ChangeParams{}
+					expectedQ = refQ.DeepCopy()
+				})
+			
+				It("should return refQ", nop)
+			})
+
+			Describe("ChangeParams with only Value", func() {
+				BeforeEach(func() {
+					cp = &hvpav1alpha2.ChangeParams{Value: &value}
+					expectedQ = resource.MustParse(value)
+				})
+			
+				It("should return Value", nop)
+			})
+
+			Describe("ChangeParams with only Percentage", func() {
+				BeforeEach(func() {
+					cp = &hvpav1alpha2.ChangeParams{Percentage: pointer.Int32Ptr(80)}
+					refQ = resource.MustParse(value)
+					expectedQ = *NewQuantity(resource.DecimalSI, func(q *resource.Quantity) {
+						q.SetScaled(refQ.ScaledValue(s) * int64(*cp.Percentage) / int64(100), s)
+					})
+				})
+			
+				It("should return Percentage", nop)
+			})
+
+			Describe("ChangeParams with both Value and Percentage", func() {
+				BeforeEach(func() {
+					cp = &hvpav1alpha2.ChangeParams{
+						Percentage: pointer.Int32Ptr(80),
+						Value: &value,
+					}
+				})
+			
+				Describe("choose max", func() {
+					BeforeEach(func() {
+						chooseFn = MaxInt64
+					})
+
+					Describe("Value is larger", func() {
+						BeforeEach(func() {
+							refQ = *NewQuantity(resource.DecimalSI, func(q *resource.Quantity) {
+								var v = resource.MustParse(value)
+								q.SetScaled(v.ScaledValue(s) / int64(2), s)
+							})
+							expectedQ = resource.MustParse(value)
+						})
+
+						It("should return Value", nop)
+					})
+
+					Describe("Percentage is larger", func() {
+						BeforeEach(func() {
+							refQ = *NewQuantity(resource.DecimalSI, func(q *resource.Quantity) {
+								var v = resource.MustParse(value)
+								q.SetScaled(v.ScaledValue(s) * int64(2), s)
+							})
+							expectedQ = *NewQuantity(resource.DecimalSI, func(q *resource.Quantity) {
+								q.SetScaled(refQ.ScaledValue(s) * int64(*cp.Percentage) / int64(100), s)
+							})
+						})
+
+						It("should return Percentage", nop)
+					})
+				})
+
+				Describe("choose min", func() {
+					BeforeEach(func() {
+						chooseFn = MinInt64
+					})
+
+					Describe("Value is smaller", func() {
+						BeforeEach(func() {
+							refQ = *NewQuantity(resource.DecimalSI, func(q *resource.Quantity) {
+								var v = resource.MustParse(value)
+								q.SetScaled(v.ScaledValue(s) * int64(2), s)
+							})
+							expectedQ = resource.MustParse(value)
+						})
+
+						It("should return Value", nop)
+					})
+
+					Describe("Percentage is smaller", func() {
+						BeforeEach(func() {
+							refQ = *NewQuantity(resource.DecimalSI, func(q *resource.Quantity) {
+								var v = resource.MustParse(value)
+								q.SetScaled(v.ScaledValue(s) / int64(2), s)
+							})
+							expectedQ = *NewQuantity(resource.DecimalSI, func(q *resource.Quantity) {
+								q.SetScaled(refQ.ScaledValue(s) * int64(*cp.Percentage) / int64(100), s)
+							})
+						})
+
+						It("should return Percentage", nop)
+					})
+				})
+			})
+		}
+	)
+
+	BeforeEach(func() {
+		cp = nil
+		refQ = resource.Quantity{}
+		s = resource.Milli
+		chooseFn = nil
+	})
+
+	JustBeforeEach(func() {
+		var q = getChangeQuantity(cp, refQ, s, chooseFn)
+		Expect(q).To(EqualQuantity(expectedQ))
+	})
+
+	Describe("nil ChangeParams", func() {
+		BeforeEach(func() {
+			expectedQ = refQ.DeepCopy()
+		})
+
+		It("should return refQ", nop)
+	})
+
+	Describe("scale Milli", func() {
+		BeforeEach(func() {
+			s = resource.Milli
+		})
+
+		describeChangeParamsVariations("200m")
+	})
+
+	Describe("scale Mega", func() {
+		BeforeEach(func() {
+			s = resource.Mega
+		})
+
+		describeChangeParamsVariations("2G")
+	})
+})
+
+var _ = Describe("getLinearEffectiveScalingIntervals", func() {
+	var (
+		vpaMaxAllowed                            corev1.ResourceList
+		si                                       hvpav1alpha2.ScaleInterval
+		so                                       hvpav1alpha2.ResourceChangeParams
+		minResources                             corev1.ResourceList
+		minReplicas                              *int32
+		hvpaKey                                  = types.NamespacedName{Name: "instance", Namespace: "default"}.String()
+		matchEffectiveScalingIntervals, matchErr gomegatypes.GomegaMatcher
+
+		itShouldFail = func() {
+			It("should fail", nop)
+		}
+	)
+
+	BeforeEach(func() {
+		vpaMaxAllowed = nil
+		si = hvpav1alpha2.ScaleInterval{}
+		so = hvpav1alpha2.ResourceChangeParams{}
+		minResources = nil
+		minReplicas = nil
+	})
+
+	JustBeforeEach(func() {
+		var esis, err = getLinearEffectiveScalingIntervals(vpaMaxAllowed, si, so, minResources, minReplicas, hvpaKey)
+
+		Expect(err).To(matchErr)
+		Expect(esis).To(matchEffectiveScalingIntervals)
+	})
+
+	Describe("scaling interval", func() {
+		Describe("without minReplicas", func() {
+			BeforeEach(func() {
+				minReplicas = nil
+
+				matchEffectiveScalingIntervals = BeNil()
+				matchErr = HaveOccurred()
+			})
+
+			itShouldFail()
+		})
+
+		Describe("without minResources", func() {
+			BeforeEach(func() {
+				minResources = nil
+				minReplicas = pointer.Int32(int32(0))
+				si.MaxCPU = resourcePtr("1")
+				si.MaxMemory = resourcePtr("1G")
+				si.MaxReplicas = int32(1)
+
+				matchEffectiveScalingIntervals = BeNil()
+				matchErr = HaveOccurred()
+			})
+
+			itShouldFail()
+		})
+
+		Describe("without sub-intervals", func() {
+			BeforeEach(func() {
+				// Set some defaults that would otherwise work.
+				minResources = corev1.ResourceList{}
+				minReplicas = pointer.Int32(3)
+				si.MaxCPU = resourcePtr("1")
+				si.MaxMemory = resourcePtr("1G")
+			})
+
+			Describe("with maxReplicas < minReplicas", func() {
+				BeforeEach(func() {
+					si.MaxReplicas = *minReplicas - 1
+
+					matchEffectiveScalingIntervals = BeNil()
+					matchErr = HaveOccurred()
+				})
+
+				itShouldFail()
+			})
+
+			Describe("with maxReplicas == minReplicas", func() {
+				BeforeEach(func() {
+					si.MaxReplicas = *minReplicas
+
+					matchEffectiveScalingIntervals = BeNil()
+					matchErr = HaveOccurred()
+				})
+
+				itShouldFail()
+			})
+		})
+
+		Describe("with one sub-interval", func() {
+			var expectedMinResources corev1.ResourceList
+
+			BeforeEach(func() {
+				// Set some defaults that would otherwise work.
+				minResources = corev1.ResourceList{}
+				minReplicas = pointer.Int32(3)
+				si.MaxCPU = resourcePtr("1")
+				si.MaxMemory = resourcePtr("1G")
+				si.MaxReplicas = *minReplicas + 1
+
+				matchErr = Succeed()
+				matchEffectiveScalingIntervals = matcherForEffectiveScalingIntervals(&EffectiveScalingInterval{
+					Replicas: *minReplicas,
+					MinResources: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.Quantity{Format: resource.DecimalSI},
+						corev1.ResourceMemory: resource.Quantity{Format: resource.BinarySI},
+					},
+					MaxResources: corev1.ResourceList{
+						corev1.ResourceCPU:    si.MaxCPU.DeepCopy(),
+						corev1.ResourceMemory: si.MaxMemory.DeepCopy(),
+					},
+				})
+
+				expectedMinResources = corev1.ResourceList{}
+				iterateCpuAndMemory(func(name corev1.ResourceName, format resource.Format) {
+					expectedMinResources[name] = *NewQuantity(format, func(q *resource.Quantity) {
+						var s = getScaleFor(name)
+						q.SetScaled(NameScaleInterval(si, name, format).ScaledValue(s)*int64(*minReplicas)/int64(si.MaxReplicas), s)
+					})
+				})
+			})
+
+			AfterEach(func() {
+				Expect(*minReplicas).To(Equal(si.MaxReplicas))
+				Expect(minResources).To(matcherForResourceList(expectedMinResources))
+			})
+
+			It("should return a single effective scaling interval", nop)
+
+			Describe("with scalingOverlap", func() {
+				BeforeEach(func() {
+					so[corev1.ResourceCPU] = hvpav1alpha2.ChangeParams{
+						Value: pointer.StringPtr("500m"),
+						Percentage: pointer.Int32Ptr(30),
+					}
+					so[corev1.ResourceMemory] = hvpav1alpha2.ChangeParams{
+						Value: pointer.StringPtr("200M"),
+						Percentage: pointer.Int32Ptr(50),
+					}
+				})
+
+				It("should single effective scaling interval", nop)
+			})
+		})
+
+		Describe("with more than one sub-interval", func() {
+			var (
+				expectedMinResources corev1.ResourceList
+
+				computeExpectedEffectiveScalingIntervals = func()[]*EffectiveScalingInterval {
+					var (
+						esis []*EffectiveScalingInterval
+						min = corev1.ResourceList{
+							corev1.ResourceCPU:    resource.Quantity{Format: resource.DecimalSI},
+							corev1.ResourceMemory: resource.Quantity{Format: resource.BinarySI},
+						}
+						delta = corev1.ResourceList{}
+					)
+
+					iterateCpuAndMemory(func(name corev1.ResourceName, format resource.Format) {
+						var s = getScaleFor(name)
+						delta[name] = *NewQuantity(format, func(q *resource.Quantity) {
+							q.SetScaled((NameScaleInterval(si, name, format).ScaledValue(s) - minResources.Name(name, format).ScaledValue(s)) / int64(si.MaxReplicas - *minReplicas), s)
+						})
+					})
+
+					for i := *minReplicas; i < si.MaxReplicas; i++ {
+						var esi = &EffectiveScalingInterval{
+							Replicas: i,
+							MinResources: min.DeepCopy(),
+							MaxResources: corev1.ResourceList{},
+						}
+
+						iterateCpuAndMemory(func(name corev1.ResourceName, format resource.Format) {
+							var s = getScaleFor(name)
+
+							esi.MaxResources[name] = *NewQuantity(format, func(q *resource.Quantity) {
+								q.SetScaled(min.Name(name, format).ScaledValue(s) + int64(i - *minReplicas + 1) * delta.Name(name, format).ScaledValue(s), s)
+							})
+
+							min[name] = *NewQuantity(format, func(q *resource.Quantity) {
+								var maxQ = esi.MaxResources[name]
+								q.SetScaled(maxQ.ScaledValue(s) * int64(i) / int64(i + 1), s)
+							})
+						})
+
+						esis = append(esis, esi)
+					}
+
+					expectedMinResources = min.DeepCopy()
+
+					return esis
+				}
+			)
+
+			BeforeEach(func() {
+				// Set some defaults that would otherwise work.
+				minResources = corev1.ResourceList{}
+				minReplicas = pointer.Int32(3)
+				si.MaxCPU = resourcePtr("2")
+				si.MaxMemory = resourcePtr("3G")
+				si.MaxReplicas = *minReplicas + 4
+
+				matchErr = Succeed()
+				
+				matchEffectiveScalingIntervals = matcherForEffectiveScalingIntervals(computeExpectedEffectiveScalingIntervals()...)
+			})
+
+			AfterEach(func() {
+				Expect(*minReplicas).To(Equal(si.MaxReplicas))
+				Expect(minResources).To(matcherForResourceList(expectedMinResources))
+			})
+
+			It("should return a single effective scaling interval", nop)
+
+			Describe("with scalingOverlap", func() {
+				BeforeEach(func() {
+					so[corev1.ResourceCPU] = hvpav1alpha2.ChangeParams{
+						Value: pointer.StringPtr("500m"),
+						Percentage: pointer.Int32Ptr(30),
+					}
+					so[corev1.ResourceMemory] = hvpav1alpha2.ChangeParams{
+						Value: pointer.StringPtr("200M"),
+						Percentage: pointer.Int32Ptr(50),
+					}
+
+					var esis = computeExpectedEffectiveScalingIntervals()
+
+					iterateCpuAndMemory(func(name corev1.ResourceName, format resource.Format) {
+						var s = getScaleFor(name)
+
+						for _, esi := range esis {
+							esi.MinResources[name] = func() resource.Quantity {
+								var (
+									minQ = esi.MinResources[name]
+									cp = so[name]
+									chQ = getChangeQuantity(&cp, minQ, s, MaxInt64)
+									subQ =  minQ.DeepCopy()
+								)
+
+								subQ.Sub(chQ)
+
+								if subQ.Cmp(resource.Quantity{}) >= 0 {
+									return subQ
+								}
+
+								return minQ
+							}()
+						}
+					})
+
+					matchEffectiveScalingIntervals = matcherForEffectiveScalingIntervals(esis...)
+				})
+
+				It("should single effective scaling interval with minResources adjusted for scaling overlap", nop)
+			})
+		})
+	})
+})
+
+var _ = XDescribe("GetEffectiveScalingIntervals", func() {
 	var (
 		sch                *runtime.Scheme
-		controller         *hvpav1alpha1.Hvpa
+		controller         *hvpav1alpha2.Hvpa
 		m                  *BaseControllerRefManager
 		obj                *autoscaling.HorizontalPodAutoscaler
 		matchFn            func(metav1.Object) bool
@@ -68,7 +770,7 @@ var _ = Describe("GetEffectiveScalingIntervals", func() {
 	BeforeEach(func() {
 		sch = scheme.Scheme
 
-		controller = &hvpav1alpha1.Hvpa{
+		controller = &hvpav1alpha2.Hvpa{
 			ObjectMeta: metav1.ObjectMeta{
 				UID: types.UID("1234"),
 			},
@@ -253,7 +955,7 @@ var _ = Describe("GetEffectiveScalingIntervals", func() {
 var _ = Describe("HvpaControllerRefManager", func() {
 	var (
 		cl         *mockclient.MockClient
-		controller *hvpav1alpha1.Hvpa
+		controller *hvpav1alpha2.Hvpa
 		cm         *HvpaControllerRefManager
 	)
 
@@ -262,7 +964,7 @@ var _ = Describe("HvpaControllerRefManager", func() {
 
 		cl.EXPECT().Scheme().Return(scheme.Scheme).AnyTimes()
 
-		controller = &hvpav1alpha1.Hvpa{
+		controller = &hvpav1alpha2.Hvpa{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "controller",
 				Namespace: "default",
@@ -282,7 +984,7 @@ var _ = Describe("HvpaControllerRefManager", func() {
 
 				return labels.NewSelector().Add(*req)
 			}(),
-			hvpav1alpha1.SchemeGroupVersionHvpa.WithKind("Hvpa"),
+			hvpav1alpha2.SchemeGroupVersionHvpa.WithKind("Hvpa"),
 			func() error { return nil },
 		)
 	})
@@ -315,7 +1017,7 @@ var _ = Describe("HvpaControllerRefManager", func() {
 							},
 							OwnerReferences: []metav1.OwnerReference{
 								{
-									APIVersion:         hvpav1alpha1.SchemeGroupVersionHvpa.String(),
+									APIVersion:         hvpav1alpha2.SchemeGroupVersionHvpa.String(),
 									Kind:               "Hvpa",
 									Name:               controller.GetName(),
 									UID:                controller.GetUID(),
@@ -443,7 +1145,7 @@ var _ = Describe("HvpaControllerRefManager", func() {
 							},
 							OwnerReferences: []metav1.OwnerReference{
 								{
-									APIVersion:         hvpav1alpha1.SchemeGroupVersionHvpa.String(),
+									APIVersion:         hvpav1alpha2.SchemeGroupVersionHvpa.String(),
 									Kind:               "Hvpa",
 									Name:               controller.GetName(),
 									UID:                controller.GetUID(),

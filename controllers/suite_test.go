@@ -25,8 +25,9 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	. "github.com/onsi/gomega/gstruct"
 
-	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha2 "github.com/gardener/hvpa-controller/api/v1alpha2"
 	mockclient "github.com/gardener/hvpa-controller/mock/controller-runtime/client"
 	"github.com/golang/mock/gomock"
 	gomegatypes "github.com/onsi/gomega/types"
@@ -60,7 +61,7 @@ func TestControllers(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	Expect(hvpav1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+	Expect(hvpav1alpha2.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	// +kubebuilder:scaffold:scheme
 })
@@ -73,10 +74,10 @@ var _ = BeforeSuite(func() {
  * {map[cpu:{9664 20000} memory:{18.188G 30G} replicas:{5}]}
  * {map[cpu:{13333 30000} memory:{24.99 40G} replicas:{6}]}
  */
-func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) *hvpav1alpha1.Hvpa {
-	updateMode := hvpav1alpha1.UpdateModeAuto
+func newHvpa(name, target, labelVal string, minChange hvpav1alpha2.ScaleParams) *hvpav1alpha2.Hvpa {
+	updateMode := hvpav1alpha2.UpdateModeAuto
 
-	instance := &hvpav1alpha1.Hvpa{
+	instance := &hvpav1alpha2.Hvpa{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
@@ -85,27 +86,27 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 			},
 			UID: types.UID("1234567890"),
 		},
-		Spec: hvpav1alpha1.HvpaSpec{
+		Spec: hvpav1alpha2.HvpaSpec{
 			Replicas: int32Ptr(1),
 			TargetRef: &autoscaling.CrossVersionObjectReference{
 				Kind:       "Deployment",
 				Name:       target,
 				APIVersion: "apps/v1",
 			},
-			Hpa: hvpav1alpha1.HpaSpec{
+			Hpa: hvpav1alpha2.HpaSpec{
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"hpaKey": labelVal,
 					},
 				},
 				Deploy: true,
-				Template: hvpav1alpha1.HpaTemplate{
+				Template: hvpav1alpha2.HpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							"hpaKey": labelVal,
 						},
 					},
-					Spec: hvpav1alpha1.HpaTemplateSpec{
+					Spec: hvpav1alpha2.HpaTemplateSpec{
 						MinReplicas: int32Ptr(1),
 						MaxReplicas: 3,
 						Metrics: []autoscaling.MetricSpec{
@@ -120,20 +121,20 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 					},
 				},
 			},
-			Vpa: hvpav1alpha1.VpaSpec{
+			Vpa: hvpav1alpha2.VpaSpec{
 				Selector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"vpaKey": labelVal,
 					},
 				},
 				Deploy: true,
-				Template: hvpav1alpha1.VpaTemplate{
+				Template: hvpav1alpha2.VpaTemplate{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							"vpaKey": labelVal,
 						},
 					},
-					Spec: hvpav1alpha1.VpaTemplateSpec{
+					Spec: hvpav1alpha2.VpaTemplateSpec{
 						ResourcePolicy: &vpa_api.PodResourcePolicy{
 							ContainerPolicies: []vpa_api.ContainerResourcePolicy{
 								{
@@ -152,21 +153,21 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 					},
 				},
 			},
-			ScaleUp: hvpav1alpha1.ScaleType{
-				UpdatePolicy: hvpav1alpha1.UpdatePolicy{
+			ScaleUp: hvpav1alpha2.ScaleType{
+				UpdatePolicy: hvpav1alpha2.UpdatePolicy{
 					UpdateMode: &updateMode,
 				},
 				StabilizationDuration: stringPtr("3m"),
 				MinChange:             minChange,
 			},
-			ScaleDown: hvpav1alpha1.ScaleType{
-				UpdatePolicy: hvpav1alpha1.UpdatePolicy{
+			ScaleDown: hvpav1alpha2.ScaleType{
+				UpdatePolicy: hvpav1alpha2.UpdatePolicy{
 					UpdateMode: &updateMode,
 				},
 				StabilizationDuration: stringPtr("3m"),
 				MinChange:             minChange,
 			},
-			ScaleIntervals: []hvpav1alpha1.ScaleIntervals{
+			ScaleIntervals: []hvpav1alpha2.ScaleInterval{
 				{
 					MaxCPU:      resourcePtr("1"),
 					MaxMemory:   resourcePtr("2G"),
@@ -183,11 +184,11 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
 					MaxReplicas: 6,
 				},
 			},
-			ScalingIntervalsOverlap: hvpav1alpha1.ResourceChangeParams{
-				v1.ResourceCPU: hvpav1alpha1.ChangeParams{
+			ScalingIntervalsOverlap: hvpav1alpha2.ResourceChangeParams{
+				v1.ResourceCPU: hvpav1alpha2.ChangeParams{
 					Percentage: int32Ptr(20),
 				},
-				v1.ResourceMemory: hvpav1alpha1.ChangeParams{
+				v1.ResourceMemory: hvpav1alpha2.ChangeParams{
 					Value: stringPtr("10M"),
 				},
 			},
@@ -205,8 +206,8 @@ func newHvpa(name, target, labelVal string, minChange hvpav1alpha1.ScaleParams) 
  * {5 map[cpu:640 memory:2190000000000] map[cpu:1500 memory:4000000000000]}
  * {6 map[cpu:1000 memory:3323333333333] map[cpu:1750 memory:6000000000000]}
  */
-func newScaleInterval() []hvpav1alpha1.ScaleIntervals {
-	return []hvpav1alpha1.ScaleIntervals{
+func newScaleInterval() []hvpav1alpha2.ScaleInterval {
+	return []hvpav1alpha2.ScaleInterval{
 		{
 			MaxCPU:      resourcePtr("0.4"),
 			MaxMemory:   resourcePtr("1G"),
@@ -455,12 +456,65 @@ func (m *quantityMatcher) String() string {
 	return fmt.Sprintf("resource.Quantity.MustParse(%q)", m.Quantity.String())
 }
 
-func EqualQuantity(q *resource.Quantity) gomegatypes.GomegaMatcher {
+func EqualQuantityPtr(q *resource.Quantity) gomegatypes.GomegaMatcher {
 	if q == nil {
 		return BeNil()
 	}
 
-	return &quantityMatcher{Quantity: q.DeepCopy()}
+	return EqualQuantity(q.DeepCopy())
+}
+
+func EqualQuantity(q resource.Quantity) gomegatypes.GomegaMatcher {
+	return &quantityMatcher{Quantity: q}
 }
 
 var nop = func() {}
+
+func matcherForResourceList(rl v1.ResourceList) gomegatypes.GomegaMatcher {
+	if rl == nil {
+		return BeNil()
+	}
+
+	if len(rl) <= 0 {
+		return BeEmpty()
+	}
+
+	var r = &KeysMatcher{IgnoreExtras: true, Keys: Keys{}}
+
+	for k, v := range rl {
+		r.Keys[k] = EqualQuantity(v.DeepCopy())
+	}
+
+	return r
+}
+
+func matcherForResources(res *v1.ResourceRequirements) gomegatypes.GomegaMatcher {
+	if res == nil {
+		return BeNil()
+	}
+
+	var r = &FieldsMatcher{IgnoreExtras: true, Fields: Fields{}}
+
+	r.Fields["Requests"] = matcherForResourceList(res.Requests)
+	r.Fields["Limits"] = matcherForResourceList(res.Limits)
+
+	return r
+}
+
+func matcherForEffectiveScalingIntervals(esis ...*EffectiveScalingInterval) gomegatypes.GomegaMatcher {
+	var matchers []interface{}
+
+	for _, esi := range esis {
+		matchers = append(matchers, PointTo(MatchFields(IgnoreExtras, Fields{
+			"Replicas":     Equal(esi.Replicas),
+			"MinResources": matcherForResourceList(esi.MinResources),
+			"MaxResources": matcherForResourceList(esi.MaxResources),
+		})))
+	}
+
+	if len(matchers) <= 0 {
+		return BeEmpty()
+	}
+
+	return ConsistOf(matchers...)
+}

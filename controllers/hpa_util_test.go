@@ -17,7 +17,7 @@ limitations under the License.
 package controllers
 
 import (
-	hvpav1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha2 "github.com/gardener/hvpa-controller/api/v1alpha2"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	gomegatypes "github.com/onsi/gomega/types"
@@ -29,13 +29,13 @@ import (
 
 var _ = Describe("getHpaFromHvpa", func() {
 	var (
-		hvpa        *hvpav1alpha1.Hvpa
+		hvpa        *hvpav1alpha2.Hvpa
 		expectedHpa *autoscaling.HorizontalPodAutoscaler
 		matchErr    gomegatypes.GomegaMatcher
 	)
 
 	BeforeEach(func() {
-		hvpa = &hvpav1alpha1.Hvpa{
+		hvpa = &hvpav1alpha2.Hvpa{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "instance",
 				Namespace: "default",
@@ -77,7 +77,7 @@ var _ = Describe("getHpaFromHvpa", func() {
 					MaxReplicas: hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
 					MinReplicas: hvpa.Spec.Hpa.Template.Spec.MinReplicas,
 					ScaleTargetRef: autoscaling.CrossVersionObjectReference{
-						APIVersion: hvpav1alpha1.SchemeGroupVersionHvpa.String(),
+						APIVersion: hvpav1alpha2.SchemeGroupVersionHvpa.String(),
 						Kind:       "Hvpa",
 						Name:       hvpa.Name,
 					},
