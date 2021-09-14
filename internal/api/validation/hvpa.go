@@ -20,7 +20,7 @@ package validation
 import (
 	"time"
 
-	"github.com/gardener/hvpa-controller/api/v1alpha1"
+	"github.com/gardener/hvpa-controller/api/v1alpha2"
 	"github.com/gardener/hvpa-controller/utils"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apimachineryvalidation "k8s.io/apimachinery/pkg/api/validation"
@@ -31,17 +31,17 @@ import (
 )
 
 // ValidateHvpa validates a HVPA and returns a list of errors.
-func ValidateHvpa(hvpa *v1alpha1.Hvpa) field.ErrorList {
+func ValidateHvpa(hvpa *v1alpha2.Hvpa) field.ErrorList {
 	return internalValidateHvpa(hvpa)
 }
 
-func internalValidateHvpa(hvpa *v1alpha1.Hvpa) field.ErrorList {
+func internalValidateHvpa(hvpa *v1alpha2.Hvpa) field.ErrorList {
 	allErrs := field.ErrorList{}
 	allErrs = append(allErrs, validateHvpaSpec(&hvpa.Spec, field.NewPath("spec"))...)
 	return allErrs
 }
 
-func validateHvpaSpec(spec *v1alpha1.HvpaSpec, fldPath *field.Path) field.ErrorList {
+func validateHvpaSpec(spec *v1alpha2.HvpaSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if spec == nil {
@@ -56,13 +56,20 @@ func validateHvpaSpec(spec *v1alpha1.HvpaSpec, fldPath *field.Path) field.ErrorL
 	allErrs = append(allErrs, validateMaintenanceWindow(spec.MaintenanceTimeWindow, field.NewPath("spec.maintenanceTimeWindow"))...)
 	allErrs = append(allErrs, validateHpaSpec(&spec.Hpa, field.NewPath("spec.hpa"))...)
 	allErrs = append(allErrs, validateVpaSpec(&spec.Vpa, field.NewPath("spec.vpa"))...)
-
-	// TODO: More validations
+	allErrs = append(allErrs, validateScaleType(&spec.ScaleUp, field.NewPath("spec.scaleUp"))...)
+	allErrs = append(allErrs, validateScaleType(&spec.ScaleDown, field.NewPath("spec.scaleDown"))...)
+	allErrs = append(allErrs, validateScaleIntervals(spec.ScaleIntervals, field.NewPath("spec.scaleIntervals"))...)
 
 	return allErrs
 }
 
-func validateMaintenanceWindow(maintenance *v1alpha1.MaintenanceTimeWindow, fldPath *field.Path) field.ErrorList {
+func validateScaleIntervals(scaleIntervals []v1alpha2.ScaleInterval, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	// TODO:
+	return allErrs
+}
+
+func validateMaintenanceWindow(maintenance *v1alpha2.MaintenanceTimeWindow, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if maintenance == nil {
@@ -77,8 +84,12 @@ func validateMaintenanceWindow(maintenance *v1alpha1.MaintenanceTimeWindow, fldP
 	return allErrs
 }
 
-func validateHpaSpec(hpaSpec *v1alpha1.HpaSpec, fldPath *field.Path) field.ErrorList {
+func validateHpaSpec(hpaSpec *v1alpha2.HpaSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
+
+	if !hpaSpec.Deploy {
+		return allErrs
+	}
 
 	if hpaSpec.Selector == nil {
 		allErrs = append(allErrs, field.Required(fldPath.Child("selector"), ""))
@@ -88,9 +99,6 @@ func validateHpaSpec(hpaSpec *v1alpha1.HpaSpec, fldPath *field.Path) field.Error
 			allErrs = append(allErrs, field.Invalid(fldPath.Child("selector"), hpaSpec.Selector, "empty selector is invalid for HPA"))
 		}
 	}
-
-	allErrs = append(allErrs, validateScaleType(&hpaSpec.ScaleUp, fldPath.Child("scaleUp"))...)
-	allErrs = append(allErrs, validateScaleType(&hpaSpec.ScaleDown, fldPath.Child("scaleDown"))...)
 
 	selector, err := metav1.LabelSelectorAsSelector(hpaSpec.Selector)
 	if err != nil {
@@ -102,7 +110,7 @@ func validateHpaSpec(hpaSpec *v1alpha1.HpaSpec, fldPath *field.Path) field.Error
 	return allErrs
 }
 
-func validateScaleParams(scaleParams *v1alpha1.ScaleParams, fldPath *field.Path) field.ErrorList {
+func validateScaleParams(scaleParams *v1alpha2.ScaleParams, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if scaleParams == nil {
 		return allErrs
@@ -132,20 +140,20 @@ func validateScaleParams(scaleParams *v1alpha1.ScaleParams, fldPath *field.Path)
 	return allErrs
 }
 
-func validateScaleType(scaleType *v1alpha1.ScaleType, fldPath *field.Path) field.ErrorList {
+func validateScaleType(scaleType *v1alpha2.ScaleType, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if scaleType == nil {
 		return allErrs
 	}
 
 	if scaleType.UpdatePolicy.UpdateMode != nil &&
-		*scaleType.UpdatePolicy.UpdateMode != v1alpha1.UpdateModeAuto &&
-		*scaleType.UpdatePolicy.UpdateMode != v1alpha1.UpdateModeOff &&
-		*scaleType.UpdatePolicy.UpdateMode != v1alpha1.UpdateModeMaintenanceWindow {
+		*scaleType.UpdatePolicy.UpdateMode != v1alpha2.UpdateModeAuto &&
+		*scaleType.UpdatePolicy.UpdateMode != v1alpha2.UpdateModeOff &&
+		*scaleType.UpdatePolicy.UpdateMode != v1alpha2.UpdateModeMaintenanceWindow {
 		validVals := []string{
-			v1alpha1.UpdateModeAuto,
-			v1alpha1.UpdateModeOff,
-			v1alpha1.UpdateModeMaintenanceWindow,
+			v1alpha2.UpdateModeAuto,
+			v1alpha2.UpdateModeOff,
+			v1alpha2.UpdateModeMaintenanceWindow,
 		}
 		allErrs = append(allErrs, field.NotSupported(fldPath.Child("updatePolicy", "updateMode"), *scaleType.UpdatePolicy.UpdateMode, validVals))
 	}
@@ -161,8 +169,12 @@ func validateScaleType(scaleType *v1alpha1.ScaleType, fldPath *field.Path) field
 	return allErrs
 }
 
-func validateVpaSpec(vpaSpec *v1alpha1.VpaSpec, fldPath *field.Path) field.ErrorList {
+func validateVpaSpec(vpaSpec *v1alpha2.VpaSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
+
+	if !vpaSpec.Deploy { //TODO unit tests
+		return allErrs
+	}
 
 	if vpaSpec.Selector == nil {
 		allErrs = append(allErrs, field.Required(fldPath.Child("selector"), ""))
@@ -180,14 +192,12 @@ func validateVpaSpec(vpaSpec *v1alpha1.VpaSpec, fldPath *field.Path) field.Error
 		allErrs = append(allErrs, validateVpaSpecTemplate(&vpaSpec.Template, selector, fldPath.Child("template"))...)
 	}
 
-	allErrs = append(allErrs, validateScaleType(&vpaSpec.ScaleUp, fldPath.Child("scaleUp"))...)
-	allErrs = append(allErrs, validateScaleType(&vpaSpec.ScaleDown, fldPath.Child("scaleDown"))...)
 	allErrs = append(allErrs, validateScaleParams(&vpaSpec.LimitsRequestsGapScaleParams, fldPath.Child("limitsRequestsGapScaleParams"))...)
 
 	return allErrs
 }
 
-func validateHpaSpecTemplate(template *v1alpha1.HpaTemplate, selector labels.Selector, fldPath *field.Path) field.ErrorList {
+func validateHpaSpecTemplate(template *v1alpha2.HpaTemplate, selector labels.Selector, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if template == nil {
 		allErrs = append(allErrs, field.Required(fldPath, ""))
@@ -208,7 +218,7 @@ func validateHpaSpecTemplate(template *v1alpha1.HpaTemplate, selector labels.Sel
 	return allErrs
 }
 
-func validateHpaTemplateSpec(spec *v1alpha1.HpaTemplateSpec, fldPath *field.Path) field.ErrorList {
+func validateHpaTemplateSpec(spec *v1alpha2.HpaTemplateSpec, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if spec == nil {
 		allErrs = append(allErrs, field.Required(fldPath, ""))
@@ -224,7 +234,7 @@ func validateHpaTemplateSpec(spec *v1alpha1.HpaTemplateSpec, fldPath *field.Path
 	return allErrs
 }
 
-func validateVpaSpecTemplate(template *v1alpha1.VpaTemplate, selector labels.Selector, fldPath *field.Path) field.ErrorList {
+func validateVpaSpecTemplate(template *v1alpha2.VpaTemplate, selector labels.Selector, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if template == nil {
 		allErrs = append(allErrs, field.Required(fldPath, ""))

@@ -1,0 +1,1 @@
+../../../api/v1alpha2/hvpa_types.go

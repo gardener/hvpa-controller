@@ -17,91 +17,141 @@ limitations under the License.
 package controllers
 
 import (
-	"context"
-	"fmt"
-
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	hvpav1alpha2 "github.com/gardener/hvpa-controller/api/v1alpha2"
 	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+	gomegatypes "github.com/onsi/gomega/types"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
+	autoscalingv2beta1 "k8s.io/api/autoscaling/v2beta1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var _ = Describe("#Adopt VPA", func() {
-
-	DescribeTable("##AdoptVPA",
-		func(instance *autoscalingv1alpha1.Hvpa) {
-			deploytest := target.DeepCopy()
-			// Overwrite name
-			deploytest.Name = "deploy-test-3"
-
-			c := mgr.GetClient()
-			// Create the test deployment
-			Expect(c.Create(context.TODO(), deploytest)).To(Succeed())
-
-			// Create the Hvpa object and expect the Reconcile and VPA to be created
-			Expect(c.Create(context.TODO(), instance)).To(Succeed())
-			defer c.Delete(context.TODO(), instance)
-
-			hasSingleChildFn := func() error {
-				num := 0
-				objList := &vpa_api.VerticalPodAutoscalerList{}
-				if err := c.List(context.TODO(), objList); err != nil {
-					return err
-				}
-				for _, obj := range objList.Items {
-					for _, owner := range obj.GetOwnerReferences() {
-						if owner.UID == instance.GetUID() {
-							num = num + 1
-						}
-					}
-				}
-				if num == 1 {
-					return nil
-				}
-				return fmt.Errorf("Error: Number of VPAs expected: 1; found %v", num)
-			}
-
-			Eventually(hasSingleChildFn, timeout).Should(Succeed())
-
-			// Create new VPA for same HVPA
-			newVpa, err := getVpaFromHvpa(instance)
-			Expect(err).NotTo(HaveOccurred())
-			err = c.Create(context.TODO(), newVpa)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Eventually one of the VPAs should be garbage collected
-			Eventually(hasSingleChildFn, timeout).Should(Succeed())
-
-			// Create new VPA for same HVPA
-			newVpa, err = getVpaFromHvpa(instance)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(controllerutil.SetControllerReference(instance, newVpa, mgr.GetScheme())).To(Succeed())
-
-			// Replace the labels. The HVPA controller should remove the owner reference
-			label := make(map[string]string)
-			label["orphanKeyVpa"] = "orphanValueVpa"
-			newVpa.SetLabels(label)
-
-			Expect(c.Create(context.TODO(), newVpa)).To(Succeed())
-
-			// Eventually the owner ref from VPA should be removed by the HVPA controller
-			Eventually(func() error {
-				vpaList := &vpa_api.VerticalPodAutoscalerList{}
-				c.List(context.TODO(), vpaList, client.MatchingLabels(label))
-				for _, obj := range vpaList.Items {
-					for _, ref := range obj.GetOwnerReferences() {
-						if ref.UID == instance.GetUID() {
-							return fmt.Errorf("Error: VPA with label %v not released by HVPA %v", label, instance.Name)
-						}
-					}
-				}
-				return nil
-			}, timeout).Should(Succeed())
-		},
-		Entry("vpa", newHvpa("hvpa-3", "deploy-test-3", "label-3", minChange)),
+var _ = Describe("getVpaFromHvpa", func() {
+	var (
+		hvpa        *hvpav1alpha2.Hvpa
+		expectedVpa *vpa_api.VerticalPodAutoscaler
+		matchErr    gomegatypes.GomegaMatcher
 	)
+
+	BeforeEach(func() {
+		hvpa = &hvpav1alpha2.Hvpa{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "instance",
+				Namespace: "default",
+			},
+			Spec: hvpav1alpha2.HvpaSpec{
+				TargetRef: &autoscalingv2beta1.CrossVersionObjectReference{
+					APIVersion: corev1.SchemeGroupVersion.String(),
+					Kind:       "ReplicationController",
+					Name:       "target",
+				},
+			},
+		}
+
+		expectedVpa = nil
+		matchErr = Succeed()
+	})
+
+	JustBeforeEach(func() {
+		var vpa, err = getVpaFromHvpa(hvpa)
+
+		Expect(err).To(matchErr)
+		if expectedVpa == nil {
+			Expect(vpa).To(BeNil())
+		} else {
+			Expect(vpa).To(Equal(expectedVpa))
+		}
+	})
+
+	Describe("when VPA template has ownerReferences", func() {
+		BeforeEach(func() {
+			hvpa.Spec.Vpa.Template.ObjectMeta.OwnerReferences = []metav1.OwnerReference{{}}
+			matchErr = HaveOccurred()
+		})
+
+		It("should fail", func() {})
+	})
+
+	Describe("with default VPA template", func() {
+		BeforeEach(func() {
+			expectedVpa = &vpa_api.VerticalPodAutoscaler{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: hvpa.Name + "-",
+					Namespace:    hvpa.Namespace,
+				},
+				Spec: vpa_api.VerticalPodAutoscalerSpec{
+					TargetRef: &autoscalingv1.CrossVersionObjectReference{
+						APIVersion: hvpa.Spec.TargetRef.APIVersion,
+						Kind:       hvpa.Spec.TargetRef.Kind,
+						Name:       hvpa.Spec.TargetRef.Name,
+					},
+					UpdatePolicy: &vpa_api.PodUpdatePolicy{
+						UpdateMode: func() *vpa_api.UpdateMode {
+							var um = vpa_api.UpdateModeOff
+							return &um
+						}(),
+					},
+				},
+			}
+		})
+
+		It("should succeed", func() {})
+
+		Describe("with labels", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Vpa.Template.ObjectMeta.Labels = map[string]string{
+					"key": "value",
+				}
+
+				expectedVpa.ObjectMeta.Labels = hvpa.Spec.Vpa.Template.ObjectMeta.DeepCopy().Labels
+			})
+
+			It("should use the specified labels", func() {})
+		})
+
+		Describe("with name", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Vpa.Template.ObjectMeta.Name = "vpa"
+			})
+
+			It("should ignore the specified name", func() {})
+		})
+
+		Describe("with generateName", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Vpa.Template.ObjectMeta.GenerateName = "vpa"
+			})
+
+			It("should ignore the specified generateName", func() {})
+		})
+
+		Describe("with resourcePolicy", func() {
+			BeforeEach(func() {
+				hvpa.Spec.Vpa.Template.Spec.ResourcePolicy = &vpa_api.PodResourcePolicy{
+					ContainerPolicies: []vpa_api.ContainerResourcePolicy{
+						{
+							ContainerName: "*",
+							Mode: func() *vpa_api.ContainerScalingMode {
+								var csm = vpa_api.ContainerScalingModeOff
+								return &csm
+							}(),
+							MinAllowed: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("300m"),
+							},
+							MaxAllowed: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("1G"),
+							},
+						},
+					},
+				}
+
+				expectedVpa.Spec.ResourcePolicy = hvpa.Spec.Vpa.Template.Spec.ResourcePolicy.DeepCopy()
+			})
+
+			It("should use the specified resourcePolicy", func() {})
+		})
+	})
 })
