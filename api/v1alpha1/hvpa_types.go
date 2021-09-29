@@ -158,6 +158,7 @@ type ScaleParams struct {
 // VpaTemplate defines the template for VPA
 type VpaTemplate struct {
 	// Metadata of the pods created from this template.
+	// +kubebuilder:validation:XPreserveUnknownFields
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
@@ -169,6 +170,7 @@ type VpaTemplate struct {
 // HpaTemplate defines the template for HPA
 type HpaTemplate struct {
 	// Metadata of the pods created from this template.
+	// +kubebuilder:validation:XPreserveUnknownFields
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
