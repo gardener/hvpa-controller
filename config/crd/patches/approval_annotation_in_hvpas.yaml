@@ -1,8 +1,7 @@
-# The following patch adds a directive for certmanager to inject CA into the CRD
-# CRD conversion requires k8s 1.13 or later.
-apiVersion: apiextensions.k8s.io/v1beta1
+# The following patch adds an approval annotation to HVPA
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    certmanager.k8s.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
+    api-approved.kubernetes.io: "unapproved, temporarily squatting" # see https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2337-k8s.io-group-protection
   name: hvpas.autoscaling.k8s.io
