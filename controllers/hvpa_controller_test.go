@@ -240,7 +240,7 @@ var _ = Describe("#TestReconcile", func() {
 			hpaStatus *autoscaling.HorizontalPodAutoscalerStatus
 			vpaStatus *vpa_api.VerticalPodAutoscalerStatus
 			target    *appsv1.Deployment
-			vpaWeight autoscalingv1alpha1.VpaWeight
+			vpaWeight int32
 		}
 		type expect struct {
 			scalingOff      bool
@@ -332,7 +332,7 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: int32(40),
 				},
 				action: action{
 					limitScaling: limitScale,
@@ -360,7 +360,7 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "250M", "350m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(90),
+					vpaWeight: int32(90),
 				},
 				expect: expect{
 					scalingOff:      false,
@@ -385,7 +385,7 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "50M", "50m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(90),
+					vpaWeight: int32(90),
 				},
 				action: action{
 					maintenanceWindow: &autoscalingv1alpha1.MaintenanceTimeWindow{
@@ -417,7 +417,7 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "3G", "200m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: int32(40),
 				},
 				action: action{
 					maintenanceWindow: &autoscalingv1alpha1.MaintenanceTimeWindow{
@@ -450,7 +450,7 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: int32(40),
 				},
 				expect: expect{
 					scalingOff:      false,
@@ -475,7 +475,7 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: int32(40),
 				},
 				action: action{
 					limitScaling: autoscalingv1alpha1.ScaleParams{},
@@ -512,7 +512,7 @@ var _ = Describe("#TestReconcile", func() {
 							},
 						},
 						2),
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: int32(40),
 				},
 				action: action{
 					limitScaling: autoscalingv1alpha1.ScaleParams{},
@@ -538,7 +538,7 @@ var _ = Describe("#TestReconcile", func() {
 						}),
 					vpaStatus: newVpaStatus("deployment", "3G", "500m"),
 					target:    target,
-					vpaWeight: autoscalingv1alpha1.VpaWeight(40),
+					vpaWeight: int32(40),
 				},
 				action: action{
 					vpaStatusCondition: []vpa_api.VerticalPodAutoscalerCondition{

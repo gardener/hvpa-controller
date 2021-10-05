@@ -417,11 +417,11 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 	return hpa.Status.DeepCopy(), err
 }
 
-func getVpaWeightFromIntervals(hvpa *autoscalingv1alpha1.Hvpa, desiredReplicas, currentReplicas int32) autoscalingv1alpha1.VpaWeight {
-	var vpaWeight autoscalingv1alpha1.VpaWeight
+func getVpaWeightFromIntervals(hvpa *autoscalingv1alpha1.Hvpa, desiredReplicas, currentReplicas int32) int32 {
+	var vpaWeight int32
 	// lastFraction is set to default 100 to handle the case when vpaWeight is 100 in the matching interval,
 	// and there are no fractional vpaWeights in the previous intervals. So we need to default to this value
-	lastFraction := autoscalingv1alpha1.VpaWeight(100)
+	lastFraction := int32(100)
 	lookupNextFraction := false
 	for _, interval := range hvpa.Spec.WeightBasedScalingIntervals {
 		if lookupNextFraction {
@@ -468,7 +468,7 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 ) (*autoscaling.HorizontalPodAutoscalerStatus,
 	*vpa_api.VerticalPodAutoscalerStatus,
 	bool, bool,
-	autoscalingv1alpha1.VpaWeight,
+	int32,
 	*[]*autoscalingv1alpha1.BlockedScaling,
 	error) {
 	var newObj runtime.Object
@@ -653,7 +653,7 @@ func isScalingOffByMode(updatePolicy *autoscalingv1alpha1.UpdatePolicy, maintena
 	return false
 }
 
-func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, currentReplicas int32, hpaWeight autoscalingv1alpha1.VpaWeight, blockedScaling *[]*autoscalingv1alpha1.BlockedScaling) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
+func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, currentReplicas int32, hpaWeight int32, blockedScaling *[]*autoscalingv1alpha1.BlockedScaling) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
 	anno := hvpa.GetAnnotations()
 	if val, ok := anno["hpa-controller"]; !ok || val != "hvpa" {
 		log.V(3).Info("HPA is not controlled by HVPA", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
@@ -841,7 +841,7 @@ func appendToBlockedScaling(blockedScaling **autoscalingv1alpha1.BlockedScaling,
 // otherwise it returns nil
 // The "blockedScaling" arg is populated with the reasons for blocking vertical scaling with the following priority order:
 // Weight > UpdatePolicy > StabilizationWindow > MaintenanceWindow > MinChanged
-func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight autoscalingv1alpha1.VpaWeight, podSpec *corev1.PodSpec, hpaScaleOutLimited bool, blockedScaling *[]*autoscalingv1alpha1.BlockedScaling) (*corev1.PodSpec, bool, *vpa_api.VerticalPodAutoscalerStatus, error) {
+func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, vpaWeight int32, podSpec *corev1.PodSpec, hpaScaleOutLimited bool, blockedScaling *[]*autoscalingv1alpha1.BlockedScaling) (*corev1.PodSpec, bool, *vpa_api.VerticalPodAutoscalerStatus, error) {
 	log.V(2).Info("Checking if need to scale vertically", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 	if vpaStatus == nil || vpaStatus.Recommendation == nil {
 		log.V(2).Info("VPA: Nothing to do", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
