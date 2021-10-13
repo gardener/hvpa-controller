@@ -59,6 +59,7 @@ deploy: manifests
 manifests: controller-gen
 	cd "$(REPO_ROOT)/api" && $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=../config/crd/bases
 	$(CONTROLLER_GEN) rbac:roleName=manager-role webhook paths="./controllers/..."
+	kustomize build config/crd -o config/crd/output/crds.yaml
 
 # Run go fmt against code
 fmt:
