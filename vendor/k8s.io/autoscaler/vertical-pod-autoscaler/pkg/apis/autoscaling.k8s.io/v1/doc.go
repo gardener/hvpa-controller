@@ -16,6 +16,6 @@ limitations under the License.
 
 // +k8s:deepcopy-gen=package,register
 
-// Package v1beta2 contains definitions of Vertical Pod Autoscaler related objects.
+// Package v1 contains definitions of Vertical Pod Autoscaler related objects.
 // +groupName=autoscaling.k8s.io
-package v1beta2
+package v1

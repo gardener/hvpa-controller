@@ -18,6 +18,9 @@ spec:
     storage: false
   - name: v1beta2
     served: true
+    storage: false
+  - name: v1
+    served: true
     storage: true
   validation:
     # openAPIV3Schema is the schema for validating custom objects.
