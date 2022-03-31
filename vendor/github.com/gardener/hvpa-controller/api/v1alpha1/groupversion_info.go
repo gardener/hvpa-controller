@@ -31,7 +31,7 @@ var (
 	GroupName = "autoscaling.k8s.io"
 
 	// SchemeGroupVersionVpa is group version used to register these objects
-	SchemeGroupVersionVpa = schema.GroupVersion{Group: GroupName, Version: "v1beta2"}
+	SchemeGroupVersionVpa = schema.GroupVersion{Group: GroupName, Version: "v1"}
 
 	// SchemeGroupVersionHvpa is group version used to register these objects
 	SchemeGroupVersionHvpa = schema.GroupVersion{Group: GroupName, Version: "v1alpha1"}
