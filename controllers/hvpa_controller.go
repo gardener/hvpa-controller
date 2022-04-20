@@ -984,133 +984,138 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 
 				initialzeIfRequired(&container.Resources)
 
-				newLimits := getScaledLimits(container.Resources.Limits, currReq, weightedReq, hvpa.Spec.Vpa.LimitsRequestsGapScaleParams)
+				controlledResources, controlledValues := getContainerControlledResourcesAndValues(container.Name, hvpa.Spec.Vpa.Template.Spec.ResourcePolicy)
+				newLimits := getScaledLimits(container.Resources.Limits, currReq, weightedReq, hvpa.Spec.Vpa.LimitsRequestsGapScaleParams, controlledResources, controlledValues)
 
 				log.V(3).Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 				log.V(3).Info("VPA scale down", "minimum CPU delta", scaleDownMinDeltaCPU.String(), "minimum memory delta", scaleDownMinDeltaMem, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 				log.V(3).Info("VPA scale up", "minimum CPU delta", scaleUpMinDeltaCPU.String(), "minimum memory delta", scaleUpMinDeltaMem, "HPA condition ScalingLimited", hpaScaleOutLimited, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 
-				if vpaWeight == 0 {
-					outTargetWeight[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-					blockedByWeight = true
+				if controlledResources == nil || containsResourceName(*controlledResources, corev1.ResourceMemory) {
+					if vpaWeight == 0 {
+						outTargetWeight[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+						blockedByWeight = true
 
-				} else if diffMem.Sign() > 0 {
-					if hpaScaleOutLimited == false || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
-						outTargetUpdatePolicy[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-						blockedByUpdatePolicy = true
+					} else if diffMem.Sign() > 0 {
+						if hpaScaleOutLimited == false || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
+							outTargetUpdatePolicy[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+							blockedByUpdatePolicy = true
 
-					} else if overrideScaleUpStabilization == false && lastScaleTimeDuration < scaleUpStabilizationWindow {
-						outTargetStabilizationWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-						blockedByStabilizationWindow = true
+						} else if overrideScaleUpStabilization == false && lastScaleTimeDuration < scaleUpStabilizationWindow {
+							outTargetStabilizationWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+							blockedByStabilizationWindow = true
 
-					} else if scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
-						(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
-						outTargetMaintenanceWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-						blockedByMaintenanceWindow = true
+						} else if scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+							(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
+							outTargetMaintenanceWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+							blockedByMaintenanceWindow = true
 
-					} else if overrideScaleUpStabilization == false && diffMem.Cmp(*scaleUpMinDeltaMem) < 0 {
-						outTargetMinChanged[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-						blockedByMinChange = true
+						} else if overrideScaleUpStabilization == false && diffMem.Cmp(*scaleUpMinDeltaMem) < 0 {
+							outTargetMinChanged[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+							blockedByMinChange = true
 
-					} else {
-						log.V(2).Info("VPA", "Scaling up", "memory", "Container", container.Name)
-						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
-						if val, ok := (newLimits)[corev1.ResourceMemory]; ok {
-							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = val
+						} else {
+							log.V(2).Info("VPA", "Scaling up", "memory", "Container", container.Name)
+							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+							if val, ok := (newLimits)[corev1.ResourceMemory]; ok {
+								newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = val
+							}
+							// Override VPA status in outVpaStatus with weighted value
+							outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
+							resourceChange = true
 						}
-						// Override VPA status in outVpaStatus with weighted value
-						outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
-						resourceChange = true
-					}
-				} else if diffMem.Sign() < 0 {
-					if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeOff {
-						outTargetUpdatePolicy[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-						blockedByUpdatePolicy = true
+					} else if diffMem.Sign() < 0 {
+						if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeOff {
+							outTargetUpdatePolicy[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+							blockedByUpdatePolicy = true
 
-					} else if lastScaleTimeDuration < scaleDownStabilizationWindow {
-						outTargetStabilizationWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-						blockedByStabilizationWindow = true
+						} else if lastScaleTimeDuration < scaleDownStabilizationWindow {
+							outTargetStabilizationWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+							blockedByStabilizationWindow = true
 
-					} else if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
-						(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
-						outTargetMaintenanceWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-						blockedByMaintenanceWindow = true
+						} else if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+							(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
+							outTargetMaintenanceWindow[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+							blockedByMaintenanceWindow = true
 
-					} else if negDiffMem.Cmp(*scaleDownMinDeltaMem) < 0 {
-						outTargetMinChanged[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
-						blockedByMinChange = true
+						} else if negDiffMem.Cmp(*scaleDownMinDeltaMem) < 0 {
+							outTargetMinChanged[corev1.ResourceMemory] = rec.Target.Memory().DeepCopy()
+							blockedByMinChange = true
 
-					} else {
-						log.V(2).Info("VPA", "Scaling down", "memory", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
-						if val, ok := (newLimits)[corev1.ResourceMemory]; ok {
-							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = val
+						} else {
+							log.V(2).Info("VPA", "Scaling down", "memory", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+							if val, ok := (newLimits)[corev1.ResourceMemory]; ok {
+								newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = val
+							}
+							// Override VPA status in outVpaStatus with weighted value
+							outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
+							resourceChange = true
 						}
-						// Override VPA status in outVpaStatus with weighted value
-						outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
-						resourceChange = true
 					}
 				}
 
-				if vpaWeight == 0 {
-					outTargetWeight[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-					blockedByWeight = true
+				if controlledResources == nil || containsResourceName(*controlledResources, corev1.ResourceCPU) {
+					if vpaWeight == 0 {
+						outTargetWeight[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+						blockedByWeight = true
 
-				} else if diffCPU.Sign() > 0 {
-					if hpaScaleOutLimited == false || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
-						outTargetUpdatePolicy[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-						blockedByUpdatePolicy = true
+					} else if diffCPU.Sign() > 0 {
+						if hpaScaleOutLimited == false || scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeOff {
+							outTargetUpdatePolicy[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+							blockedByUpdatePolicy = true
 
-					} else if overrideScaleUpStabilization == false && lastScaleTimeDuration < scaleUpStabilizationWindow {
-						outTargetStabilizationWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-						blockedByStabilizationWindow = true
+						} else if overrideScaleUpStabilization == false && lastScaleTimeDuration < scaleUpStabilizationWindow {
+							outTargetStabilizationWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+							blockedByStabilizationWindow = true
 
-					} else if scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
-						(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
-						outTargetMaintenanceWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-						blockedByMaintenanceWindow = true
+						} else if scaleUpUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+							(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
+							outTargetMaintenanceWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+							blockedByMaintenanceWindow = true
 
-					} else if overrideScaleUpStabilization == false && diffCPU.Cmp(*scaleUpMinDeltaCPU) < 0 {
-						outTargetMinChanged[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-						blockedByMinChange = true
+						} else if overrideScaleUpStabilization == false && diffCPU.Cmp(*scaleUpMinDeltaCPU) < 0 {
+							outTargetMinChanged[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+							blockedByMinChange = true
 
-					} else {
-						log.V(2).Info("VPA", "Scaling up", "CPU", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
-						if val, ok := (newLimits)[corev1.ResourceCPU]; ok {
-							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = val
+						} else {
+							log.V(2).Info("VPA", "Scaling up", "CPU", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+							if val, ok := (newLimits)[corev1.ResourceCPU]; ok {
+								newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = val
+							}
+							// Override VPA status in outVpaStatus with weighted value
+							outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+							resourceChange = true
 						}
-						// Override VPA status in outVpaStatus with weighted value
-						outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
-						resourceChange = true
-					}
-				} else if diffCPU.Sign() < 0 {
-					if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeOff {
-						outTargetUpdatePolicy[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-						blockedByUpdatePolicy = true
+					} else if diffCPU.Sign() < 0 {
+						if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeOff {
+							outTargetUpdatePolicy[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+							blockedByUpdatePolicy = true
 
-					} else if lastScaleTimeDuration < scaleDownStabilizationWindow {
-						outTargetStabilizationWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-						blockedByStabilizationWindow = true
+						} else if lastScaleTimeDuration < scaleDownStabilizationWindow {
+							outTargetStabilizationWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+							blockedByStabilizationWindow = true
 
-					} else if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
-						(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
-						outTargetMaintenanceWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-						blockedByMaintenanceWindow = true
+						} else if scaleDownUpdateMode == autoscalingv1alpha1.UpdateModeMaintenanceWindow &&
+							(maintenanceTimeWindow == nil || !maintenanceTimeWindow.Contains(time.Now())) {
+							outTargetMaintenanceWindow[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+							blockedByMaintenanceWindow = true
 
-					} else if negDiffCPU.Cmp(*scaleDownMinDeltaCPU) < 0 {
-						outTargetMinChanged[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
-						blockedByMinChange = true
+						} else if negDiffCPU.Cmp(*scaleDownMinDeltaCPU) < 0 {
+							outTargetMinChanged[corev1.ResourceCPU] = rec.Target.Cpu().DeepCopy()
+							blockedByMinChange = true
 
-					} else {
-						log.V(2).Info("VPA", "Scaling down", "CPU", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-						newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
-						if val, ok := (newLimits)[corev1.ResourceCPU]; ok {
-							newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = val
+						} else {
+							log.V(2).Info("VPA", "Scaling down", "CPU", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
+							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+							if val, ok := (newLimits)[corev1.ResourceCPU]; ok {
+								newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = val
+							}
+							// Override VPA status in outVpaStatus with weighted value
+							outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+							resourceChange = true
 						}
-						// Override VPA status in outVpaStatus with weighted value
-						outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
-						resourceChange = true
 					}
 				}
 
@@ -1155,6 +1160,18 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	return nil, false, nil, nil
 }
 
+func getContainerControlledResourcesAndValues(containerName string, resourcePolicy *vpa_api.PodResourcePolicy) (*[]corev1.ResourceName, *vpa_api.ContainerControlledValues) {
+	if resourcePolicy == nil {
+		return nil, nil
+	}
+	for _, containerPolicy := range resourcePolicy.ContainerPolicies {
+		if containerPolicy.ContainerName == vpa_api.DefaultContainerResourcePolicy || containerPolicy.ContainerName == containerName {
+			return containerPolicy.ControlledResources, containerPolicy.ControlledValues
+		}
+	}
+	return nil, nil
+}
+
 func initialzeIfRequired(resources *corev1.ResourceRequirements) {
 	if resources.Requests == nil {
 		resources.Requests = corev1.ResourceList{}
@@ -1164,14 +1181,29 @@ func initialzeIfRequired(resources *corev1.ResourceRequirements) {
 	}
 }
 
-func getScaledLimits(currLimits, currReq, weightedReq corev1.ResourceList, scaleParams autoscalingv1alpha1.ScaleParams) corev1.ResourceList {
-	cpuLimit, msg := getScaledResourceLimit(corev1.ResourceCPU, currLimits.Cpu(), currReq.Cpu(), weightedReq.Cpu(), &scaleParams.CPU)
-	if msg != "" {
-		log.V(3).Info("VPA", "Warning", msg)
-	}
-	memLimit, msg := getScaledResourceLimit(corev1.ResourceMemory, currLimits.Memory(), currReq.Memory(), weightedReq.Memory(), &scaleParams.Memory)
-	if msg != "" {
-		log.V(3).Info("VPA", "Warning", msg)
+func getScaledLimits(
+	currLimits, currReq, weightedReq corev1.ResourceList,
+	scaleParams autoscalingv1alpha1.ScaleParams,
+	controlledResources *[]corev1.ResourceName,
+	controlledValues *vpa_api.ContainerControlledValues,
+) corev1.ResourceList {
+	var (
+		cpuLimit, memLimit *resource.Quantity
+		msg                string
+	)
+	if controlledValues == nil || *controlledValues == vpa_api.ContainerControlledValuesRequestsAndLimits {
+		if controlledResources == nil || containsResourceName(*controlledResources, corev1.ResourceCPU) {
+			cpuLimit, msg = getScaledResourceLimit(corev1.ResourceCPU, currLimits.Cpu(), currReq.Cpu(), weightedReq.Cpu(), &scaleParams.CPU)
+			if msg != "" {
+				log.V(3).Info("VPA", "Warning", msg)
+			}
+		}
+		if controlledResources == nil || containsResourceName(*controlledResources, corev1.ResourceMemory) {
+			memLimit, msg = getScaledResourceLimit(corev1.ResourceMemory, currLimits.Memory(), currReq.Memory(), weightedReq.Memory(), &scaleParams.Memory)
+			if msg != "" {
+				log.V(3).Info("VPA", "Warning", msg)
+			}
+		}
 	}
 
 	result := corev1.ResourceList{}
@@ -1295,6 +1327,15 @@ func getThreshold(thresholdVals *autoscalingv1alpha1.ChangeParams, resourceType 
 		return percentageQuantity, nil
 	}
 	return &absoluteQuantity, nil
+}
+
+func containsResourceName(resourceNames []corev1.ResourceName, resourceName corev1.ResourceName) bool {
+	for _, name := range resourceNames {
+		if name == resourceName {
+			return true
+		}
+	}
+	return false
 }
 
 // Reconcile reads that state of the cluster for a Hvpa object and makes changes based on the state read
