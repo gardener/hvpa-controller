@@ -985,6 +985,11 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 
 				controlledResources, controlledValues := getContainerControlledResourcesAndValues(container.Name, hvpa.Spec.Vpa.Template.Spec.ResourcePolicy)
 				newLimits := getScaledLimits(container.Resources.Limits, currReq, weightedReq, hvpa.Spec.Vpa.LimitsRequestsGapScaleParams, controlledResources, controlledValues)
+				if len(newLimits) > 0 {
+					capRequestsToLimits(weightedReq, newLimits)
+				} else {
+					capRequestsToLimits(weightedReq, container.Resources.Limits)
+				}
 
 				log.V(3).Info("VPA", "weighted target mem", weightedMem, "weighted target cpu", weightedCPU, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 				log.V(3).Info("VPA scale down", "minimum CPU delta", scaleDownMinDeltaCPU.String(), "minimum memory delta", scaleDownMinDeltaMem, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
@@ -1015,12 +1020,12 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 
 						} else {
 							log.V(2).Info("VPA", "Scaling up", "memory", "Container", container.Name)
-							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = *weightedReq.Memory()
 							if val, ok := (newLimits)[corev1.ResourceMemory]; ok {
 								newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = val
 							}
 							// Override VPA status in outVpaStatus with weighted value
-							outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
+							outTarget[corev1.ResourceMemory] = *weightedReq.Memory()
 							resourceChange = true
 						}
 					} else if diffMem.Sign() < 0 {
@@ -1043,12 +1048,12 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 
 						} else {
 							log.V(2).Info("VPA", "Scaling down", "memory", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = weightedMem.DeepCopy()
+							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceMemory] = *weightedReq.Memory()
 							if val, ok := (newLimits)[corev1.ResourceMemory]; ok {
 								newPodSpec.Containers[id].Resources.Limits[corev1.ResourceMemory] = val
 							}
 							// Override VPA status in outVpaStatus with weighted value
-							outTarget[corev1.ResourceMemory] = weightedMem.DeepCopy()
+							outTarget[corev1.ResourceMemory] = *weightedReq.Memory()
 							resourceChange = true
 						}
 					}
@@ -1079,12 +1084,12 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 
 						} else {
 							log.V(2).Info("VPA", "Scaling up", "CPU", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = *weightedReq.Cpu()
 							if val, ok := (newLimits)[corev1.ResourceCPU]; ok {
 								newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = val
 							}
 							// Override VPA status in outVpaStatus with weighted value
-							outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+							outTarget[corev1.ResourceCPU] = *weightedReq.Cpu()
 							resourceChange = true
 						}
 					} else if diffCPU.Sign() < 0 {
@@ -1107,12 +1112,12 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 
 						} else {
 							log.V(2).Info("VPA", "Scaling down", "CPU", "Container", container.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
-							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+							newPodSpec.Containers[id].Resources.Requests[corev1.ResourceCPU] = *weightedReq.Cpu()
 							if val, ok := (newLimits)[corev1.ResourceCPU]; ok {
 								newPodSpec.Containers[id].Resources.Limits[corev1.ResourceCPU] = val
 							}
 							// Override VPA status in outVpaStatus with weighted value
-							outTarget[corev1.ResourceCPU] = weightedCPU.DeepCopy()
+							outTarget[corev1.ResourceCPU] = *weightedReq.Cpu()
 							resourceChange = true
 						}
 					}
@@ -1157,6 +1162,19 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 		return newPodSpec, resourceChange, outVpaStatus, nil
 	}
 	return nil, false, nil, nil
+}
+
+func capRequestsToLimits(requests corev1.ResourceList, limits corev1.ResourceList) {
+	if memLimit, ok := (limits)[corev1.ResourceMemory]; ok {
+		if memLimit.Cmp(*requests.Memory()) == -1 {
+			requests[corev1.ResourceMemory] = memLimit
+		}
+	}
+	if cpuLimit, ok := (limits)[corev1.ResourceCPU]; ok {
+		if cpuLimit.Cmp(*requests.Cpu()) == -1 {
+			requests[corev1.ResourceCPU] = cpuLimit
+		}
+	}
 }
 
 func getContainerControlledResourcesAndValues(containerName string, resourcePolicy *vpa_api.PodResourcePolicy) (*[]corev1.ResourceName, *vpa_api.ContainerControlledValues) {
