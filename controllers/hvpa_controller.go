@@ -916,10 +916,9 @@ func getWeightedRequests(vpaStatus *vpa_api.VerticalPodAutoscalerStatus, hvpa *a
 	var maintenanceTimeWindow *utils.MaintenanceTimeWindow
 	var err error
 
-	len := len(vpaStatus.Recommendation.ContainerRecommendations)
 	outVpaStatus := &vpa_api.VerticalPodAutoscalerStatus{
 		Recommendation: &vpa_api.RecommendedPodResources{
-			ContainerRecommendations: make([]vpa_api.RecommendedContainerResources, 0, len),
+			ContainerRecommendations: make([]vpa_api.RecommendedContainerResources, 0, len(vpaStatus.Recommendation.ContainerRecommendations)),
 		},
 	}
 
