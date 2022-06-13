@@ -328,8 +328,8 @@ var _ = Describe("#TestReconcile", func() {
 					if podMemLimits := podSpec.Containers[0].Resources.Limits.Memory(); !podMemLimits.IsZero() {
 						Expect(podMemLimits.Cmp(*podSpec.Containers[0].Resources.Requests.Memory())).NotTo(Equal(-1))
 					}
-					if podCpuLimits := podSpec.Containers[0].Resources.Limits.Cpu(); !podCpuLimits.IsZero() {
-						Expect(podCpuLimits.Cmp(*podSpec.Containers[0].Resources.Requests.Cpu())).NotTo(Equal(-1))
+					if podCPULimits := podSpec.Containers[0].Resources.Limits.Cpu(); !podCPULimits.IsZero() {
+						Expect(podCPULimits.Cmp(*podSpec.Containers[0].Resources.Requests.Cpu())).NotTo(Equal(-1))
 					}
 					Expect(podSpec.Containers[0].Resources).To(Equal(data.expect.resources))
 				} else {
