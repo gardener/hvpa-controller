@@ -47,6 +47,15 @@ var (
 			v1.ResourceCPU:    resource.MustParse("200m"),
 		},
 	}
+	requestsCappedToLimit = v1.ResourceRequirements{
+		Limits: v1.ResourceList{
+			v1.ResourceMemory: resource.MustParse("600M"),
+		},
+		Requests: v1.ResourceList{
+			v1.ResourceMemory: resource.MustParse("600M"),
+			v1.ResourceCPU:    resource.MustParse("500m"),
+		},
+	}
 	scaledByWeight40 = v1.ResourceRequirements{
 		Limits: v1.ResourceList{
 			v1.ResourceCPU:    resource.MustParse("2"),
@@ -251,16 +260,18 @@ var _ = Describe("#TestReconcile", func() {
 			blockedReasons  []autoscalingv1alpha1.BlockingReason
 		}
 		type action struct {
-			maintenanceWindow  *autoscalingv1alpha1.MaintenanceTimeWindow
-			updateMode         string
-			limitScaling       autoscalingv1alpha1.ScaleParams
-			vpaStatusCondition []vpa_api.VerticalPodAutoscalerCondition
+			maintenanceWindow    *autoscalingv1alpha1.MaintenanceTimeWindow
+			updateMode           string
+			limitScaling         autoscalingv1alpha1.ScaleParams
+			vpaStatusCondition   []vpa_api.VerticalPodAutoscalerCondition
+			vpaPodResourcePolicy *vpa_api.PodResourcePolicy
 		}
 		type data struct {
 			setup  setup
 			action action
 			expect expect
 		}
+		requestsOnly := vpa_api.ContainerControlledValuesRequestsOnly
 
 		DescribeTable("##ScaleTestScenarios",
 			func(data *data) {
@@ -280,6 +291,10 @@ var _ = Describe("#TestReconcile", func() {
 					hvpa.Spec.Vpa.ScaleUp.UpdatePolicy.UpdateMode = &data.action.updateMode
 					hvpa.Spec.Vpa.ScaleDown.UpdatePolicy.UpdateMode = &data.action.updateMode
 				}
+				if data.action.vpaPodResourcePolicy != nil {
+					hvpa.Spec.Vpa.Template.Spec.ResourcePolicy = data.action.vpaPodResourcePolicy
+				}
+
 				if data.action.vpaStatusCondition != nil {
 					vpaStatus.Conditions = append(data.action.vpaStatusCondition, vpaStatus.Conditions...)
 				}
@@ -310,6 +325,12 @@ var _ = Describe("#TestReconcile", func() {
 
 				if data.expect.resourceChange {
 					Expect(podSpec).NotTo(BeNil())
+					if podMemLimits := podSpec.Containers[0].Resources.Limits.Memory(); !podMemLimits.IsZero() {
+						Expect(podMemLimits.Cmp(*podSpec.Containers[0].Resources.Requests.Memory())).NotTo(Equal(-1))
+					}
+					if podCPULimits := podSpec.Containers[0].Resources.Limits.Cpu(); !podCPULimits.IsZero() {
+						Expect(podCPULimits.Cmp(*podSpec.Containers[0].Resources.Requests.Cpu())).NotTo(Equal(-1))
+					}
 					Expect(podSpec.Containers[0].Resources).To(Equal(data.expect.resources))
 				} else {
 					Expect(podSpec).To(BeNil())
@@ -523,6 +544,42 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       limitEquallyScaled,
+					blockedReasons:  []autoscalingv1alpha1.BlockingReason{},
+				},
+			}),
+			Entry("UpdateMode Auto, ControlledValues RequestsOnly, Request higher than fixed limit", &data{
+				setup: setup{
+					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
+					hpaStatus: newHpaStatus(
+						3, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+							{
+								Type:   autoscaling.ScalingLimited,
+								Status: v1.ConditionTrue,
+							},
+						}),
+					vpaStatus: newVpaStatus("deployment", "800M", "500m"),
+					target: newTarget("deployment",
+						v1.ResourceRequirements{
+							Limits: v1.ResourceList{
+								v1.ResourceMemory: resource.MustParse("600M"),
+							},
+							Requests: v1.ResourceList{
+								v1.ResourceMemory: resource.MustParse("500M"),
+							},
+						},
+						3),
+					vpaWeight: int32(100),
+				},
+				action: action{
+					limitScaling:         autoscalingv1alpha1.ScaleParams{},
+					vpaPodResourcePolicy: &vpa_api.PodResourcePolicy{ContainerPolicies: []vpa_api.ContainerResourcePolicy{{ContainerName: "deployment", ControlledValues: &requestsOnly}}},
+				},
+				expect: expect{
+					scalingOff:      false,
+					desiredReplicas: 3,
+					resourceChange:  true,
+					scaleOutLimited: true,
+					resources:       requestsCappedToLimit,
 					blockedReasons:  []autoscalingv1alpha1.BlockingReason{},
 				},
 			}),
