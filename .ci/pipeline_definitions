@@ -20,16 +20,11 @@ hvpa-controller:
             inputs:
               repos:
                 source: ~
-              steps:
-                build: ~
     steps:
       check:
         image: 'golang:1.15.3'
       integration_test:
         image: 'golang:1.15.3'
-      build:
-        image: 'golang:1.15.3'
-        output_dir: 'binary'
 
   jobs:
     head-update:
