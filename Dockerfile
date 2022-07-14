@@ -1,7 +1,7 @@
 # Build the manager binary
 FROM golang:1.15.3 as builder
 
-WORKDIR /workspace
+WORKDIR /go/src/github.com/gardener/hvpa-controller
 # Copy the Go Modules manifests
 COPY . .
 
@@ -12,5 +12,5 @@ RUN CGO_ENABLED=0 GO111MODULE=on GOFLAGS=-mod=vendor go build -a -o manager main
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:latest
 WORKDIR /
-COPY --from=builder /workspace/manager .
+COPY --from=builder /go/src/github.com/gardener/hvpa-controller/manager .
 ENTRYPOINT ["/manager"]
