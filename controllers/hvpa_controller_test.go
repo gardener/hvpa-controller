@@ -27,7 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscalingv2beta2 "k8s.io/api/autoscaling/v2beta2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -138,8 +138,8 @@ var _ = Describe("#TestReconcile", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer c.Delete(context.TODO(), instance)
 
-			hpaList := &autoscaling.HorizontalPodAutoscalerList{}
-			hpa := &autoscaling.HorizontalPodAutoscaler{}
+			hpaList := &autoscalingv2beta2.HorizontalPodAutoscalerList{}
+			hpa := &autoscalingv2beta2.HorizontalPodAutoscaler{}
 			Eventually(func() error {
 				num := 0
 				c.List(context.TODO(), hpaList)
@@ -246,7 +246,7 @@ var _ = Describe("#TestReconcile", func() {
 	Describe("#ScaleTests", func() {
 		type setup struct {
 			hvpa      *autoscalingv1alpha1.Hvpa
-			hpaStatus *autoscaling.HorizontalPodAutoscalerStatus
+			hpaStatus *autoscalingv2beta2.HorizontalPodAutoscalerStatus
 			vpaStatus *vpa_api.VerticalPodAutoscalerStatus
 			target    *appsv1.Deployment
 			vpaWeight int32
@@ -345,9 +345,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2beta2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2beta2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -373,9 +373,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2beta2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2beta2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -398,9 +398,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 1, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 1, []autoscalingv2beta2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2beta2.ScalingLimited,
 								Status: v1.ConditionFalse,
 							},
 						}),
@@ -430,9 +430,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2beta2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2beta2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -463,9 +463,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2beta2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2beta2.ScalingLimited,
 								Status: v1.ConditionFalse,
 							},
 						}),
@@ -488,9 +488,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2beta2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2beta2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -516,9 +516,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2beta2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2beta2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -551,9 +551,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						3, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						3, 3, []autoscalingv2beta2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2beta2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -587,9 +587,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2beta2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2beta2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),

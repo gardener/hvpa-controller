@@ -26,7 +26,7 @@ import (
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscalingv2beta2 "k8s.io/api/autoscaling/v2beta2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -156,7 +156,7 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 			},
 		},
 		Spec: autoscalingv1alpha1.HvpaSpec{
-			TargetRef: &autoscaling.CrossVersionObjectReference{
+			TargetRef: &autoscalingv2beta2.CrossVersionObjectReference{
 				Kind:       "Deployment",
 				Name:       target,
 				APIVersion: "apps/v1",
@@ -190,12 +190,15 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 					Spec: autoscalingv1alpha1.HpaTemplateSpec{
 						MinReplicas: &replica,
 						MaxReplicas: 3,
-						Metrics: []autoscaling.MetricSpec{
-							autoscaling.MetricSpec{
-								Type: autoscaling.ResourceMetricSourceType,
-								Resource: &autoscaling.ResourceMetricSource{
-									Name:                     v1.ResourceCPU,
-									TargetAverageUtilization: &util,
+						Metrics: []autoscalingv2beta2.MetricSpec{
+							{
+								Type: autoscalingv2beta2.ResourceMetricSourceType,
+								Resource: &autoscalingv2beta2.ResourceMetricSource{
+									Name: v1.ResourceCPU,
+									Target: autoscalingv2beta2.MetricTarget{
+										Type:               autoscalingv2beta2.AverageValueMetricType,
+										AverageUtilization: &util,
+									},
 								},
 							},
 						},
@@ -249,8 +252,8 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 	return instance
 }
 
-func newHpaStatus(currentReplicas, desiredReplicas int32, conditions []autoscaling.HorizontalPodAutoscalerCondition) *autoscaling.HorizontalPodAutoscalerStatus {
-	return &autoscaling.HorizontalPodAutoscalerStatus{
+func newHpaStatus(currentReplicas, desiredReplicas int32, conditions []autoscalingv2beta2.HorizontalPodAutoscalerCondition) *autoscalingv2beta2.HorizontalPodAutoscalerStatus {
+	return &autoscalingv2beta2.HorizontalPodAutoscalerStatus{
 		CurrentReplicas: currentReplicas,
 		DesiredReplicas: desiredReplicas,
 		Conditions:      conditions,

@@ -30,7 +30,7 @@ import (
 	validation "github.com/gardener/hvpa-controller/internal/api/validation"
 	"github.com/gardener/hvpa-controller/utils"
 	appsv1 "k8s.io/api/apps/v1"
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscalingv2beta2 "k8s.io/api/autoscaling/v2beta2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -68,7 +68,7 @@ var log = logf.Log.WithName("controller").WithName("hvpa")
 func updateEventFunc(e event.UpdateEvent) bool {
 	// If update event is for HVPA/HPA/VPA then we would want to reconcile unconditionally.
 	switch t := e.ObjectOld.(type) {
-	case *autoscalingv1alpha1.Hvpa, *autoscaling.HorizontalPodAutoscaler, *vpa_api.VerticalPodAutoscaler:
+	case *autoscalingv1alpha1.Hvpa, *autoscalingv2beta2.HorizontalPodAutoscaler, *vpa_api.VerticalPodAutoscaler:
 		log.V(4).Info("Update event for", "kind", t.GetObjectKind().GroupVersionKind().Kind)
 		return true
 	case *corev1.Pod:
@@ -327,7 +327,7 @@ func (r *HvpaReconciler) reconcileVpa(hvpa *autoscalingv1alpha1.Hvpa) (*vpa_api.
 	return vpa.Status.DeepCopy(), nil
 }
 
-func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
+func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscalingv2beta2.HorizontalPodAutoscalerStatus, error) {
 	selector, err := metav1.LabelSelectorAsSelector(hvpa.Spec.Hpa.Selector)
 	if err != nil {
 		log.Error(err, "Error converting hpa selector to selector", "hvpa", hvpa.Namespace+"/"+hvpa.Namespace)
@@ -336,7 +336,7 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 
 	// list all hpas to include the hpas that don't match the hvpa`s selector
 	// anymore but has the stale controller ref.
-	hpas := &autoscaling.HorizontalPodAutoscalerList{}
+	hpas := &autoscalingv2beta2.HorizontalPodAutoscalerList{}
 	err = r.List(context.TODO(), hpas, client.InNamespace(hvpa.Namespace))
 	if err != nil {
 		log.Error(err, "Error listing hpas", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
@@ -389,7 +389,7 @@ func (r *HvpaReconciler) reconcileHpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscal
 		}
 
 		// Return the updated HPA status
-		hpa := &autoscaling.HorizontalPodAutoscaler{}
+		hpa := &autoscalingv2beta2.HorizontalPodAutoscaler{}
 		err = r.Get(context.TODO(), types.NamespacedName{Name: filteredHpas[0].Name, Namespace: filteredHpas[0].Namespace}, hpa)
 		return hpa.Status.DeepCopy(), err
 	}
@@ -461,11 +461,11 @@ func getVpaWeightFromIntervals(hvpa *autoscalingv1alpha1.Hvpa, desiredReplicas, 
 	return vpaWeight
 }
 
-func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus,
+func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscalingv2beta2.HorizontalPodAutoscalerStatus,
 	vpaStatus *vpa_api.VerticalPodAutoscalerStatus,
 	hvpa *autoscalingv1alpha1.Hvpa,
 	target runtime.Object,
-) (*autoscaling.HorizontalPodAutoscalerStatus,
+) (*autoscalingv2beta2.HorizontalPodAutoscalerStatus,
 	*vpa_api.VerticalPodAutoscalerStatus,
 	bool, bool,
 	int32,
@@ -653,7 +653,7 @@ func isScalingOffByMode(updatePolicy *autoscalingv1alpha1.UpdatePolicy, maintena
 	return false
 }
 
-func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, currentReplicas int32, hpaWeight int32, blockedScaling *[]*autoscalingv1alpha1.BlockedScaling) (*autoscaling.HorizontalPodAutoscalerStatus, error) {
+func getWeightedReplicas(hpaStatus *autoscalingv2beta2.HorizontalPodAutoscalerStatus, hvpa *autoscalingv1alpha1.Hvpa, currentReplicas int32, hpaWeight int32, blockedScaling *[]*autoscalingv1alpha1.BlockedScaling) (*autoscalingv2beta2.HorizontalPodAutoscalerStatus, error) {
 	anno := hvpa.GetAnnotations()
 	if val, ok := anno["hpa-controller"]; !ok || val != "hvpa" {
 		log.V(3).Info("HPA is not controlled by HVPA", "hvpa", hvpa.Namespace+"/"+hvpa.Name)
@@ -673,7 +673,7 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	desiredReplicas := hpaStatus.DesiredReplicas
 
 	// Initialize output hpa status
-	outHpaStatus := &autoscaling.HorizontalPodAutoscalerStatus{
+	outHpaStatus := &autoscalingv2beta2.HorizontalPodAutoscalerStatus{
 		CurrentReplicas: currentReplicas,
 		DesiredReplicas: currentReplicas,
 	}
@@ -789,7 +789,7 @@ func getWeightedReplicas(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, h
 	return outHpaStatus, err
 }
 
-func isHpaScaleOutLimited(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, maxReplicas int32, hpaScaleUpUpdateMode *string, maintenanceWindow *autoscalingv1alpha1.MaintenanceTimeWindow) bool {
+func isHpaScaleOutLimited(hpaStatus *autoscalingv2beta2.HorizontalPodAutoscalerStatus, maxReplicas int32, hpaScaleUpUpdateMode *string, maintenanceWindow *autoscalingv1alpha1.MaintenanceTimeWindow) bool {
 	if isScalingOffByMode(&autoscalingv1alpha1.UpdatePolicy{UpdateMode: hpaScaleUpUpdateMode}, maintenanceWindow) {
 		return true
 	}
@@ -801,7 +801,7 @@ func isHpaScaleOutLimited(hpaStatus *autoscaling.HorizontalPodAutoscalerStatus, 
 		return false
 	}
 	for _, v := range hpaStatus.Conditions {
-		if v.Type == autoscaling.ScalingLimited && v.Status == corev1.ConditionTrue {
+		if v.Type == autoscalingv2beta2.ScalingLimited && v.Status == corev1.ConditionTrue {
 			log.V(3).Info("HPA scale out is limited")
 			return true
 		}
@@ -1671,7 +1671,7 @@ func (r *HvpaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	podSource := source.Kind{Type: &corev1.Pod{}}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&autoscalingv1alpha1.Hvpa{}).
-		Owns(&autoscaling.HorizontalPodAutoscaler{}).
+		Owns(&autoscalingv2beta2.HorizontalPodAutoscaler{}).
 		Owns(&vpa_api.VerticalPodAutoscaler{}).
 		Watches(&podSource, podEventHandler).
 		WithEventFilter(pred).

@@ -29,7 +29,7 @@ import (
 
 	//"github.com/gardener/hvpa-controller/api/v1alpha1"
 
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscalingv2beta2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -187,12 +187,12 @@ func NewHvpaControllerRefManager(
 //
 // If the error is nil, either the reconciliation succeeded, or no
 // reconciliation was necessary. The list of Hpas that you now own is returned.
-func (m *HvpaControllerRefManager) ClaimHpas(hpas *autoscaling.HorizontalPodAutoscalerList, filters ...func(*autoscaling.HorizontalPodAutoscaler) bool) ([]*autoscaling.HorizontalPodAutoscaler, error) {
-	var claimed []*autoscaling.HorizontalPodAutoscaler
+func (m *HvpaControllerRefManager) ClaimHpas(hpas *autoscalingv2beta2.HorizontalPodAutoscalerList, filters ...func(*autoscalingv2beta2.HorizontalPodAutoscaler) bool) ([]*autoscalingv2beta2.HorizontalPodAutoscaler, error) {
+	var claimed []*autoscalingv2beta2.HorizontalPodAutoscaler
 	var errlist []error
 
 	match := func(obj metav1.Object) bool {
-		hpa := obj.(*autoscaling.HorizontalPodAutoscaler)
+		hpa := obj.(*autoscalingv2beta2.HorizontalPodAutoscaler)
 		// Check selector first so filters only run on potentially matching Hpas.
 		if !m.Selector.Matches(labels.Set(hpa.Labels)) {
 			return false
@@ -206,10 +206,10 @@ func (m *HvpaControllerRefManager) ClaimHpas(hpas *autoscaling.HorizontalPodAuto
 	}
 
 	adopt := func(obj metav1.Object) error {
-		return m.AdoptHpa(obj.(*autoscaling.HorizontalPodAutoscaler))
+		return m.AdoptHpa(obj.(*autoscalingv2beta2.HorizontalPodAutoscaler))
 	}
 	release := func(obj metav1.Object) error {
-		return m.ReleaseHpa(obj.(*autoscaling.HorizontalPodAutoscaler))
+		return m.ReleaseHpa(obj.(*autoscalingv2beta2.HorizontalPodAutoscaler))
 	}
 
 	for k := range hpas.Items {
@@ -284,7 +284,7 @@ func (m *HvpaControllerRefManager) ClaimVpas(vpas *vpa_api.VerticalPodAutoscaler
 
 // AdoptHpa sends a patch to take control of the Hpa. It returns the error if
 // the patching fails.
-func (m *HvpaControllerRefManager) AdoptHpa(hpa *autoscaling.HorizontalPodAutoscaler) error {
+func (m *HvpaControllerRefManager) AdoptHpa(hpa *autoscalingv2beta2.HorizontalPodAutoscaler) error {
 	if err := m.CanAdopt(); err != nil {
 		return fmt.Errorf("can't adopt hpa %v/%v (%v): %v", hpa.Namespace, hpa.Name, hpa.UID, err)
 	}
@@ -301,7 +301,7 @@ func (m *HvpaControllerRefManager) AdoptHpa(hpa *autoscaling.HorizontalPodAutosc
 
 // ReleaseHpa sends a patch to free the Hpa from the control of the controller.
 // It returns the error if the patching fails. 404 and 422 errors are ignored.
-func (m *HvpaControllerRefManager) ReleaseHpa(hpa *autoscaling.HorizontalPodAutoscaler) error {
+func (m *HvpaControllerRefManager) ReleaseHpa(hpa *autoscalingv2beta2.HorizontalPodAutoscaler) error {
 	log.V(4).Info("ReleaseHpa()", "HPA", hpa.Namespace+"/"+hpa.Name, "controller", m.controllerKind.String(), "controller name", m.Controller.GetName())
 
 	hpaClone := hpa.DeepCopy()
