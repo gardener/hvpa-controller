@@ -171,7 +171,7 @@ golang.org/x/oauth2/google
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
-# golang.org/x/sys v0.0.0-20201107080550-4d91cf3a1aaf
+# golang.org/x/sys v0.0.0-20220908164124-27713097b956
 ## explicit
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix

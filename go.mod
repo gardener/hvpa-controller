@@ -9,7 +9,7 @@ require (
 	github.com/onsi/gomega v1.10.1
 	github.com/prometheus/client_golang v1.0.0
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b
-	golang.org/x/sys v0.0.0-20201107080550-4d91cf3a1aaf // indirect
+	golang.org/x/sys v0.0.0-20220908164124-27713097b956 // indirect
 	golang.org/x/tools v0.0.0-20201105220310-78b158585360 // indirect
 	k8s.io/api v0.18.8
 	k8s.io/apimachinery v0.18.8
