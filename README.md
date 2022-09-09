@@ -3,6 +3,16 @@
 [![CI Build status](https://concourse.ci.gardener.cloud/api/v1/teams/gardener/pipelines/hvpa-controller-master/jobs/master-head-update-job/badge)](https://concourse.ci.gardener.cloud/teams/gardener/pipelines/hvpa-controller-master/jobs/master-head-update-job)
 [![Go Report Card](https://goreportcard.com/badge/github.com/gardener/hvpa-controller)](https://goreportcard.com/report/github.com/gardener/hvpa-controller)
 
+### Development
+* Make sure to install `envtest` in version 1.19.2 due to a [known issue](https://github.com/golang/go/wiki/MacOS12BSDThreadRegisterIssue#introduction) when running on recent macOS. Older versions contain `etcd` binaries built with go<=1.10, newer versions [have different issues during cleanup](https://book.kubebuilder.io/reference/envtest.html#kubernetes-120-and-121-binary-issues).
+```bash
+export K8S_VERSION=1.19.2
+curl -sSLo envtest-bins.tar.gz "https://go.kubebuilder.io/test-tools/${K8S_VERSION}/$(go env GOOS)/$(go env GOARCH)"
+mkdir /usr/local/kubebuilder
+tar -C /usr/local/kubebuilder --strip-components=1 -zvxf envtest-bins.tar.gz
+```
+* Make changes and run tests with `make test`
+
 ### Goals
 1. The goal of HVPA is to re-use the upstream components [HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) and [VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler) as much as possible for scaling components horizontally and vertically respectively.
    1. HPA for recommendation and scaling horizontally.
