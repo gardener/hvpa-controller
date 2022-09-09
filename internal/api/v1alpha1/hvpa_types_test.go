@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/onsi/gomega"
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -66,7 +66,7 @@ var _ = Describe("Hvpa", func() {
 					Namespace: "default",
 				},
 				Spec: HvpaSpec{
-					TargetRef: &autoscaling.CrossVersionObjectReference{},
+					TargetRef: &autoscalingv2.CrossVersionObjectReference{},
 					Hpa: HpaSpec{
 						Selector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{

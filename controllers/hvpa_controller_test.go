@@ -27,7 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -138,8 +138,8 @@ var _ = Describe("#TestReconcile", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer c.Delete(context.TODO(), instance)
 
-			hpaList := &autoscaling.HorizontalPodAutoscalerList{}
-			hpa := &autoscaling.HorizontalPodAutoscaler{}
+			hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
+			hpa := &autoscalingv2.HorizontalPodAutoscaler{}
 			Eventually(func() error {
 				num := 0
 				c.List(context.TODO(), hpaList)
@@ -208,26 +208,29 @@ var _ = Describe("#TestReconcile", func() {
 						},
 					},
 				},
-				Status: v1.PodStatus{
-					ContainerStatuses: []v1.ContainerStatus{
-						{
-							RestartCount: 2,
-							LastTerminationState: v1.ContainerState{
-								Terminated: &v1.ContainerStateTerminated{
-									Reason:     "OOMKilled",
-									FinishedAt: metav1.Now(),
-								},
+			}
+			Expect(c.Create(context.TODO(), &p)).To(Succeed())
+			p.Status = v1.PodStatus{
+				ContainerStatuses: []v1.ContainerStatus{
+					{
+						RestartCount: 2,
+						LastTerminationState: v1.ContainerState{
+							Terminated: &v1.ContainerStateTerminated{
+								Reason:     "OOMKilled",
+								FinishedAt: metav1.Now(),
 							},
 						},
 					},
 				},
 			}
-			Expect(c.Create(context.TODO(), &p)).To(Succeed())
 			Expect(c.Status().Update(context.TODO(), &p)).To(Succeed())
 
 			Eventually(func() bool {
 				h := &autoscalingv1alpha1.Hvpa{}
-				c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, h)
+				err := c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, h)
+				if err != nil {
+					Fail(fmt.Sprintf("found error while trying to get HVPA: %s", err))
+				}
 				return h.Status.OverrideScaleUpStabilization
 			}, timeout).Should(BeTrue())
 
@@ -246,7 +249,7 @@ var _ = Describe("#TestReconcile", func() {
 	Describe("#ScaleTests", func() {
 		type setup struct {
 			hvpa      *autoscalingv1alpha1.Hvpa
-			hpaStatus *autoscaling.HorizontalPodAutoscalerStatus
+			hpaStatus *autoscalingv2.HorizontalPodAutoscalerStatus
 			vpaStatus *vpa_api.VerticalPodAutoscalerStatus
 			target    *appsv1.Deployment
 			vpaWeight int32
@@ -345,9 +348,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -373,9 +376,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -398,9 +401,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 1, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 1, []autoscalingv2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2.ScalingLimited,
 								Status: v1.ConditionFalse,
 							},
 						}),
@@ -430,9 +433,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -463,9 +466,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2.ScalingLimited,
 								Status: v1.ConditionFalse,
 							},
 						}),
@@ -488,9 +491,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -516,9 +519,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -551,9 +554,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						3, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						3, 3, []autoscalingv2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),
@@ -587,9 +590,9 @@ var _ = Describe("#TestReconcile", func() {
 				setup: setup{
 					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
 					hpaStatus: newHpaStatus(
-						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
+						2, 3, []autoscalingv2.HorizontalPodAutoscalerCondition{
 							{
-								Type:   autoscaling.ScalingLimited,
+								Type:   autoscalingv2.ScalingLimited,
 								Status: v1.ConditionTrue,
 							},
 						}),

@@ -22,7 +22,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"k8s.io/api/autoscaling/v2beta1"
+	"k8s.io/api/autoscaling/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
@@ -134,7 +134,7 @@ func (in *HpaTemplateSpec) DeepCopyInto(out *HpaTemplateSpec) {
 	}
 	if in.Metrics != nil {
 		in, out := &in.Metrics, &out.Metrics
-		*out = make([]v2beta1.MetricSpec, len(*in))
+		*out = make([]v2.MetricSpec, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -227,7 +227,7 @@ func (in *HvpaSpec) DeepCopyInto(out *HvpaSpec) {
 	}
 	if in.TargetRef != nil {
 		in, out := &in.TargetRef, &out.TargetRef
-		*out = new(v2beta1.CrossVersionObjectReference)
+		*out = new(v2.CrossVersionObjectReference)
 		**out = **in
 	}
 	if in.MaintenanceTimeWindow != nil {

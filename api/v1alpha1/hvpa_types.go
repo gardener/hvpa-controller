@@ -17,7 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 )
@@ -83,7 +83,7 @@ type HpaTemplateSpec struct {
 	// more information about how each type of metric must respond.
 	// If not set, the default metric will be set to 80% average CPU utilization.
 	// +optional
-	Metrics []autoscaling.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,rep,name=metrics"`
+	Metrics []autoscalingv2.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,rep,name=metrics"`
 }
 
 // WeightBasedScalingInterval defines the interval of replica counts in which VpaWeight is applied to VPA scaling
@@ -218,7 +218,7 @@ type HvpaSpec struct {
 	WeightBasedScalingIntervals []WeightBasedScalingInterval `json:"weightBasedScalingIntervals,omitempty"`
 
 	// TargetRef points to the controller managing the set of pods for the autoscaler to control
-	TargetRef *autoscaling.CrossVersionObjectReference `json:"targetRef"`
+	TargetRef *autoscalingv2.CrossVersionObjectReference `json:"targetRef"`
 
 	// MaintenanceTimeWindow contains information about the time window for maintenance operations.
 	// +optional

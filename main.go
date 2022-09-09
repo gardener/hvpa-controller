@@ -25,8 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	"k8s.io/klog"
-	"k8s.io/klog/klogr"
+	klogv2 "k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	// +kubebuilder:scaffold:imports
 )
@@ -44,7 +43,7 @@ func init() {
 }
 
 func main() {
-	klog.InitFlags(nil)
+	klogv2.InitFlags(nil)
 
 	var (
 		metricsAddr           string
@@ -58,7 +57,7 @@ func main() {
 		"Enable detailed per HVPA resource metrics. This could significantly increase the cardinality of the metrics.")
 	flag.Parse()
 
-	ctrl.SetLogger(klogr.New())
+	ctrl.SetLogger(klogv2.NewKlogr())
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:             scheme,

@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -47,7 +47,7 @@ var _ = Describe("#Adopt HPA", func() {
 
 			hasSingleChildFn := func() error {
 				num := 0
-				objList := &autoscaling.HorizontalPodAutoscalerList{}
+				objList := &autoscalingv2.HorizontalPodAutoscalerList{}
 				if err := c.List(context.TODO(), objList); err != nil {
 					return err
 				}
@@ -90,7 +90,7 @@ var _ = Describe("#Adopt HPA", func() {
 
 			// Eventually the owner ref from HPA should be removed by the HVPA controller
 			Eventually(func() error {
-				hpaList := &autoscaling.HorizontalPodAutoscalerList{}
+				hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
 				c.List(context.TODO(), hpaList, client.MatchingLabels(label))
 				for _, obj := range hpaList.Items {
 					for _, ref := range obj.GetOwnerReferences() {

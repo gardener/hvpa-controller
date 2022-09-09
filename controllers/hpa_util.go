@@ -22,7 +22,7 @@ import (
 	"reflect"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,9 +33,9 @@ import (
 // TODO: use client library instead when it starts to support update retries
 //
 //	see https://github.com/kubernetes/kubernetes/issues/21479
-type updateHpaFunc func(hpa *autoscaling.HorizontalPodAutoscaler)
+type updateHpaFunc func(hpa *autoscalingv2.HorizontalPodAutoscaler)
 
-func (r *HvpaReconciler) claimHpas(hvpa *autoscalingv1alpha1.Hvpa, selector labels.Selector, hpas *autoscaling.HorizontalPodAutoscalerList) ([]*autoscaling.HorizontalPodAutoscaler, error) {
+func (r *HvpaReconciler) claimHpas(hvpa *autoscalingv1alpha1.Hvpa, selector labels.Selector, hpas *autoscalingv2.HorizontalPodAutoscalerList) ([]*autoscalingv2.HorizontalPodAutoscaler, error) {
 	// If any adoptions are attempted, we should first recheck for deletion with
 	// an uncached quorum read sometime after listing Machines (see #42639).
 	canAdoptFunc := RecheckDeletionTimestamp(func() (metav1.Object, error) {
@@ -54,7 +54,7 @@ func (r *HvpaReconciler) claimHpas(hvpa *autoscalingv1alpha1.Hvpa, selector labe
 }
 
 // The returned bool value can be used to tell if the hpa is actually updated.
-func hpaSpecNeedChange(hvpa *autoscalingv1alpha1.Hvpa, hpa *autoscaling.HorizontalPodAutoscaler) bool {
+func hpaSpecNeedChange(hvpa *autoscalingv1alpha1.Hvpa, hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 	return *hvpa.Spec.Hpa.Template.Spec.MinReplicas != *hpa.Spec.MinReplicas ||
 		hvpa.Spec.Hpa.Template.Spec.MaxReplicas != hpa.Spec.MaxReplicas ||
 		!reflect.DeepEqual(hvpa.Spec.Hpa.Template.Spec.Metrics, hpa.Spec.Metrics) ||
@@ -62,8 +62,8 @@ func hpaSpecNeedChange(hvpa *autoscalingv1alpha1.Hvpa, hpa *autoscaling.Horizont
 }
 
 // UpdateHpaWithRetries updates a hpa with given applyUpdate function. Note that hpa not found error is ignored.
-func (r *HvpaReconciler) UpdateHpaWithRetries(namespace, name string, applyUpdate updateHpaFunc) (*autoscaling.HorizontalPodAutoscaler, error) {
-	hpa := &autoscaling.HorizontalPodAutoscaler{}
+func (r *HvpaReconciler) UpdateHpaWithRetries(namespace, name string, applyUpdate updateHpaFunc) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{}
 
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		var err error
@@ -86,11 +86,11 @@ func (r *HvpaReconciler) UpdateHpaWithRetries(namespace, name string, applyUpdat
 	return hpa, retryErr
 }
 
-func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutoscaler, hvpa *autoscalingv1alpha1.Hvpa) error {
+func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscalingv2.HorizontalPodAutoscaler, hvpa *autoscalingv1alpha1.Hvpa) error {
 	for _, hpa := range hpaList {
 		if hpaChanged := hpaSpecNeedChange(hvpa, hpa); hpaChanged {
 			_, err := r.UpdateHpaWithRetries(hpa.Namespace, hpa.Name,
-				func(hpaToUpdate *autoscaling.HorizontalPodAutoscaler) {
+				func(hpaToUpdate *autoscalingv2.HorizontalPodAutoscaler) {
 					hpaToUpdate.Spec.MinReplicas = hvpa.Spec.Hpa.Template.Spec.MinReplicas
 					hpaToUpdate.Spec.MaxReplicas = hvpa.Spec.Hpa.Template.Spec.MaxReplicas
 					hpaToUpdate.Spec.Metrics = hvpa.Spec.Hpa.Template.Spec.Metrics
@@ -105,7 +105,7 @@ func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutosca
 	return nil
 }
 
-func getHpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodAutoscaler, error) {
+func getHpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscalingv2.HorizontalPodAutoscaler, error) {
 	metadata := hvpa.Spec.Hpa.Template.ObjectMeta.DeepCopy()
 
 	if ownerRef := metadata.GetOwnerReferences(); len(ownerRef) != 0 {
@@ -125,9 +125,9 @@ func getHpaFromHvpa(hvpa *autoscalingv1alpha1.Hvpa) (*autoscaling.HorizontalPodA
 	metadata.SetGenerateName(hvpa.Name + "-")
 	metadata.SetNamespace(hvpa.Namespace)
 
-	return &autoscaling.HorizontalPodAutoscaler{
+	return &autoscalingv2.HorizontalPodAutoscaler{
 		ObjectMeta: *metadata,
-		Spec: autoscaling.HorizontalPodAutoscalerSpec{
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
 			MaxReplicas:    hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
 			MinReplicas:    hvpa.Spec.Hpa.Template.Spec.MinReplicas,
 			ScaleTargetRef: *hvpa.Spec.TargetRef.DeepCopy(),
