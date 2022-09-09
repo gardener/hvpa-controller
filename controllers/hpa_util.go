@@ -31,7 +31,8 @@ import (
 )
 
 // TODO: use client library instead when it starts to support update retries
-//       see https://github.com/kubernetes/kubernetes/issues/21479
+//
+//	see https://github.com/kubernetes/kubernetes/issues/21479
 type updateHpaFunc func(hpa *autoscaling.HorizontalPodAutoscaler)
 
 func (r *HvpaReconciler) claimHpas(hvpa *autoscalingv1alpha1.Hvpa, selector labels.Selector, hpas *autoscaling.HorizontalPodAutoscalerList) ([]*autoscaling.HorizontalPodAutoscaler, error) {
