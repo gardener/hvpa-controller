@@ -27,7 +27,7 @@ import (
 	"fmt"
 	"sync"
 
-	//"github.com/gardener/hvpa-controller/api/v1alpha1"
+	//"github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha1"
 
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	"k8s.io/apimachinery/pkg/api/errors"

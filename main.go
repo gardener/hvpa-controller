@@ -27,8 +27,8 @@ import (
 	klogv2 "k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
-	"github.com/gardener/hvpa-controller/controllers"
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha1"
+	controllers "github.com/gardener/hvpa-controller/controllers/autoscaling"
 	// +kubebuilder:scaffold:imports
 )
 

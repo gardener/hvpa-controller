@@ -20,7 +20,7 @@ package validation
 import (
 	"time"
 
-	"github.com/gardener/hvpa-controller/api/v1alpha1"
+	"github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha1"
 	"github.com/gardener/hvpa-controller/utils"
 	"k8s.io/apimachinery/pkg/api/resource"
 	apimachineryvalidation "k8s.io/apimachinery/pkg/api/validation"
