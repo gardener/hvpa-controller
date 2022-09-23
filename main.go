@@ -28,6 +28,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha1"
+	autoscalingv1alpha2 "github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha2"
 	controllers "github.com/gardener/hvpa-controller/controllers/autoscaling"
 	// +kubebuilder:scaffold:imports
 )
@@ -40,6 +41,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(autoscalingv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(autoscalingv1alpha2.AddToScheme(scheme))
 
 	// +kubebuilder:scaffold:scheme
 }
