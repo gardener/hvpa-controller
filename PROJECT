@@ -2,6 +2,7 @@ projectName: hvpa-controller
 layout:
 - go.kubebuilder.io/v3
 domain: k8s.io
+multigroup: true
 repo: github.com/gardener/hvpa-controller
 resources:
 - group: autoscaling
