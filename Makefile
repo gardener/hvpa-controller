@@ -85,7 +85,7 @@ deploy: manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
-	cd "$(REPO_ROOT)/api" && $(CONTROLLER_GEN) crd paths="./..." output:crd:artifacts:config=../config/crd/bases
+	cd "$(REPO_ROOT)/apis/autoscaling" && $(CONTROLLER_GEN) crd paths="./..." output:crd:artifacts:config=../config/crd/bases
 	$(CONTROLLER_GEN) rbac:roleName=manager-role webhook paths="./controllers/..."
 	kustomize build config/crd -o config/crd/output/crds.yaml
 
@@ -99,7 +99,7 @@ vet:
 
 # Generate code
 generate: controller-gen
-	cd "$(REPO_ROOT)/api" && $(CONTROLLER_GEN) object:headerFile=../hack/boilerplate.go.txt paths=./...
+	cd "$(REPO_ROOT)/apis/autoscaling" && $(CONTROLLER_GEN) object:headerFile=../../hack/boilerplate.go.txt paths=./...
 
 # Build the docker image
 docker-build: test
@@ -113,7 +113,7 @@ docker-push:
 
 # Revendor
 revendor:
-	@cd "$(REPO_ROOT)/api" && go mod tidy
+	@cd "$(REPO_ROOT)/apis/autoscaling" && go mod tidy
 	@env GO111MODULE=on go mod tidy
 	@env GO111MODULE=on go mod vendor
 

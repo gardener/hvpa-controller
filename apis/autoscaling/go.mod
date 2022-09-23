@@ -1,4 +1,4 @@
-module github.com/gardener/hvpa-controller/api
+module github.com/gardener/hvpa-controller/apis/autoscaling
 
 go 1.18
 

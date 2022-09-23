@@ -1,0 +1,1 @@
+../../../../apis/autoscaling/v1alpha1/groupversion_info.go
