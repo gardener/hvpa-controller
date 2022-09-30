@@ -13,6 +13,7 @@
 # limitations under the License.
 
 VERSION             := $(shell cat VERSION)
+PACKAGES            :="$(go list -e ./... | grep -vE '/tmp/|/vendor/')"
 REGISTRY            := eu.gcr.io/gardener-project/gardener
 REPO_ROOT           := $(shell dirname "$(realpath $(lastword $(MAKEFILE_LIST)))")
 
@@ -32,6 +33,8 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+include hack/tools.mk
+
 all: manager
 
 # Run tests
@@ -49,6 +52,13 @@ run: generate fmt vet
 # Install CRDs into a cluster
 install: manifests
 	kubectl apply -f config/crd/bases
+
+.PHONY: check
+check: $(GOLANGCI_LINT)
+	go vet ${PACKAGES}
+	go fmt ${PACKAGES}
+	# TODO: Lint result temporarily ignored, due to a number of known source code quality issues. To be addressed in a separate change set.
+	-@hack/check.sh --golangci-lint-config=./.golangci.yaml ./...
 
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 deploy: manifests
