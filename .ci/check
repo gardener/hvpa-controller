@@ -15,7 +15,6 @@
 set -e
 
 export GO111MODULE=on
-export GOFLAGS=-mod=vendor
 
 # For the check step concourse will set the following environment variables:
 # SOURCE_PATH - path to component repository root directory.
@@ -28,19 +27,5 @@ fi
 
 cd ${SOURCE_PATH}
 
-echo "Install Golint (linting tool)."
-go install golang.org/x/lint/golint
-
 ###############################################################################
-
-PACKAGES="$(go list -e ./... | grep -vE '/tmp/|/vendor/')"
-LINT_FOLDERS="$(echo ${PACKAGES} | sed "s|github.com/gardener/hvpa-controller|.|g")"
-
-# Execute static code checks.
-go vet ${PACKAGES}
-
-# Execute automatic code formatting directive.
-go fmt ${PACKAGES}
-
-# Execute lint checks.
-golint -set_exit_status ${LINT_FOLDERS}
+make check
