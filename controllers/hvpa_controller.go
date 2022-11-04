@@ -1512,14 +1512,14 @@ func areResourcesEqual(x, y *corev1.PodSpec) bool {
 	return true
 }
 
-func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
-	return &handler.EnqueueRequestsFromMapFunc{
-		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
+func getPodEventHandler(mgr ctrl.Manager) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(
+		func(a client.Object) []reconcile.Request {
 			/* This event handler function, sets the flag on hvpa to override the last scale time stabilization window if:
 			 * 1. The pod was oomkilled, OR
 			 * 2. The pod was evicted, and the node was under memory pressure
 			 */
-			pod := a.Object.(*corev1.Pod)
+			pod := a.(*corev1.Pod)
 			nodeName := pod.Spec.NodeName
 			if nodeName == "" {
 				return nil
@@ -1542,9 +1542,9 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			log.V(4).Info("Checking if need to override last scale time.", "hvpa", name, "pod", pod.Name, "namespace", pod.Namespace)
 			// Get latest HVPA object
 			hvpa := &autoscalingv1alpha1.Hvpa{}
-			err := c.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: a.Meta.GetNamespace()}, hvpa)
+			err := c.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: a.GetNamespace()}, hvpa)
 			if err != nil {
-				log.Error(err, "Error retreiving hvpa", "name", a.Meta.GetNamespace()+"/"+name)
+				log.Error(err, "Error retreiving hvpa", "name", a.GetNamespace()+"/"+name)
 				return nil
 			}
 
@@ -1651,8 +1651,8 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			}
 
 			return nil
-		}),
-	}
+		},
+	)
 }
 
 // SetupWithManager sets up manager with a new controller and r as the reconcile.Reconciler
