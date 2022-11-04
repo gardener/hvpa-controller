@@ -1366,9 +1366,7 @@ func containsResourceName(resourceNames []corev1.ResourceName, resourceName core
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;watch;list
-func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := context.Background()
-
+func (r *HvpaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// Fetch the Hvpa instance
 	instance := &autoscalingv1alpha1.Hvpa{}
 	err := r.Get(ctx, req.NamespacedName, instance)

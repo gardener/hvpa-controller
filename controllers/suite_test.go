@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -119,8 +120,8 @@ var _ = AfterSuite(func() {
 // writes the request to requests after Reconcile is finished.
 func SetupTestReconcile(inner reconcile.Reconciler) (reconcile.Reconciler, chan reconcile.Request) {
 	requests := make(chan reconcile.Request)
-	fn := reconcile.Func(func(req reconcile.Request) (reconcile.Result, error) {
-		result, err := inner.Reconcile(req)
+	fn := reconcile.Func(func(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+		result, err := inner.Reconcile(ctx, req)
 		requests <- req
 		return result, err
 	})
