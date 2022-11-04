@@ -1524,7 +1524,7 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			if nodeName == "" {
 				return nil
 			}
-			client := mgr.GetClient()
+			c := mgr.GetClient()
 
 			// Get HVPA from the cache
 			name := ""
@@ -1542,7 +1542,7 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			log.V(4).Info("Checking if need to override last scale time.", "hvpa", name, "pod", pod.Name, "namespace", pod.Namespace)
 			// Get latest HVPA object
 			hvpa := &autoscalingv1alpha1.Hvpa{}
-			err := client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: a.Meta.GetNamespace()}, hvpa)
+			err := c.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: a.Meta.GetNamespace()}, hvpa)
 			if err != nil {
 				log.Error(err, "Error retreiving hvpa", "name", a.Meta.GetNamespace()+"/"+name)
 				return nil
@@ -1556,7 +1556,7 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 				return nil
 			}
 
-			err = client.Get(context.TODO(), types.NamespacedName{Name: target.Name, Namespace: hvpa.Namespace}, obj)
+			err = c.Get(context.TODO(), types.NamespacedName{Name: target.Name, Namespace: hvpa.Namespace}, obj)
 			if err != nil {
 				log.Error(err, "Error getting", "kind", target.Kind, "name", target.Name, "namespace", hvpa.Namespace)
 				return nil
@@ -1600,7 +1600,7 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 					Name: nodeName,
 				}
 				node := corev1.Node{}
-				err := client.Get(context.TODO(), req, &node)
+				err := c.Get(context.TODO(), req, &node)
 				if err != nil {
 					log.Error(err, "Error fetching node", "node", req.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 					return nil
@@ -1644,7 +1644,7 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			clone.Status.OverrideScaleUpStabilization = true
 
 			log.V(2).Info("Updating HVPA status to override last scale time", "HVPA", clone.Namespace+"/"+clone.Name)
-			err = client.Status().Update(context.TODO(), clone)
+			err = c.Status().Update(context.TODO(), clone)
 			if err != nil {
 				log.Error(err, "Error overrinding last scale time for", "HVPA", clone.Namespace+"/"+name)
 			}
