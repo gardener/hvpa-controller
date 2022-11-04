@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
@@ -49,12 +48,11 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	cfg        *rest.Config
-	k8sClient  client.Client
-	testEnv    *envtest.Environment
-	mgr        manager.Manager
-	stopMgr    chan struct{}
-	mgrStopped *sync.WaitGroup
+	cfg               *rest.Config
+	k8sClient         client.Client
+	testEnv           *envtest.Environment
+	mgr               manager.Manager
+	managerCancelFunc context.CancelFunc
 )
 
 func TestAPIs(t *testing.T) {
@@ -65,51 +63,55 @@ func TestAPIs(t *testing.T) {
 		[]Reporter{printer.NewlineReporter{}})
 }
 
-var _ = BeforeSuite(func(done Done) {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+var _ = BeforeSuite(func() {
+	done := make(chan interface{})
+	go func() {
+		ctx := context.Background()
+		logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths: []string{
-			filepath.Join("..", "config", "crd", "integration_test"),
-			filepath.Join("..", "config", "crd", "output"),
-		},
-	}
+		By("bootstrapping test environment")
+		testEnv = &envtest.Environment{
+			CRDDirectoryPaths: []string{
+				filepath.Join("..", "config", "crd", "integration_test"),
+				filepath.Join("..", "config", "crd", "output"),
+			},
+		}
 
-	var err error
-	cfg, err = testEnv.Start()
-	Expect(err).ToNot(HaveOccurred())
-	Expect(cfg).ToNot(BeNil())
+		var err error
+		cfg, err = testEnv.Start()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(cfg).ToNot(BeNil())
 
-	err = autoscalingv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
+		err = autoscalingv1alpha1.AddToScheme(scheme.Scheme)
+		Expect(err).NotTo(HaveOccurred())
 
-	// +kubebuilder:scaffold:scheme
+		// +kubebuilder:scaffold:scheme
 
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).ToNot(HaveOccurred())
-	Expect(k8sClient).ToNot(BeNil())
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(k8sClient).ToNot(BeNil())
 
-	// Setup the Manager.
-	mgr, err = ctrl.NewManager(cfg, ctrl.Options{})
-	Expect(err).NotTo(HaveOccurred())
+		// Setup the Manager.
+		mgr, err = ctrl.NewManager(cfg, ctrl.Options{})
+		Expect(err).NotTo(HaveOccurred())
 
-	reconciler := HvpaReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}
+		reconciler := HvpaReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}
 
-	err = reconciler.SetupWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
+		err = reconciler.SetupWithManager(mgr)
+		Expect(err).NotTo(HaveOccurred())
 
-	stopMgr, mgrStopped = StartTestManager(mgr, &GomegaWithT{})
+		managerCancelFunc = StartTestManager(ctx, mgr)
 
-	close(done)
-}, 60)
+		close(done)
+	}()
+	Eventually(done, "60s").Should(BeClosed())
+})
 
 var _ = AfterSuite(func() {
-	close(stopMgr)
-	mgrStopped.Wait()
+	managerCancelFunc()
 
 	By("tearing down the test environment")
 	err := testEnv.Stop()
@@ -129,15 +131,13 @@ func SetupTestReconcile(inner reconcile.Reconciler) (reconcile.Reconciler, chan 
 }
 
 // StartTestManager adds recFn
-func StartTestManager(mgr manager.Manager, g *GomegaWithT) (chan struct{}, *sync.WaitGroup) {
-	stop := make(chan struct{})
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
+func StartTestManager(ctx context.Context, mgr manager.Manager) context.CancelFunc {
+	c, cancelFunc := context.WithCancel(ctx)
 	go func() {
-		defer wg.Done()
-		Expect(mgr.Start(stop)).NotTo(HaveOccurred())
+		defer GinkgoRecover()
+		Expect(mgr.Start(c)).To(Succeed())
 	}()
-	return stop, wg
+	return cancelFunc
 }
 
 func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleParams) *autoscalingv1alpha1.Hvpa {
