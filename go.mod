@@ -3,7 +3,7 @@ module github.com/gardener/hvpa-controller
 go 1.18
 
 require (
-	github.com/gardener/hvpa-controller/apis/autoscaling/ v0.0.0
+	github.com/gardener/hvpa-controller/apis/autoscaling v0.0.0
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.20.1
 	github.com/prometheus/client_golang v1.12.2
@@ -87,4 +87,4 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace github.com/gardener/hvpa-controller/apis/autoscaling/ => ./apis/autoscaling
+replace github.com/gardener/hvpa-controller/apis/autoscaling => ./apis/autoscaling
