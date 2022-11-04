@@ -471,7 +471,7 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	int32,
 	*[]*autoscalingv1alpha1.BlockedScaling,
 	error) {
-	var newObj runtime.Object
+	var newObj client.Object
 	var deploy *appsv1.Deployment
 	var ss *appsv1.StatefulSet
 	var ds *appsv1.DaemonSet
@@ -1399,7 +1399,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		RequeueAfter: requeAfter,
 	}
 
-	var obj runtime.Object
+	var obj client.Object
 	switch instance.Spec.TargetRef.Kind {
 	case "Deployment":
 		obj = &appsv1.Deployment{}
@@ -1550,11 +1550,12 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 
 			// Check if pod has latest resource values - we don't want to override stabilisation if target has different resources than this pod
 			target := hvpa.Spec.TargetRef
-			obj, err := scheme.Scheme.New(schema.FromAPIVersionAndKind(target.APIVersion, target.Kind))
+			o, err := scheme.Scheme.New(schema.FromAPIVersionAndKind(target.APIVersion, target.Kind))
 			if err != nil {
 				log.Error(err, "Error initializing runtime.Object for", "kind", target.Kind, "name", target.Name, "namespace", hvpa.Namespace)
 				return nil
 			}
+			obj := o.(client.Object)
 
 			err = c.Get(context.TODO(), types.NamespacedName{Name: target.Name, Namespace: hvpa.Namespace}, obj)
 			if err != nil {
