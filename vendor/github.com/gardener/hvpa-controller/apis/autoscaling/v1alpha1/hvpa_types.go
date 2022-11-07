@@ -350,3 +350,6 @@ type HvpaList struct {
 /*func init() {
 	SchemeBuilder.Register(&Hvpa{}, &HvpaList{})
 }*/
+
+// Hub marks this version as the API conversion Hub
+func (*Hvpa) Hub() {}

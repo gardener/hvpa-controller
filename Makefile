@@ -58,6 +58,7 @@ SHELL = /usr/bin/env bash -o pipefail
 
 test: envtest manifests generate fmt vet ## Run tests.
 	source <($(LOCALBIN)/setup-envtest use -p env 1.24.2); go test ./internal/... ./controllers/... ./utils/... -coverprofile cover.out
+	@cd "$(REPO_ROOT)/apis/autoscaling" && go test ./v1alpha2
 
 # Build manager binary
 manager: generate fmt vet
