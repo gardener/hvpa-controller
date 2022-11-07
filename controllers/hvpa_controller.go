@@ -471,7 +471,7 @@ func (r *HvpaReconciler) scaleIfRequired(hpaStatus *autoscaling.HorizontalPodAut
 	int32,
 	*[]*autoscalingv1alpha1.BlockedScaling,
 	error) {
-	var newObj runtime.Object
+	var newObj client.Object
 	var deploy *appsv1.Deployment
 	var ss *appsv1.StatefulSet
 	var ds *appsv1.DaemonSet
@@ -1366,9 +1366,7 @@ func containsResourceName(resourceNames []corev1.ResourceName, resourceName core
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling.k8s.io,resources=hvpas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;watch;list
-func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
-	ctx := context.Background()
-
+func (r *HvpaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// Fetch the Hvpa instance
 	instance := &autoscalingv1alpha1.Hvpa{}
 	err := r.Get(ctx, req.NamespacedName, instance)
@@ -1399,7 +1397,7 @@ func (r *HvpaReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		RequeueAfter: requeAfter,
 	}
 
-	var obj runtime.Object
+	var obj client.Object
 	switch instance.Spec.TargetRef.Kind {
 	case "Deployment":
 		obj = &appsv1.Deployment{}
@@ -1512,19 +1510,19 @@ func areResourcesEqual(x, y *corev1.PodSpec) bool {
 	return true
 }
 
-func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
-	return &handler.EnqueueRequestsFromMapFunc{
-		ToRequests: handler.ToRequestsFunc(func(a handler.MapObject) []reconcile.Request {
+func getPodEventHandler(mgr ctrl.Manager) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(
+		func(a client.Object) []reconcile.Request {
 			/* This event handler function, sets the flag on hvpa to override the last scale time stabilization window if:
 			 * 1. The pod was oomkilled, OR
 			 * 2. The pod was evicted, and the node was under memory pressure
 			 */
-			pod := a.Object.(*corev1.Pod)
+			pod := a.(*corev1.Pod)
 			nodeName := pod.Spec.NodeName
 			if nodeName == "" {
 				return nil
 			}
-			client := mgr.GetClient()
+			c := mgr.GetClient()
 
 			// Get HVPA from the cache
 			name := ""
@@ -1542,21 +1540,22 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			log.V(4).Info("Checking if need to override last scale time.", "hvpa", name, "pod", pod.Name, "namespace", pod.Namespace)
 			// Get latest HVPA object
 			hvpa := &autoscalingv1alpha1.Hvpa{}
-			err := client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: a.Meta.GetNamespace()}, hvpa)
+			err := c.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: a.GetNamespace()}, hvpa)
 			if err != nil {
-				log.Error(err, "Error retreiving hvpa", "name", a.Meta.GetNamespace()+"/"+name)
+				log.Error(err, "Error retreiving hvpa", "name", a.GetNamespace()+"/"+name)
 				return nil
 			}
 
 			// Check if pod has latest resource values - we don't want to override stabilisation if target has different resources than this pod
 			target := hvpa.Spec.TargetRef
-			obj, err := scheme.Scheme.New(schema.FromAPIVersionAndKind(target.APIVersion, target.Kind))
+			o, err := scheme.Scheme.New(schema.FromAPIVersionAndKind(target.APIVersion, target.Kind))
 			if err != nil {
 				log.Error(err, "Error initializing runtime.Object for", "kind", target.Kind, "name", target.Name, "namespace", hvpa.Namespace)
 				return nil
 			}
+			obj := o.(client.Object)
 
-			err = client.Get(context.TODO(), types.NamespacedName{Name: target.Name, Namespace: hvpa.Namespace}, obj)
+			err = c.Get(context.TODO(), types.NamespacedName{Name: target.Name, Namespace: hvpa.Namespace}, obj)
 			if err != nil {
 				log.Error(err, "Error getting", "kind", target.Kind, "name", target.Name, "namespace", hvpa.Namespace)
 				return nil
@@ -1600,7 +1599,7 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 					Name: nodeName,
 				}
 				node := corev1.Node{}
-				err := client.Get(context.TODO(), req, &node)
+				err := c.Get(context.TODO(), req, &node)
 				if err != nil {
 					log.Error(err, "Error fetching node", "node", req.Name, "hvpa", hvpa.Namespace+"/"+hvpa.Name)
 					return nil
@@ -1644,14 +1643,14 @@ func getPodEventHandler(mgr ctrl.Manager) *handler.EnqueueRequestsFromMapFunc {
 			clone.Status.OverrideScaleUpStabilization = true
 
 			log.V(2).Info("Updating HVPA status to override last scale time", "HVPA", clone.Namespace+"/"+clone.Name)
-			err = client.Status().Update(context.TODO(), clone)
+			err = c.Status().Update(context.TODO(), clone)
 			if err != nil {
 				log.Error(err, "Error overrinding last scale time for", "HVPA", clone.Namespace+"/"+name)
 			}
 
 			return nil
-		}),
-	}
+		},
+	)
 }
 
 // SetupWithManager sets up manager with a new controller and r as the reconcile.Reconciler

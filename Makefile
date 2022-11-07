@@ -23,9 +23,6 @@ IMAGE_TAG           := $(VERSION)
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_REPOSITORY):$(IMAGE_TAG)
 
-# Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= "crd:trivialVersions=true"
-
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -67,7 +64,7 @@ deploy: manifests
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests: controller-gen
-	cd "$(REPO_ROOT)/api" && $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=../config/crd/bases
+	cd "$(REPO_ROOT)/api" && $(CONTROLLER_GEN) crd paths="./..." output:crd:artifacts:config=../config/crd/bases
 	$(CONTROLLER_GEN) rbac:roleName=manager-role webhook paths="./controllers/..."
 	kustomize build config/crd -o config/crd/output/crds.yaml
 

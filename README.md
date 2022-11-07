@@ -311,3 +311,9 @@ See [here](https://github.com/gardener/hvpa-controller/blob/a336e86111bbd5ec87f5
 #### Example
 
 See [here](https://github.com/gardener/hvpa-controller/blob/a698b08bc371525f666bb2f4766ccb9a403a0d4b/config/samples/autoscaling_v1alpha1_hvpa.yaml).
+
+### Development
+Configure envtest binaries to 1.24.2 before you run `make test`:
+```bash
+source <(setup-envtest use -p env 1.24.2)
+```

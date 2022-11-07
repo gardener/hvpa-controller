@@ -208,21 +208,21 @@ var _ = Describe("#TestReconcile", func() {
 						},
 					},
 				},
-				Status: v1.PodStatus{
-					ContainerStatuses: []v1.ContainerStatus{
-						{
-							RestartCount: 2,
-							LastTerminationState: v1.ContainerState{
-								Terminated: &v1.ContainerStateTerminated{
-									Reason:     "OOMKilled",
-									FinishedAt: metav1.Now(),
-								},
+			}
+			Expect(c.Create(context.TODO(), &p)).To(Succeed())
+			p.Status = v1.PodStatus{
+				ContainerStatuses: []v1.ContainerStatus{
+					{
+						RestartCount: 2,
+						LastTerminationState: v1.ContainerState{
+							Terminated: &v1.ContainerStateTerminated{
+								Reason:     "OOMKilled",
+								FinishedAt: metav1.Now(),
 							},
 						},
 					},
 				},
 			}
-			Expect(c.Create(context.TODO(), &p)).To(Succeed())
 			Expect(c.Status().Update(context.TODO(), &p)).To(Succeed())
 
 			Eventually(func() bool {
