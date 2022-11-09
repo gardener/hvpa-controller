@@ -50,8 +50,8 @@ func main() {
 		enableLeaderElection  bool
 		enableDetailedMetrics bool
 	)
-	flag.StringVar(&metricsAddr, "metrics-addr", ":9569", "The address the metric endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":9569", "The address the metric endpoint binds to.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&enableDetailedMetrics, "enable-detailed-metrics", false,
 		"Enable detailed per HVPA resource metrics. This could significantly increase the cardinality of the metrics.")
