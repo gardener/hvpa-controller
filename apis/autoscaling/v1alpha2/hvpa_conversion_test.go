@@ -410,6 +410,13 @@ var _ = Describe("HvpaConversion", func() {
 		Expect(destination).To(Equal(v1alpha2.Hvpa{}))
 	})
 
+	It("Should not error on empty conversion from v1alpha2 to v1alpha1", func() {
+		destination := v1alpha1.Hvpa{}
+		source := v1alpha2.Hvpa{}
+		Expect(source.ConvertTo(&destination)).To(Succeed())
+		Expect(destination).To(Equal(v1alpha1.Hvpa{}))
+	})
+
 	It("Should convert from v1alpha1 to v1alpha2", func() {
 		destination := v1alpha2.Hvpa{}
 		Expect(destination.ConvertFrom(&v1alpha1HVPA)).To(Succeed())
