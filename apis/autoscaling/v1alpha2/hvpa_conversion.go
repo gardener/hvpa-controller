@@ -41,11 +41,11 @@ func (src *Hvpa) ConvertTo(dstRaw conversion.Hub) error {
 	for _, metric := range src.Spec.Hpa.Template.Spec.Metrics {
 		ms := autoscalingv2beta1.MetricSpec{
 			Type:              autoscalingv2beta1.MetricSourceType(metric.Type),
-			Object:            Convert_autoscaling_ObjectMetricSource_To_v2beta1_ObjectMetricSource(metric.Object),
-			Pods:              Convert_autoscaling_PodsMetricSource_To_v2beta1_PodsMetricSource(metric.Pods),
-			Resource:          Convert_autoscaling_ResourceMetricSource_To_v2beta1_ResourceMetricSource(metric.Resource),
-			ContainerResource: Convert_autoscaling_ContainerResourceMetricSource_To_v2beta1_ContainerResourceMetricSource(metric.ContainerResource),
-			External:          Convert_autoscaling_ExternalMetricSource_To_v2beta1_ExternalMetricSource(metric.External),
+			Object:            Convert_autoscalingv2_ObjectMetricSource_To_autoscalingv2beta1_ObjectMetricSource(metric.Object),
+			Pods:              Convert_autoscalingv2_PodsMetricSource_To_autoscalingv2beta1_PodsMetricSource(metric.Pods),
+			Resource:          Convert_autoscalingv2_ResourceMetricSource_To_autoscalingv2beta1_ResourceMetricSource(metric.Resource),
+			ContainerResource: Convert_autoscalingv2_ContainerResourceMetricSource_To_autoscalingv2beta1_ContainerResourceMetricSource(metric.ContainerResource),
+			External:          Convert_autoscalingv2_ExternalMetricSource_To_autoscalingv2beta1_ExternalMetricSource(metric.External),
 		}
 		dst.Spec.Hpa.Template.Spec.Metrics = append(dst.Spec.Hpa.Template.Spec.Metrics, ms)
 	}
@@ -92,7 +92,7 @@ func (dst *Hvpa) ConvertFrom(srcRaw conversion.Hub) error {
 		},
 		LimitsRequestsGapScaleParams: Convert_v1alpha1_ScaleParams_To_ScaleParams(src.Spec.Vpa.LimitsRequestsGapScaleParams),
 	}
-	dst.Spec.WeightBasedScalingIntervals = Convert_v1alpha1_WeightBasedScalingIntervals_To_v1alpha2_WeightBasedScalingIntervals(src.Spec.WeightBasedScalingIntervals)
+	dst.Spec.WeightBasedScalingIntervals = Convert_v1alpha1_WeightBasedScalingIntervals_To_WeightBasedScalingIntervals(src.Spec.WeightBasedScalingIntervals)
 	dst.Spec.TargetRef = Convert_v2beta1_CrossVersionObjectReference_To_v2_CrossVersionObjectReference(src.Spec.TargetRef)
 	dst.Spec.MaintenanceTimeWindow = Convert_v1alpha1_MaintenanceWindow_To_MaintenanceWindow(src.Spec.MaintenanceTimeWindow)
 	dst.Spec.Hpa.Selector = src.Spec.Hpa.Selector
@@ -105,11 +105,11 @@ func (dst *Hvpa) ConvertFrom(srcRaw conversion.Hub) error {
 	for _, metric := range src.Spec.Hpa.Template.Spec.Metrics {
 		ms := autoscalingv2.MetricSpec{
 			Type:              autoscalingv2.MetricSourceType(metric.Type),
-			Object:            Convert_v2beta1_ObjectMetricSource_To_autoscaling_ObjectMetricSource(metric.Object),
-			Pods:              Convert_v2beta1_PodsMetricSource_To_autoscaling_PodsMetricSource(metric.Pods),
-			Resource:          Convert_v2beta1_ResourceMetricSource_To_autoscaling_ResourceMetricSource(metric.Resource),
-			ContainerResource: Convert_v2beta1_ContainerResourceMetricSource_To_autoscaling_ContainerResourceMetricSource(metric.ContainerResource),
-			External:          Convert_v2beta1_ExternalMetricSource_To_autoscaling_ExternalMetricSource(metric.External),
+			Object:            Convert_autoscalingv2beta1_ObjectMetricSource_To_autoscalingv2_ObjectMetricSource(metric.Object),
+			Pods:              Convert_autoscalingv2beta1_PodsMetricSource_To_autoscalingv2_PodsMetricSource(metric.Pods),
+			Resource:          Convert_autoscalingv2beta1_ResourceMetricSource_To_autoscalingv2_ResourceMetricSource(metric.Resource),
+			ContainerResource: Convert_autoscalingv2beta1_ContainerResourceMetricSource_To_autoscalingv2_ContainerResourceMetricSource(metric.ContainerResource),
+			External:          Convert_autoscalingv2beta1_ExternalMetricSource_To_autoscalingv2_ExternalMetricSource(metric.External),
 		}
 		dst.Spec.Hpa.Template.Spec.Metrics = append(dst.Spec.Hpa.Template.Spec.Metrics, ms)
 	}
@@ -136,7 +136,7 @@ func (dst *Hvpa) ConvertFrom(srcRaw conversion.Hub) error {
 	return nil
 }
 
-func Convert_v1alpha1_WeightBasedScalingIntervals_To_v1alpha2_WeightBasedScalingIntervals(in []v1alpha1.WeightBasedScalingInterval) []WeightBasedScalingInterval {
+func Convert_v1alpha1_WeightBasedScalingIntervals_To_WeightBasedScalingIntervals(in []v1alpha1.WeightBasedScalingInterval) []WeightBasedScalingInterval {
 	if in == nil {
 		return nil
 	}
@@ -284,7 +284,7 @@ func Convert_ScaleType_To_v1alpha1_ScaleType(in ScaleType) v1alpha1.ScaleType {
 
 // Conversion methods taken from https://github.com/kubernetes/kubernetes/blob/v1.24.7/pkg/apis/autoscaling/v2beta1/conversion.go
 
-func Convert_v2beta1_ResourceMetricSource_To_autoscaling_ResourceMetricSource(in *autoscalingv2beta1.ResourceMetricSource) *autoscalingv2.ResourceMetricSource {
+func Convert_autoscalingv2beta1_ResourceMetricSource_To_autoscalingv2_ResourceMetricSource(in *autoscalingv2beta1.ResourceMetricSource) *autoscalingv2.ResourceMetricSource {
 	if in == nil {
 		return nil
 	}
@@ -307,7 +307,7 @@ func Convert_v2beta1_ResourceMetricSource_To_autoscaling_ResourceMetricSource(in
 	return &out
 }
 
-func Convert_autoscaling_ResourceMetricSource_To_v2beta1_ResourceMetricSource(in *autoscalingv2.ResourceMetricSource) *autoscalingv2beta1.ResourceMetricSource {
+func Convert_autoscalingv2_ResourceMetricSource_To_autoscalingv2beta1_ResourceMetricSource(in *autoscalingv2.ResourceMetricSource) *autoscalingv2beta1.ResourceMetricSource {
 	if in == nil {
 		return nil
 	}
@@ -318,7 +318,7 @@ func Convert_autoscaling_ResourceMetricSource_To_v2beta1_ResourceMetricSource(in
 	return &out
 }
 
-func Convert_v2beta1_ObjectMetricSource_To_autoscaling_ObjectMetricSource(in *autoscalingv2beta1.ObjectMetricSource) *autoscalingv2.ObjectMetricSource {
+func Convert_autoscalingv2beta1_ObjectMetricSource_To_autoscalingv2_ObjectMetricSource(in *autoscalingv2beta1.ObjectMetricSource) *autoscalingv2.ObjectMetricSource {
 	if in == nil {
 		return nil
 	}
@@ -346,7 +346,7 @@ func Convert_v2beta1_ObjectMetricSource_To_autoscaling_ObjectMetricSource(in *au
 	return &out
 }
 
-func Convert_autoscaling_ObjectMetricSource_To_v2beta1_ObjectMetricSource(in *autoscalingv2.ObjectMetricSource) *autoscalingv2beta1.ObjectMetricSource {
+func Convert_autoscalingv2_ObjectMetricSource_To_autoscalingv2beta1_ObjectMetricSource(in *autoscalingv2.ObjectMetricSource) *autoscalingv2beta1.ObjectMetricSource {
 	if in == nil {
 		return nil
 	}
@@ -367,7 +367,7 @@ func Convert_autoscaling_ObjectMetricSource_To_v2beta1_ObjectMetricSource(in *au
 	return &out
 }
 
-func Convert_v2beta1_PodsMetricSource_To_autoscaling_PodsMetricSource(in *autoscalingv2beta1.PodsMetricSource) *autoscalingv2.PodsMetricSource {
+func Convert_autoscalingv2beta1_PodsMetricSource_To_autoscalingv2_PodsMetricSource(in *autoscalingv2beta1.PodsMetricSource) *autoscalingv2.PodsMetricSource {
 	if in == nil {
 		return nil
 	}
@@ -386,7 +386,7 @@ func Convert_v2beta1_PodsMetricSource_To_autoscaling_PodsMetricSource(in *autosc
 	return &out
 }
 
-func Convert_autoscaling_PodsMetricSource_To_v2beta1_PodsMetricSource(in *autoscalingv2.PodsMetricSource) *autoscalingv2beta1.PodsMetricSource {
+func Convert_autoscalingv2_PodsMetricSource_To_autoscalingv2beta1_PodsMetricSource(in *autoscalingv2.PodsMetricSource) *autoscalingv2beta1.PodsMetricSource {
 	if in == nil {
 		return nil
 	}
@@ -402,7 +402,7 @@ func Convert_autoscaling_PodsMetricSource_To_v2beta1_PodsMetricSource(in *autosc
 	return &out
 }
 
-func Convert_v2beta1_ContainerResourceMetricSource_To_autoscaling_ContainerResourceMetricSource(in *autoscalingv2beta1.ContainerResourceMetricSource) *autoscalingv2.ContainerResourceMetricSource {
+func Convert_autoscalingv2beta1_ContainerResourceMetricSource_To_autoscalingv2_ContainerResourceMetricSource(in *autoscalingv2beta1.ContainerResourceMetricSource) *autoscalingv2.ContainerResourceMetricSource {
 	if in == nil {
 		return nil
 	}
@@ -425,7 +425,7 @@ func Convert_v2beta1_ContainerResourceMetricSource_To_autoscaling_ContainerResou
 	return &out
 }
 
-func Convert_autoscaling_ContainerResourceMetricSource_To_v2beta1_ContainerResourceMetricSource(in *autoscalingv2.ContainerResourceMetricSource) *autoscalingv2beta1.ContainerResourceMetricSource {
+func Convert_autoscalingv2_ContainerResourceMetricSource_To_autoscalingv2beta1_ContainerResourceMetricSource(in *autoscalingv2.ContainerResourceMetricSource) *autoscalingv2beta1.ContainerResourceMetricSource {
 	if in == nil {
 		return nil
 	}
@@ -436,7 +436,7 @@ func Convert_autoscaling_ContainerResourceMetricSource_To_v2beta1_ContainerResou
 	return &out
 }
 
-func Convert_v2beta1_ExternalMetricSource_To_autoscaling_ExternalMetricSource(in *autoscalingv2beta1.ExternalMetricSource) *autoscalingv2.ExternalMetricSource {
+func Convert_autoscalingv2beta1_ExternalMetricSource_To_autoscalingv2_ExternalMetricSource(in *autoscalingv2beta1.ExternalMetricSource) *autoscalingv2.ExternalMetricSource {
 	if in == nil {
 		return nil
 	}
@@ -464,7 +464,7 @@ func Convert_v2beta1_ExternalMetricSource_To_autoscaling_ExternalMetricSource(in
 	return &out
 }
 
-func Convert_autoscaling_ExternalMetricSource_To_v2beta1_ExternalMetricSource(in *autoscalingv2.ExternalMetricSource) *autoscalingv2beta1.ExternalMetricSource {
+func Convert_autoscalingv2_ExternalMetricSource_To_autoscalingv2beta1_ExternalMetricSource(in *autoscalingv2.ExternalMetricSource) *autoscalingv2beta1.ExternalMetricSource {
 	if in == nil {
 		return nil
 	}
