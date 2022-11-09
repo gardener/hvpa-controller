@@ -9,7 +9,9 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 )
 
 var _ = Describe("HvpaConversion", func() {
@@ -26,6 +28,9 @@ var _ = Describe("HvpaConversion", func() {
 	percMem := int32(80)
 	percCPU := int32(80)
 
+	statusReplicas := int32(7)
+	t := metav1.Now()
+
 	minChange := v1alpha1.ScaleParams{
 		CPU: v1alpha1.ChangeParams{
 			Value:      &valCPU,
@@ -36,6 +41,55 @@ var _ = Describe("HvpaConversion", func() {
 			Percentage: &percMem,
 		},
 	}
+
+	vpaRecommendation := vpa_api.RecommendedPodResources{
+		ContainerRecommendations: []vpa_api.RecommendedContainerResources{{
+			ContainerName: "some-container",
+			Target: v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("340001k"),
+				v1.ResourceCPU:    resource.MustParse("201m"),
+			},
+			LowerBound: v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("340002k"),
+				v1.ResourceCPU:    resource.MustParse("202m"),
+			},
+			UpperBound: v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("340003k"),
+				v1.ResourceCPU:    resource.MustParse("203m"),
+			},
+			UncappedTarget: v1.ResourceList{
+				v1.ResourceMemory: resource.MustParse("340004k"),
+				v1.ResourceCPU:    resource.MustParse("204m"),
+			},
+		}},
+	}
+
+	v1alpha1BlockedScaling := v1alpha1.BlockedScaling{
+		Reason: v1alpha1.BlockingReasonMinChange,
+		ScalingStatus: v1alpha1.ScalingStatus{
+			HpaStatus: v1alpha1.HpaStatus{
+				CurrentReplicas: 11,
+				DesiredReplicas: 22,
+			},
+			VpaStatus: vpa_api.VerticalPodAutoscalerStatus{
+				Recommendation: &vpaRecommendation,
+			},
+		},
+	}
+
+	v1alpha2BlockedScaling := v1alpha2.BlockedScaling{
+		Reason: v1alpha2.BlockingReasonMinChange,
+		ScalingStatus: v1alpha2.ScalingStatus{
+			HpaStatus: v1alpha2.HpaStatus{
+				CurrentReplicas: 11,
+				DesiredReplicas: 22,
+			},
+			VpaStatus: vpa_api.VerticalPodAutoscalerStatus{
+				Recommendation: &vpaRecommendation,
+			},
+		},
+	}
+
 	v1alpha1HVPA := v1alpha1.Hvpa{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -135,6 +189,48 @@ var _ = Describe("HvpaConversion", func() {
 			MaintenanceTimeWindow: &v1alpha1.MaintenanceTimeWindow{
 				Begin: "maintenance-begin",
 				End:   "maintenance-end",
+			},
+		},
+		Status: v1alpha1.HvpaStatus{
+			Replicas:       &statusReplicas,
+			TargetSelector: &target,
+			HpaScaleUpUpdatePolicy: &v1alpha1.UpdatePolicy{
+				UpdateMode: &updateMode,
+			},
+			HpaScaleDownUpdatePolicy: &v1alpha1.UpdatePolicy{
+				UpdateMode: &updateMode,
+			},
+			VpaScaleUpUpdatePolicy: &v1alpha1.UpdatePolicy{
+				UpdateMode: &updateMode,
+			},
+			VpaScaleDownUpdatePolicy: &v1alpha1.UpdatePolicy{
+				UpdateMode: &updateMode,
+			},
+			HpaWeight:                    33,
+			VpaWeight:                    67,
+			OverrideScaleUpStabilization: true,
+			LastBlockedScaling:           []*v1alpha1.BlockedScaling{&v1alpha1BlockedScaling},
+			LastScaling: v1alpha1.ScalingStatus{
+				LastScaleTime: &t,
+				HpaStatus: v1alpha1.HpaStatus{
+					CurrentReplicas: 10,
+					DesiredReplicas: 12,
+				},
+				VpaStatus: vpa_api.VerticalPodAutoscalerStatus{
+					Recommendation: &vpaRecommendation,
+					Conditions: []vpa_api.VerticalPodAutoscalerCondition{{
+						Status:             "True",
+						Type:               vpa_api.RecommendationProvided,
+						LastTransitionTime: t,
+						Reason:             "vpa-condition-reason",
+						Message:            "vpa-condition-message",
+					}},
+				},
+			},
+			LastError: &v1alpha1.LastError{
+				Description:    "last-error",
+				LastUpdateTime: t,
+				LastOperation:  "last-operation-before-error",
 			},
 		},
 	}
@@ -262,7 +358,48 @@ var _ = Describe("HvpaConversion", func() {
 				End:   "maintenance-end",
 			},
 		},
-		Status: v1alpha2.HvpaStatus{},
+		Status: v1alpha2.HvpaStatus{
+			Replicas:       &statusReplicas,
+			TargetSelector: &target,
+			HpaScaleUpUpdatePolicy: &v1alpha2.UpdatePolicy{
+				UpdateMode: &updateMode,
+			},
+			HpaScaleDownUpdatePolicy: &v1alpha2.UpdatePolicy{
+				UpdateMode: &updateMode,
+			},
+			VpaScaleUpUpdatePolicy: &v1alpha2.UpdatePolicy{
+				UpdateMode: &updateMode,
+			},
+			VpaScaleDownUpdatePolicy: &v1alpha2.UpdatePolicy{
+				UpdateMode: &updateMode,
+			},
+			HpaWeight:                    33,
+			VpaWeight:                    67,
+			OverrideScaleUpStabilization: true,
+			LastBlockedScaling:           []*v1alpha2.BlockedScaling{&v1alpha2BlockedScaling},
+			LastScaling: v1alpha2.ScalingStatus{
+				LastScaleTime: &t,
+				HpaStatus: v1alpha2.HpaStatus{
+					CurrentReplicas: 10,
+					DesiredReplicas: 12,
+				},
+				VpaStatus: vpa_api.VerticalPodAutoscalerStatus{
+					Recommendation: &vpaRecommendation,
+					Conditions: []vpa_api.VerticalPodAutoscalerCondition{{
+						Status:             "True",
+						Type:               vpa_api.RecommendationProvided,
+						LastTransitionTime: t,
+						Reason:             "vpa-condition-reason",
+						Message:            "vpa-condition-message",
+					}},
+				},
+			},
+			LastError: &v1alpha2.LastError{
+				Description:    "last-error",
+				LastUpdateTime: t,
+				LastOperation:  "last-operation-before-error",
+			},
+		},
 	}
 
 	format.MaxLength = 0 // diffs between HVPA object can be quite large, so make sure we see what's different

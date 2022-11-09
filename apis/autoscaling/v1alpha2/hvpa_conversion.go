@@ -51,7 +51,7 @@ func (src *Hvpa) ConvertTo(dstRaw conversion.Hub) error {
 	}
 
 	// Convert the Status
-	dst.Status.Replicas = src.Spec.Replicas
+	dst.Status.Replicas = src.Status.Replicas
 	dst.Status.TargetSelector = src.Status.TargetSelector
 	dst.Status.HpaScaleUpUpdatePolicy = Convert_UpdatePolicy_To_v1alpha1_UpdatePolicy(src.Status.HpaScaleUpUpdatePolicy)
 	dst.Status.HpaScaleDownUpdatePolicy = Convert_UpdatePolicy_To_v1alpha1_UpdatePolicy(src.Status.HpaScaleDownUpdatePolicy)
@@ -115,7 +115,7 @@ func (dst *Hvpa) ConvertFrom(srcRaw conversion.Hub) error {
 	}
 
 	// Convert the Status
-	dst.Status.Replicas = src.Spec.Replicas
+	dst.Status.Replicas = src.Status.Replicas
 	dst.Status.TargetSelector = src.Status.TargetSelector
 	dst.Status.HpaScaleUpUpdatePolicy = Convert_v1alpha1_UpdatePolicy_To_UpdatePolicy(src.Status.HpaScaleUpUpdatePolicy)
 	dst.Status.HpaScaleDownUpdatePolicy = Convert_v1alpha1_UpdatePolicy_To_UpdatePolicy(src.Status.HpaScaleDownUpdatePolicy)
