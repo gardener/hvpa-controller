@@ -20,13 +20,15 @@ import (
 	"flag"
 	"os"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
-	"github.com/gardener/hvpa-controller/controllers"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	klogv2 "k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	"github.com/gardener/hvpa-controller/controllers"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -36,9 +38,9 @@ var (
 )
 
 func init() {
-	_ = clientgoscheme.AddToScheme(scheme)
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(autoscalingv1alpha1.AddToScheme(scheme))
 
-	_ = autoscalingv1alpha1.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }
 
