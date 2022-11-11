@@ -82,13 +82,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// TODO: Enable webhooks
-	/*
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = (&autoscalingv1alpha1.Hvpa{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Hvpa")
 			os.Exit(1)
 		}
-	*/
+		if err = (&autoscalingv1alpha2.Hvpa{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "CronJob")
+			os.Exit(1)
+		}
+	}
 
 	// +kubebuilder:scaffold:builder
 

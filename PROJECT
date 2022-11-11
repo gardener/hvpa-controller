@@ -1,26 +1,29 @@
-projectName: hvpa-controller
+domain: k8s.io
 layout:
 - go.kubebuilder.io/v3
-domain: k8s.io
 multigroup: true
+projectName: hvpa-controller
 repo: github.com/gardener/hvpa-controller
 resources:
-- group: autoscaling
-  kind: Hvpa
-  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
   controller: true
   domain: k8s.io
+  group: autoscaling
+  kind: Hvpa
   path: github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha1
-  api:
+  version: v1alpha1
+  webhooks:
+    conversion: true
+    webhookVersion: v1
+- api:
     crdVersion: v1
     namespaced: true
-- group: autoscaling
-  kind: Hvpa
-  version: v1alpha2
   controller: true
   domain: k8s.io
+  group: autoscaling
+  kind: Hvpa
   path: github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha2
-  api:
-    crdVersion: v1
-    namespaced: true
+  version: v1alpha2
 version: "3"

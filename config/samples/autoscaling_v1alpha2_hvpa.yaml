@@ -1,7 +1,105 @@
 apiVersion: autoscaling.k8s.io/v1alpha2
 kind: Hvpa
 metadata:
+  annotations:
+    "hpa-controller": "hvpa"
   name: hvpa-sample
+  namespace: default
 spec:
-  # Add fields here
-  foo: bar
+  replicas: 1
+  maintenanceTimeWindow:
+    begin: "220000-0000"
+    end:  "230000-0000"
+  hpa:
+    selector:
+      matchLabels:
+        key1: value1
+    deploy: true
+    scaleUp:
+      updatePolicy:
+        updateMode: "Auto"
+      stabilizationDuration: "3m"
+    scaleDown:
+      updatePolicy:
+        updateMode: "Auto"
+      stabilizationDuration: "3m"
+    template:
+      metadata:
+        labels:
+          key1: value1
+      spec:
+        maxReplicas: 3
+        minReplicas: 1
+        metrics:
+        - resource:
+            name: memory
+            target:
+              type: Utilization
+              averageUtilization: 70
+          type: Resource
+        - resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 60
+          type: Resource
+  vpa:
+    selector:
+      matchLabels:
+        key2: value2
+    deploy: true
+    scaleUp:
+      updatePolicy:
+        updateMode: "Auto"
+      stabilizationDuration: "3m"
+      minChange:
+        cpu:
+          value: "3"
+          percentage: 80
+        memory:
+          value: "3"
+          percentage: 80
+    scaleDown:
+      updatePolicy:
+        updateMode: "MaintenanceWindow"
+      stabilizationDuration: "3m"
+      minChange:
+        cpu:
+          value: "3"
+          percentage: 80
+        memory:
+          value: "3"
+          percentage: 80
+    limitsRequestsGapScaleParams:
+      cpu:
+        percentage: 80
+        value: "2"
+      memory:
+        percentage: 80
+        value: 3G
+    template:
+      metadata:
+        labels:
+          key2: value2
+      spec:
+        resourcePolicy:
+          containerPolicies:
+            - containerName: resource-consumer
+              maxAllowed:
+                memory: 3000Mi
+              minAllowed:
+                memory: 400Mi
+  weightBasedScalingIntervals:
+    - vpaWeight: 0
+      startReplicaCount: 1
+      lastReplicaCount: 2
+    - vpaWeight: 50
+      startReplicaCount: 3
+      lastReplicaCount: 5
+    - vpaWeight: 60
+      startReplicaCount: 6
+      lastReplicaCount: 7
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: resource-consumer
