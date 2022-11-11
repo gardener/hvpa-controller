@@ -70,7 +70,7 @@ run: generate fmt vet
 
 # Install CRDs into a cluster
 install: manifests
-	kubectl apply -f config/crd/bases
+	kubectl apply -f config/crd/output/crds.yaml
 
 .PHONY: check
 check: $(GOLANGCI_LINT)
@@ -81,7 +81,7 @@ check: $(GOLANGCI_LINT)
 
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 deploy: manifests
-	kubectl apply -f config/crd/bases
+	kubectl apply -f config/crd/output/crds.yaml
 	kustomize build config/default | kubectl apply -f -
 
 # Generate manifests e.g. CRD, RBAC etc.
