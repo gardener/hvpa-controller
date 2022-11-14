@@ -17,6 +17,7 @@ spec:
           path: /convert
       conversionReviewVersions:
       - v1
+      - v1beta1
   group: autoscaling.k8s.io
   names:
     kind: Hvpa
