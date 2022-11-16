@@ -620,6 +620,12 @@ k8s.io/kube-openapi/pkg/schemamutation
 k8s.io/kube-openapi/pkg/spec3
 k8s.io/kube-openapi/pkg/util/proto
 k8s.io/kube-openapi/pkg/validation/spec
+# k8s.io/kubernetes v1.25.4
+## explicit; go 1.19
+k8s.io/kubernetes/pkg/apis/autoscaling
+k8s.io/kubernetes/pkg/apis/autoscaling/v2
+k8s.io/kubernetes/pkg/apis/autoscaling/v2beta1
+k8s.io/kubernetes/pkg/apis/core
 # k8s.io/utils v0.0.0-20220728103510-ee6ede2d64ed
 ## explicit; go 1.12
 k8s.io/utils/buffer

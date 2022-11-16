@@ -227,6 +227,46 @@ func (m *HvpaControllerRefManager) ClaimHpas(hpas *autoscaling.HorizontalPodAuto
 	return claimed, utilerrors.NewAggregate(errlist)
 }
 
+//func (m *HvpaControllerRefManager) ClaimHpasV2(hpas *autoscalingv2.HorizontalPodAutoscalerList, filters ...func(*autoscalingv2.HorizontalPodAutoscaler) bool) ([]*autoscalingv2.HorizontalPodAutoscaler, error) {
+//	var claimed []*autoscalingv2.HorizontalPodAutoscaler
+//	var errlist []error
+//
+//	match := func(obj metav1.Object) bool {
+//		hpa := obj.(*autoscalingv2.HorizontalPodAutoscaler)
+//		// Check selector first so filters only run on potentially matching Hpas.
+//		if !m.Selector.Matches(labels.Set(hpa.Labels)) {
+//			return false
+//		}
+//		for _, filter := range filters {
+//			if !filter(hpa) {
+//				return false
+//			}
+//		}
+//		return true
+//	}
+//
+//	adopt := func(obj metav1.Object) error {
+//		return m.AdoptHpaV2(obj.(*autoscalingv2.HorizontalPodAutoscaler))
+//	}
+//	release := func(obj metav1.Object) error {
+//		return m.ReleaseHpaV2(obj.(*autoscalingv2.HorizontalPodAutoscaler))
+//	}
+//
+//	for k := range hpas.Items {
+//		hpa := &hpas.Items[k]
+//		ok, err := m.ClaimObject(hpa, match, adopt, release)
+//
+//		if err != nil {
+//			errlist = append(errlist, err)
+//			continue
+//		}
+//		if ok {
+//			claimed = append(claimed, hpa)
+//		}
+//	}
+//	return claimed, utilerrors.NewAggregate(errlist)
+//}
+
 // ClaimVpas tries to take ownership of a list of Vpas.
 //
 // It will reconcile the following:
@@ -296,8 +336,31 @@ func (m *HvpaControllerRefManager) AdoptHpa(hpa *autoscaling.HorizontalPodAutosc
 		return err
 	}
 
-	return m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa))
+	if m.reconciler.IsAutoscalingV2beta1Enabled {
+		return m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa))
+	}
+	v2HpaClone, err := m.reconciler.Convert_v2beta1_HPA_to_v2(hpaClone)
+	if err != nil {
+		return err
+	}
+	return m.reconciler.Patch(context.TODO(), v2HpaClone, client.MergeFrom(hpa))
+
 }
+
+//func (m *HvpaControllerRefManager) AdoptHpaV2(hpa *autoscalingv2.HorizontalPodAutoscaler) error {
+//	if err := m.CanAdopt(); err != nil {
+//		return fmt.Errorf("can't adopt hpa %v/%v (%v): %v", hpa.Namespace, hpa.Name, hpa.UID, err)
+//	}
+//
+//	hpaClone := hpa.DeepCopy()
+//	// Note that ValidateOwnerReferences() will reject this patch if another
+//	// OwnerReference exists with controller=true.
+//	if err := controllerutil.SetControllerReference(m.Controller, hpaClone, m.reconciler.Scheme); err != nil {
+//		return err
+//	}
+//
+//	return m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa))
+//}
 
 // ReleaseHpa sends a patch to free the Hpa from the control of the controller.
 // It returns the error if the patching fails. 404 and 422 errors are ignored.
@@ -320,21 +383,76 @@ func (m *HvpaControllerRefManager) ReleaseHpa(hpa *autoscaling.HorizontalPodAuto
 		hpaClone.OwnerReferences = ownersCopy
 	}
 
-	err := client.IgnoreNotFound(m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa)))
-	if errors.IsInvalid(err) {
-		// Invalid error will be returned in two cases: 1. the hpa
-		// has no owner reference, 2. the uid of the hpa doesn't
-		// match, which means the Hpa is deleted and then recreated.
-		// In both cases, the error can be ignored.
+	var err error
+	if m.reconciler.IsAutoscalingV2beta1Enabled {
+		err = client.IgnoreNotFound(m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa)))
+		if errors.IsInvalid(err) {
+			// Invalid error will be returned in two cases: 1. the hpa
+			// has no owner reference, 2. the uid of the hpa doesn't
+			// match, which means the Hpa is deleted and then recreated.
+			// In both cases, the error can be ignored.
 
-		// TODO: If the Hpa has owner references, but none of them
-		// has the owner.UID, server will silently ignore the patch.
-		// Investigate why.
-		return nil
+			// TODO: If the Hpa has owner references, but none of them
+			// has the owner.UID, server will silently ignore the patch.
+			// Investigate why.
+			return nil
+		}
+	} else {
+		v2HpaClone, err := m.reconciler.Convert_v2beta1_HPA_to_v2(hpaClone)
+		if err != nil {
+			return err
+		}
+		err = client.IgnoreNotFound(m.reconciler.Patch(context.TODO(), v2HpaClone, client.MergeFrom(hpa)))
+		if errors.IsInvalid(err) {
+			// Invalid error will be returned in two cases: 1. the hpa
+			// has no owner reference, 2. the uid of the hpa doesn't
+			// match, which means the Hpa is deleted and then recreated.
+			// In both cases, the error can be ignored.
+
+			// TODO: If the Hpa has owner references, but none of them
+			// has the owner.UID, server will silently ignore the patch.
+			// Investigate why.
+			return nil
+		}
 	}
 
 	return err
 }
+
+//func (m *HvpaControllerRefManager) ReleaseHpaV2(hpa *autoscalingv2.HorizontalPodAutoscaler) error {
+//	log.V(4).Info("ReleaseHpa()", "HPA", hpa.Namespace+"/"+hpa.Name, "controller", m.controllerKind.String(), "controller name", m.Controller.GetName())
+//
+//	hpaClone := hpa.DeepCopy()
+//	owners := hpaClone.GetOwnerReferences()
+//	ownersCopy := []metav1.OwnerReference{}
+//	for i := range owners {
+//		owner := &owners[i]
+//		if owner.UID == m.Controller.GetUID() {
+//			continue
+//		}
+//		ownersCopy = append(ownersCopy, *owner)
+//	}
+//	if len(ownersCopy) == 0 {
+//		hpaClone.OwnerReferences = nil
+//	} else {
+//		hpaClone.OwnerReferences = ownersCopy
+//	}
+//
+//	err := client.IgnoreNotFound(m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa)))
+//	if errors.IsInvalid(err) {
+//		// Invalid error will be returned in two cases: 1. the hpa
+//		// has no owner reference, 2. the uid of the hpa doesn't
+//		// match, which means the Hpa is deleted and then recreated.
+//		// In both cases, the error can be ignored.
+//
+//		// TODO: If the Hpa has owner references, but none of them
+//		// has the owner.UID, server will silently ignore the patch.
+//		// Investigate why.
+//		return nil
+//	}
+//
+//	return err
+//}
 
 // AdoptVpa sends a patch to take control of the Vpa. It returns the error if
 // the patching fails.

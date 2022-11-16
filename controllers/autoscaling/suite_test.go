@@ -18,6 +18,11 @@ package controllers
 
 import (
 	"context"
+	autoscalingv1alpha2 "github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha2"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	"k8s.io/client-go/discovery"
+	k8sautoscalingv2 "k8s.io/kubernetes/pkg/apis/autoscaling/v2"
+	k8sautoscalingv2beta1 "k8s.io/kubernetes/pkg/apis/autoscaling/v2beta1"
 	"path/filepath"
 	"testing"
 
@@ -53,6 +58,7 @@ var (
 	testEnv           *envtest.Environment
 	mgr               manager.Manager
 	managerCancelFunc context.CancelFunc
+	reconciler        HvpaReconciler
 )
 
 func TestAPIs(t *testing.T) {
@@ -82,25 +88,52 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 
-		err = autoscalingv1alpha1.AddToScheme(scheme.Scheme)
+		s := scheme.Scheme
+
+		err = autoscalingv1alpha1.AddToScheme(s)
+		err = autoscalingv1alpha2.AddToScheme(s)
+		err = k8sautoscalingv2beta1.RegisterConversions(s)
+		err = k8sautoscalingv2.RegisterConversions(s)
 		Expect(err).NotTo(HaveOccurred())
 
 		// +kubebuilder:scaffold:scheme
 
-		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		k8sClient, err = client.New(cfg, client.Options{Scheme: s})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(k8sClient).ToNot(BeNil())
 
 		// Setup the Manager.
-		mgr, err = ctrl.NewManager(cfg, ctrl.Options{})
+		mgr, err = ctrl.NewManager(cfg, ctrl.Options{CertDir: "../../config/certs", Scheme: s})
 		Expect(err).NotTo(HaveOccurred())
 
-		reconciler := HvpaReconciler{
-			Client: mgr.GetClient(),
-			Scheme: mgr.GetScheme(),
+		dc, _ := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
+		groups, _ := dc.ServerGroups()
+		apiVersions := metav1.ExtractGroupVersions(groups)
+
+		var foundAutoscalingV2beta1 bool
+		var foundAutoscalingV2 bool
+		for _, apiVersion := range apiVersions {
+			if apiVersion == "autoscaling/v2beta1" {
+				foundAutoscalingV2beta1 = true
+			}
+			if apiVersion == "autoscaling/v2" {
+				foundAutoscalingV2 = true
+			}
+		}
+
+		reconciler = HvpaReconciler{
+			Client:                      mgr.GetClient(),
+			Scheme:                      mgr.GetScheme(),
+			IsAutoscalingV2beta1Enabled: foundAutoscalingV2beta1,
+			IsAutoscalingV2:             foundAutoscalingV2,
 		}
 
 		err = reconciler.SetupWithManager(mgr)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = (&autoscalingv1alpha1.Hvpa{}).SetupWebhookWithManager(mgr)
+		Expect(err).NotTo(HaveOccurred())
+		err = (&autoscalingv1alpha2.Hvpa{}).SetupWebhookWithManager(mgr)
 		Expect(err).NotTo(HaveOccurred())
 
 		managerCancelFunc = StartTestManager(ctx, mgr)
@@ -192,7 +225,7 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 						MinReplicas: &replica,
 						MaxReplicas: 3,
 						Metrics: []autoscaling.MetricSpec{
-							autoscaling.MetricSpec{
+							{
 								Type: autoscaling.ResourceMetricSourceType,
 								Resource: &autoscaling.ResourceMetricSource{
 									Name:                     v1.ResourceCPU,
@@ -249,9 +282,131 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 
 	return instance
 }
+func newHvpaV2(name, target, labelVal string, minChange autoscalingv1alpha2.ScaleParams) *autoscalingv1alpha2.Hvpa {
+	replica := int32(1)
+	util := int32(70)
+
+	stabilizationDur := "3m"
+
+	updateMode := autoscalingv1alpha2.UpdateModeAuto
+
+	instance := &autoscalingv1alpha2.Hvpa{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+			Annotations: map[string]string{
+				"hpa-controller": "hvpa",
+			},
+		},
+		Spec: autoscalingv1alpha2.HvpaSpec{
+			TargetRef: &autoscalingv2.CrossVersionObjectReference{
+				Kind:       "Deployment",
+				Name:       target,
+				APIVersion: "apps/v1",
+			},
+			Hpa: autoscalingv1alpha2.HpaSpec{
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"hpaKey": labelVal,
+					},
+				},
+				Deploy: true,
+				ScaleUp: autoscalingv1alpha2.ScaleType{
+					UpdatePolicy: autoscalingv1alpha2.UpdatePolicy{
+						UpdateMode: &updateMode,
+					},
+					StabilizationDuration: &stabilizationDur,
+				},
+				ScaleDown: autoscalingv1alpha2.ScaleType{
+					UpdatePolicy: autoscalingv1alpha2.UpdatePolicy{
+						UpdateMode: &updateMode,
+					},
+					StabilizationDuration: &stabilizationDur,
+				},
+
+				Template: autoscalingv1alpha2.HpaTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							"hpaKey": labelVal,
+						},
+					},
+					Spec: autoscalingv1alpha2.HpaTemplateSpec{
+						MinReplicas: &replica,
+						MaxReplicas: 3,
+						Metrics: []autoscalingv2.MetricSpec{
+							autoscalingv2.MetricSpec{
+								Type: autoscalingv2.ResourceMetricSourceType,
+								Resource: &autoscalingv2.ResourceMetricSource{
+									Name: v1.ResourceCPU,
+									Target: autoscalingv2.MetricTarget{
+										Type:               autoscalingv2.UtilizationMetricType,
+										Value:              nil,
+										AverageValue:       nil,
+										AverageUtilization: &util,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			Vpa: autoscalingv1alpha2.VpaSpec{
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"vpaKey": labelVal,
+					},
+				},
+				Deploy: true,
+				ScaleUp: autoscalingv1alpha2.ScaleType{
+					UpdatePolicy: autoscalingv1alpha2.UpdatePolicy{
+						UpdateMode: &updateMode,
+					},
+					StabilizationDuration: &stabilizationDur,
+					MinChange:             minChange,
+				},
+				ScaleDown: autoscalingv1alpha2.ScaleType{
+					UpdatePolicy: autoscalingv1alpha2.UpdatePolicy{
+						UpdateMode: &updateMode,
+					},
+					StabilizationDuration: &stabilizationDur,
+					MinChange:             minChange,
+				},
+				Template: autoscalingv1alpha2.VpaTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							"vpaKey": labelVal,
+						},
+					},
+				},
+			},
+			WeightBasedScalingIntervals: []autoscalingv1alpha2.WeightBasedScalingInterval{
+				{
+					StartReplicaCount: 1,
+					LastReplicaCount:  2,
+					VpaWeight:         30,
+				},
+				{
+					StartReplicaCount: 2,
+					LastReplicaCount:  3,
+					VpaWeight:         80,
+				},
+			},
+		},
+	}
+
+	return instance
+}
 
 func newHpaStatus(currentReplicas, desiredReplicas int32, conditions []autoscaling.HorizontalPodAutoscalerCondition) *autoscaling.HorizontalPodAutoscalerStatus {
 	return &autoscaling.HorizontalPodAutoscalerStatus{
+		CurrentReplicas: currentReplicas,
+		DesiredReplicas: desiredReplicas,
+		Conditions:      conditions,
+	}
+}
+
+func newHpaV2Status(currentReplicas, desiredReplicas int32, conditions []autoscalingv2.HorizontalPodAutoscalerCondition) *autoscalingv2.HorizontalPodAutoscalerStatus {
+	return &autoscalingv2.HorizontalPodAutoscalerStatus{
 		CurrentReplicas: currentReplicas,
 		DesiredReplicas: desiredReplicas,
 		Conditions:      conditions,

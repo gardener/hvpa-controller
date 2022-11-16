@@ -40,13 +40,15 @@ func (src *Hvpa) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Spec.Hpa.Template.Spec.MaxReplicas = src.Spec.Hpa.Template.Spec.MaxReplicas
 	for _, metric := range src.Spec.Hpa.Template.Spec.Metrics {
 		ms := autoscalingv2beta1.MetricSpec{
-			Type:              autoscalingv2beta1.MetricSourceType(metric.Type),
+			Type: autoscalingv2beta1.MetricSourceType(metric.Type),
+			//Object:            Convert_autoscalingv2_ObjectMetricSource_To_autoscalingv2beta1_ObjectMetricSource(metric.Object),
 			Object:            Convert_autoscalingv2_ObjectMetricSource_To_autoscalingv2beta1_ObjectMetricSource(metric.Object),
 			Pods:              Convert_autoscalingv2_PodsMetricSource_To_autoscalingv2beta1_PodsMetricSource(metric.Pods),
 			Resource:          Convert_autoscalingv2_ResourceMetricSource_To_autoscalingv2beta1_ResourceMetricSource(metric.Resource),
 			ContainerResource: Convert_autoscalingv2_ContainerResourceMetricSource_To_autoscalingv2beta1_ContainerResourceMetricSource(metric.ContainerResource),
 			External:          Convert_autoscalingv2_ExternalMetricSource_To_autoscalingv2beta1_ExternalMetricSource(metric.External),
 		}
+		//Convert_v2beta1_ResourceMetricSource_To_autoscaling_ResourceMetricSource
 		dst.Spec.Hpa.Template.Spec.Metrics = append(dst.Spec.Hpa.Template.Spec.Metrics, ms)
 	}
 

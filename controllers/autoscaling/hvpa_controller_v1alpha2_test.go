@@ -19,16 +19,15 @@ package controllers
 import (
 	"context"
 	"fmt"
-	autoscalingv1alpha2 "github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha2"
 	"time"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha1"
+	autoscalingv1alpha2 "github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha2"
 	"github.com/gardener/hvpa-controller/utils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
-	autoscaling "k8s.io/api/autoscaling/v2beta1"
+	autoscaling "k8s.io/api/autoscaling/v2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,119 +35,13 @@ import (
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 )
 
-const timeout = time.Second * 5
-
-var (
-	limitEquallyScaled = v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceMemory: resource.MustParse("340000k"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceMemory: resource.MustParse("340000k"),
-			v1.ResourceCPU:    resource.MustParse("200m"),
-		},
-	}
-	requestsCappedToLimit = v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceMemory: resource.MustParse("600M"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceMemory: resource.MustParse("600M"),
-			v1.ResourceCPU:    resource.MustParse("500m"),
-		},
-	}
-	scaledByWeight40 = v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("2"),
-			v1.ResourceMemory: resource.MustParse("2376000k"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("300m"),
-			v1.ResourceMemory: resource.MustParse("1320000k"),
-		},
-	}
-	proportionalScaled = v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("2"),
-			v1.ResourceMemory: resource.MustParse("33000000k"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("300m"),
-			v1.ResourceMemory: resource.MustParse("1320000k"),
-		},
-	}
-	unscaled = v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("2"),
-			v1.ResourceMemory: resource.MustParse("5G"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("300m"),
-			v1.ResourceMemory: resource.MustParse("200M"),
-		},
-	}
-	target  = newTarget("deployment", unscaled, 2)
-	valMem  = "100M"
-	valCPU  = "100m"
-	percMem = int32(80)
-	percCPU = int32(80)
-
-	limValMem  = "1G"
-	limValCPU  = "1"
-	limPercMem = int32(80)
-	limPercCPU = int32(80)
-
-	minChange = autoscalingv1alpha1.ScaleParams{
-		CPU: autoscalingv1alpha1.ChangeParams{
-			Value:      &valCPU,
-			Percentage: &percCPU,
-		},
-		Memory: autoscalingv1alpha1.ChangeParams{
-			Value:      &valMem,
-			Percentage: &percMem,
-		},
-	}
-
-	minChangev2 = autoscalingv1alpha2.ScaleParams{
-		CPU: autoscalingv1alpha2.ChangeParams{
-			Value:      &valCPU,
-			Percentage: &percCPU,
-		},
-		Memory: autoscalingv1alpha2.ChangeParams{
-			Value:      &valMem,
-			Percentage: &percMem,
-		},
-	}
-
-	limitScale = autoscalingv1alpha1.ScaleParams{
-		CPU: autoscalingv1alpha1.ChangeParams{
-			Value:      &limValCPU,
-			Percentage: &limPercCPU,
-		},
-		Memory: autoscalingv1alpha1.ChangeParams{
-			Value:      &limValMem,
-			Percentage: &limPercMem,
-		},
-	}
-	limitScaleV2 = autoscalingv1alpha2.ScaleParams{
-		CPU: autoscalingv1alpha2.ChangeParams{
-			Value:      &limValCPU,
-			Percentage: &limPercCPU,
-		},
-		Memory: autoscalingv1alpha2.ChangeParams{
-			Value:      &limValMem,
-			Percentage: &limPercMem,
-		},
-	}
-)
-
 var _ = Describe("#TestReconcile", func() {
 
 	DescribeTable("##ReconcileHPAandVPA",
-		func(instance *autoscalingv1alpha1.Hvpa) {
+		func(instance *autoscalingv1alpha2.Hvpa) {
 			deploytest := target.DeepCopy()
 			// Overwrite name
-			deploytest.Name = "deploy-test-1"
+			deploytest.Name = "deploy-test-v2-1"
 
 			c := mgr.GetClient()
 			// Create the test deployment
@@ -248,7 +141,7 @@ var _ = Describe("#TestReconcile", func() {
 			Expect(c.Status().Update(context.TODO(), &p)).To(Succeed())
 
 			Eventually(func() bool {
-				h := &autoscalingv1alpha1.Hvpa{}
+				h := &autoscalingv1alpha2.Hvpa{}
 				c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, h)
 				return h.Status.OverrideScaleUpStabilization
 			}, timeout).Should(BeTrue())
@@ -262,12 +155,12 @@ var _ = Describe("#TestReconcile", func() {
 			// Delete the test deployment
 			Expect(c.Delete(context.TODO(), deploytest)).NotTo(HaveOccurred())
 		},
-		Entry("hvpa", newHvpa("hvpa-1", "deploy-test-1", "label-1", minChange)),
+		Entry("hvpa", newHvpaV2("hvpa-1", "deploy-test-1", "label-1", minChangev2)),
 	)
 
 	Describe("#ScaleTests", func() {
 		type setup struct {
-			hvpa      *autoscalingv1alpha1.Hvpa
+			hvpa      *autoscalingv1alpha2.Hvpa
 			hpaStatus *autoscaling.HorizontalPodAutoscalerStatus
 			vpaStatus *vpa_api.VerticalPodAutoscalerStatus
 			target    *appsv1.Deployment
@@ -279,12 +172,12 @@ var _ = Describe("#TestReconcile", func() {
 			resourceChange  bool
 			scaleOutLimited bool
 			resources       v1.ResourceRequirements
-			blockedReasons  []autoscalingv1alpha1.BlockingReason
+			blockedReasons  []autoscalingv1alpha2.BlockingReason
 		}
 		type action struct {
-			maintenanceWindow    *autoscalingv1alpha1.MaintenanceTimeWindow
+			maintenanceWindow    *autoscalingv1alpha2.MaintenanceTimeWindow
 			updateMode           string
-			limitScaling         autoscalingv1alpha1.ScaleParams
+			limitScaling         autoscalingv1alpha2.ScaleParams
 			vpaStatusCondition   []vpa_api.VerticalPodAutoscalerCondition
 			vpaPodResourcePolicy *vpa_api.PodResourcePolicy
 		}
@@ -321,18 +214,18 @@ var _ = Describe("#TestReconcile", func() {
 					vpaStatus.Conditions = append(data.action.vpaStatusCondition, vpaStatus.Conditions...)
 				}
 
-				scaleOutLimited := isHpaScaleOutLimited(
+				scaleOutLimited := isHpav2ScaleOutLimited(
 					data.setup.hpaStatus,
 					data.setup.hvpa.Spec.Hpa.Template.Spec.MaxReplicas,
 					hvpa.Spec.Hpa.ScaleUp.UpdatePolicy.UpdateMode,
 					hvpa.Spec.MaintenanceTimeWindow,
 				)
 
-				Expect(isScalingOff(data.setup.hvpa)).To(Equal(data.expect.scalingOff))
+				Expect(isScalingOffV2(data.setup.hvpa)).To(Equal(data.expect.scalingOff))
 				Expect(scaleOutLimited).To(Equal(data.expect.scaleOutLimited))
 
-				blockedScaling := &[]*autoscalingv1alpha1.BlockedScaling{}
-				podSpec, resourceChanged, vpaStatus, err := getWeightedRequests(vpaStatus, hvpa, vpaWeight, &target.Spec.Template.Spec, scaleOutLimited, blockedScaling)
+				blockedScaling := &[]*autoscalingv1alpha2.BlockedScaling{}
+				podSpec, resourceChanged, vpaStatus, err := getWeightedRequestsV2(vpaStatus, hvpa, vpaWeight, &target.Spec.Template.Spec, scaleOutLimited, blockedScaling)
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resourceChanged).To(Equal(data.expect.resourceChange))
@@ -358,15 +251,15 @@ var _ = Describe("#TestReconcile", func() {
 					Expect(podSpec).To(BeNil())
 				}
 
-				hpaStatus, err = getWeightedReplicas(hpaStatus, hvpa, *target.Spec.Replicas, 100-vpaWeight, blockedScaling)
+				hpaStatus, err = getWeightedReplicasV2(hpaStatus, hvpa, *target.Spec.Replicas, 100-vpaWeight, blockedScaling)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(hpaStatus.DesiredReplicas).To(Equal(data.expect.desiredReplicas))
 			},
 
 			Entry("UpdateMode Auto, Should Scale only memory", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
+					hvpa: newHvpaV2("hvpa-2", target.GetName(), "label-2", minChangev2),
+					hpaStatus: newHpaV2Status(
 						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
 							{
 								Type:   autoscaling.ScalingLimited,
@@ -378,7 +271,7 @@ var _ = Describe("#TestReconcile", func() {
 					vpaWeight: int32(40),
 				},
 				action: action{
-					limitScaling: limitScale,
+					limitScaling: limitScaleV2,
 				},
 				expect: expect{
 					scalingOff:      false,
@@ -386,15 +279,15 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       scaledByWeight40,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMinChange,
+					blockedReasons: []autoscalingv1alpha2.BlockingReason{
+						autoscalingv1alpha2.BlockingReasonMinChange,
 					},
 				},
 			}),
 			Entry("UpdateMode Auto, blocked Scaling", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
+					hvpa: newHvpaV2("hvpa-2", target.GetName(), "label-2", minChangev2),
+					hpaStatus: newHpaV2Status(
 						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
 							{
 								Type:   autoscaling.ScalingLimited,
@@ -411,15 +304,15 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  false,
 					scaleOutLimited: true,
 					resources:       unscaled,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMinChange,
+					blockedReasons: []autoscalingv1alpha2.BlockingReason{
+						autoscalingv1alpha2.BlockingReasonMinChange,
 					},
 				},
 			}),
 			Entry("UpdateMode maintenanceWindow, blocked scaling", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
+					hvpa: newHvpaV2("hvpa-2", target.GetName(), "label-2", minChangev2),
+					hpaStatus: newHpaV2Status(
 						2, 1, []autoscaling.HorizontalPodAutoscalerCondition{
 							{
 								Type:   autoscaling.ScalingLimited,
@@ -431,11 +324,11 @@ var _ = Describe("#TestReconcile", func() {
 					vpaWeight: int32(90),
 				},
 				action: action{
-					maintenanceWindow: &autoscalingv1alpha1.MaintenanceTimeWindow{
+					maintenanceWindow: &autoscalingv1alpha2.MaintenanceTimeWindow{
 						Begin: utils.NewMaintenanceTime((time.Now().UTC().Hour()+3)%24, 0, 0).Formatted(),
 						End:   utils.NewMaintenanceTime((time.Now().UTC().Hour()+4)%24, 0, 0).Formatted(),
 					},
-					updateMode: autoscalingv1alpha1.UpdateModeMaintenanceWindow,
+					updateMode: autoscalingv1alpha2.UpdateModeMaintenanceWindow,
 				},
 				expect: expect{
 					scalingOff:      true,
@@ -443,15 +336,15 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  false,
 					scaleOutLimited: true, // Scale out is limited due to HPA update mode: MaintenanceMode
 					resources:       unscaled,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMaintenanceWindow,
+					blockedReasons: []autoscalingv1alpha2.BlockingReason{
+						autoscalingv1alpha2.BlockingReasonMaintenanceWindow,
 					},
 				},
 			}),
 			Entry("UpdateMode maintenanceWindow, Should Scale only memory", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
+					hvpa: newHvpaV2("hvpa-2", target.GetName(), "label-2", minChangev2),
+					hpaStatus: newHpaV2Status(
 						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
 							{
 								Type:   autoscaling.ScalingLimited,
@@ -463,12 +356,12 @@ var _ = Describe("#TestReconcile", func() {
 					vpaWeight: int32(40),
 				},
 				action: action{
-					maintenanceWindow: &autoscalingv1alpha1.MaintenanceTimeWindow{
+					maintenanceWindow: &autoscalingv1alpha2.MaintenanceTimeWindow{
 						Begin: utils.NewMaintenanceTime(time.Now().UTC().Hour()-1, 0, 0).Formatted(),
 						End:   utils.NewMaintenanceTime(time.Now().UTC().Hour()+1, 0, 0).Formatted(),
 					},
-					updateMode:   autoscalingv1alpha1.UpdateModeMaintenanceWindow,
-					limitScaling: limitScale,
+					updateMode:   autoscalingv1alpha2.UpdateModeMaintenanceWindow,
+					limitScaling: limitScaleV2,
 				},
 				expect: expect{
 					scalingOff:      false,
@@ -476,15 +369,15 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       scaledByWeight40,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMinChange,
+					blockedReasons: []autoscalingv1alpha2.BlockingReason{
+						autoscalingv1alpha2.BlockingReasonMinChange,
 					},
 				},
 			}),
 			Entry("UpdateMode Auto, HPA scaling not limited", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
+					hvpa: newHvpaV2("hvpa-2", target.GetName(), "label-2", minChangev2),
+					hpaStatus: newHpaV2Status(
 						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
 							{
 								Type:   autoscaling.ScalingLimited,
@@ -501,15 +394,15 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  false,
 					scaleOutLimited: false,
 					resources:       unscaled,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonUpdatePolicy,
+					blockedReasons: []autoscalingv1alpha2.BlockingReason{
+						autoscalingv1alpha2.BlockingReasonUpdatePolicy,
 					},
 				},
 			}),
 			Entry("UpdateMode Auto, Proportional scaling", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
+					hvpa: newHvpaV2("hvpa-2", target.GetName(), "label-2", minChangev2),
+					hpaStatus: newHpaV2Status(
 						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
 							{
 								Type:   autoscaling.ScalingLimited,
@@ -521,7 +414,7 @@ var _ = Describe("#TestReconcile", func() {
 					vpaWeight: int32(40),
 				},
 				action: action{
-					limitScaling: autoscalingv1alpha1.ScaleParams{},
+					limitScaling: autoscalingv1alpha2.ScaleParams{},
 				},
 				expect: expect{
 					scalingOff:      false,
@@ -529,15 +422,15 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       proportionalScaled,
-					blockedReasons: []autoscalingv1alpha1.BlockingReason{
-						autoscalingv1alpha1.BlockingReasonMinChange,
+					blockedReasons: []autoscalingv1alpha2.BlockingReason{
+						autoscalingv1alpha2.BlockingReasonMinChange,
 					},
 				},
 			}),
 			Entry("UpdateMode Auto, Requests set equal to limits", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
+					hvpa: newHvpaV2("hvpa-2", target.GetName(), "label-2", minChangev2),
+					hpaStatus: newHpaV2Status(
 						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
 							{
 								Type:   autoscaling.ScalingLimited,
@@ -558,7 +451,7 @@ var _ = Describe("#TestReconcile", func() {
 					vpaWeight: int32(40),
 				},
 				action: action{
-					limitScaling: autoscalingv1alpha1.ScaleParams{},
+					limitScaling: autoscalingv1alpha2.ScaleParams{},
 				},
 				expect: expect{
 					scalingOff:      false,
@@ -566,13 +459,13 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       limitEquallyScaled,
-					blockedReasons:  []autoscalingv1alpha1.BlockingReason{},
+					blockedReasons:  []autoscalingv1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("UpdateMode Auto, ControlledValues RequestsOnly, Request higher than fixed limit", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
+					hvpa: newHvpaV2("hvpa-2", target.GetName(), "label-2", minChangev2),
+					hpaStatus: newHpaV2Status(
 						3, 3, []autoscaling.HorizontalPodAutoscalerCondition{
 							{
 								Type:   autoscaling.ScalingLimited,
@@ -593,7 +486,7 @@ var _ = Describe("#TestReconcile", func() {
 					vpaWeight: int32(100),
 				},
 				action: action{
-					limitScaling:         autoscalingv1alpha1.ScaleParams{},
+					limitScaling:         autoscalingv1alpha2.ScaleParams{},
 					vpaPodResourcePolicy: &vpa_api.PodResourcePolicy{ContainerPolicies: []vpa_api.ContainerResourcePolicy{{ContainerName: "deployment", ControlledValues: &requestsOnly}}},
 				},
 				expect: expect{
@@ -602,13 +495,13 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  true,
 					scaleOutLimited: true,
 					resources:       requestsCappedToLimit,
-					blockedReasons:  []autoscalingv1alpha1.BlockingReason{},
+					blockedReasons:  []autoscalingv1alpha2.BlockingReason{},
 				},
 			}),
 			Entry("VPA unsupported condition", &data{
 				setup: setup{
-					hvpa: newHvpa("hvpa-2", target.GetName(), "label-2", minChange),
-					hpaStatus: newHpaStatus(
+					hvpa: newHvpaV2("hvpa-2", target.GetName(), "label-2", minChangev2),
+					hpaStatus: newHpaV2Status(
 						2, 3, []autoscaling.HorizontalPodAutoscalerCondition{
 							{
 								Type:   autoscaling.ScalingLimited,
@@ -633,7 +526,7 @@ var _ = Describe("#TestReconcile", func() {
 					resourceChange:  false,
 					scaleOutLimited: true,
 					resources:       unscaled,
-					blockedReasons:  []autoscalingv1alpha1.BlockingReason{},
+					blockedReasons:  []autoscalingv1alpha2.BlockingReason{},
 				},
 			}),
 		)

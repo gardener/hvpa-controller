@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/apis/autoscaling/v1alpha1"
 	. "github.com/onsi/ginkgo"
@@ -31,7 +32,7 @@ import (
 
 var _ = Describe("#Adopt HPA", func() {
 
-	DescribeTable("##AdoptHPA",
+	FDescribeTable("##AdoptHPA",
 		func(instance *autoscalingv1alpha1.Hvpa) {
 			deploytest := target.DeepCopy()
 			// Overwrite name
@@ -44,13 +45,21 @@ var _ = Describe("#Adopt HPA", func() {
 			// Create the Hvpa object and expect the Reconcile and HPA to be created
 			Expect(c.Create(context.TODO(), instance)).To(Succeed())
 			defer c.Delete(context.TODO(), instance)
-
 			hasSingleChildFn := func() error {
 				num := 0
 				objList := &autoscaling.HorizontalPodAutoscalerList{}
-				if err := c.List(context.TODO(), objList); err != nil {
-					return err
+				if reconciler.IsAutoscalingV2beta1Enabled {
+					if err := c.List(context.TODO(), objList); err != nil {
+						return err
+					}
+				} else {
+					v2HpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
+					if err := c.List(context.TODO(), v2HpaList); err != nil {
+						return err
+					}
+					objList, _ = reconciler.Convert_v2_HorizontalPodAutoscalerList_To_v2beta1(v2HpaList)
 				}
+
 				for _, obj := range objList.Items {
 					for _, owner := range obj.GetOwnerReferences() {
 						if owner.UID == instance.GetUID() {
@@ -69,8 +78,14 @@ var _ = Describe("#Adopt HPA", func() {
 			// Create new HPA for same HVPA
 			newHpa, err := getHpaFromHvpa(instance)
 			Expect(err).NotTo(HaveOccurred())
-			err = c.Create(context.TODO(), newHpa)
-			Expect(err).NotTo(HaveOccurred())
+			if reconciler.IsAutoscalingV2beta1Enabled {
+				err = c.Create(context.TODO(), newHpa)
+				Expect(err).NotTo(HaveOccurred())
+			} else {
+				v2NewHpa, err := reconciler.Convert_v2beta1_HPA_to_v2(newHpa)
+				err = c.Create(context.TODO(), v2NewHpa)
+				Expect(err).NotTo(HaveOccurred())
+			}
 
 			// Eventually one of the HPAs should be garbage collected
 			Eventually(hasSingleChildFn, timeout).Should(Succeed())
@@ -86,12 +101,26 @@ var _ = Describe("#Adopt HPA", func() {
 			label["orphanKeyHpa"] = "orphanValueHpa"
 			newHpa.SetLabels(label)
 
-			Expect(c.Create(context.TODO(), newHpa)).To(Succeed())
+			if reconciler.IsAutoscalingV2beta1Enabled {
+				err = c.Create(context.TODO(), newHpa)
+				Expect(err).NotTo(HaveOccurred())
+			} else {
+				v2NewHpa, err := reconciler.Convert_v2beta1_HPA_to_v2(newHpa)
+				err = c.Create(context.TODO(), v2NewHpa)
+				Expect(err).NotTo(HaveOccurred())
+			}
 
 			// Eventually the owner ref from HPA should be removed by the HVPA controller
 			Eventually(func() error {
 				hpaList := &autoscaling.HorizontalPodAutoscalerList{}
-				c.List(context.TODO(), hpaList, client.MatchingLabels(label))
+				if reconciler.IsAutoscalingV2beta1Enabled {
+					c.List(context.TODO(), hpaList, client.MatchingLabels(label))
+				} else {
+					v2HpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
+					c.List(context.TODO(), v2HpaList, client.MatchingLabels(label))
+					hpaList, _ = reconciler.Convert_v2_HorizontalPodAutoscalerList_To_v2beta1(v2HpaList)
+				}
+
 				for _, obj := range hpaList.Items {
 					for _, ref := range obj.GetOwnerReferences() {
 						if ref.UID == instance.GetUID() {
