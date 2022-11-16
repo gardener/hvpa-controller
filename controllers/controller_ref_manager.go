@@ -296,7 +296,15 @@ func (m *HvpaControllerRefManager) AdoptHpa(hpa *autoscaling.HorizontalPodAutosc
 		return err
 	}
 
-	return m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa))
+	if !m.reconciler.IsAutoscalingV2Enabled {
+		return m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa))
+	}
+	v2HpaClone, err := m.reconciler.Convert_v2beta1_HPA_to_v2(hpaClone)
+	if err != nil {
+		return err
+	}
+	return m.reconciler.Patch(context.TODO(), v2HpaClone, client.MergeFrom(hpa))
+
 }
 
 // ReleaseHpa sends a patch to free the Hpa from the control of the controller.
@@ -320,17 +328,37 @@ func (m *HvpaControllerRefManager) ReleaseHpa(hpa *autoscaling.HorizontalPodAuto
 		hpaClone.OwnerReferences = ownersCopy
 	}
 
-	err := client.IgnoreNotFound(m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa)))
-	if errors.IsInvalid(err) {
-		// Invalid error will be returned in two cases: 1. the hpa
-		// has no owner reference, 2. the uid of the hpa doesn't
-		// match, which means the Hpa is deleted and then recreated.
-		// In both cases, the error can be ignored.
+	var err error
+	if !m.reconciler.IsAutoscalingV2Enabled {
+		err = client.IgnoreNotFound(m.reconciler.Patch(context.TODO(), hpaClone, client.MergeFrom(hpa)))
+		if errors.IsInvalid(err) {
+			// Invalid error will be returned in two cases: 1. the hpa
+			// has no owner reference, 2. the uid of the hpa doesn't
+			// match, which means the Hpa is deleted and then recreated.
+			// In both cases, the error can be ignored.
 
-		// TODO: If the Hpa has owner references, but none of them
-		// has the owner.UID, server will silently ignore the patch.
-		// Investigate why.
-		return nil
+			// TODO: If the Hpa has owner references, but none of them
+			// has the owner.UID, server will silently ignore the patch.
+			// Investigate why.
+			return nil
+		}
+	} else {
+		v2HpaClone, err := m.reconciler.Convert_v2beta1_HPA_to_v2(hpaClone)
+		if err != nil {
+			return err
+		}
+		err = client.IgnoreNotFound(m.reconciler.Patch(context.TODO(), v2HpaClone, client.MergeFrom(hpa)))
+		if errors.IsInvalid(err) {
+			// Invalid error will be returned in two cases: 1. the hpa
+			// has no owner reference, 2. the uid of the hpa doesn't
+			// match, which means the Hpa is deleted and then recreated.
+			// In both cases, the error can be ignored.
+
+			// TODO: If the Hpa has owner references, but none of them
+			// has the owner.UID, server will silently ignore the patch.
+			// Investigate why.
+			return nil
+		}
 	}
 
 	return err

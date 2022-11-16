@@ -18,6 +18,9 @@ package controllers
 
 import (
 	"context"
+	"k8s.io/client-go/discovery"
+	k8sautoscalingv2 "k8s.io/kubernetes/pkg/apis/autoscaling/v2"
+	k8sautoscalingv2beta1 "k8s.io/kubernetes/pkg/apis/autoscaling/v2beta1"
 	"path/filepath"
 	"testing"
 
@@ -53,6 +56,7 @@ var (
 	testEnv           *envtest.Environment
 	mgr               manager.Manager
 	managerCancelFunc context.CancelFunc
+	reconciler        HvpaReconciler
 )
 
 func TestAPIs(t *testing.T) {
@@ -82,22 +86,38 @@ var _ = BeforeSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg).ToNot(BeNil())
 
-		err = autoscalingv1alpha1.AddToScheme(scheme.Scheme)
+		s := scheme.Scheme
+
+		err = autoscalingv1alpha1.AddToScheme(s)
+		err = k8sautoscalingv2beta1.RegisterConversions(s)
+		err = k8sautoscalingv2.RegisterConversions(s)
 		Expect(err).NotTo(HaveOccurred())
 
 		// +kubebuilder:scaffold:scheme
 
-		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		k8sClient, err = client.New(cfg, client.Options{Scheme: s})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(k8sClient).ToNot(BeNil())
 
 		// Setup the Manager.
-		mgr, err = ctrl.NewManager(cfg, ctrl.Options{})
+		mgr, err = ctrl.NewManager(cfg, ctrl.Options{Scheme: s})
 		Expect(err).NotTo(HaveOccurred())
 
-		reconciler := HvpaReconciler{
-			Client: mgr.GetClient(),
-			Scheme: mgr.GetScheme(),
+		dc, _ := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
+		groups, _ := dc.ServerGroups()
+		apiVersions := metav1.ExtractGroupVersions(groups)
+
+		var foundAutoscalingV2 bool
+		for _, apiVersion := range apiVersions {
+			if apiVersion == "autoscaling/v2" {
+				foundAutoscalingV2 = true
+			}
+		}
+
+		reconciler = HvpaReconciler{
+			Client:                 mgr.GetClient(),
+			Scheme:                 mgr.GetScheme(),
+			IsAutoscalingV2Enabled: foundAutoscalingV2,
 		}
 
 		err = reconciler.SetupWithManager(mgr)
@@ -192,7 +212,7 @@ func newHvpa(name, target, labelVal string, minChange autoscalingv1alpha1.ScaleP
 						MinReplicas: &replica,
 						MaxReplicas: 3,
 						Metrics: []autoscaling.MetricSpec{
-							autoscaling.MetricSpec{
+							{
 								Type: autoscaling.ResourceMetricSourceType,
 								Resource: &autoscaling.ResourceMetricSource{
 									Name:                     v1.ResourceCPU,

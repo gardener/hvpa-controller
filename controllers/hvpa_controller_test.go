@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"time"
 
 	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
@@ -138,8 +139,8 @@ var _ = Describe("#TestReconcile", func() {
 			Expect(err).NotTo(HaveOccurred())
 			defer c.Delete(context.TODO(), instance)
 
-			hpaList := &autoscaling.HorizontalPodAutoscalerList{}
-			hpa := &autoscaling.HorizontalPodAutoscaler{}
+			hpaList := &autoscalingv2.HorizontalPodAutoscalerList{}
+			hpa := &autoscalingv2.HorizontalPodAutoscaler{}
 			Eventually(func() error {
 				num := 0
 				c.List(context.TODO(), hpaList)
