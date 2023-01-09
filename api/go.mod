@@ -1,6 +1,6 @@
 module github.com/gardener/hvpa-controller/api
 
-go 1.18
+go 1.19
 
 require (
 	k8s.io/api v0.25.3
