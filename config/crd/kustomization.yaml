@@ -6,7 +6,7 @@ resources:
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
-  - patches/approval_annotation_in_hvpas.yaml
+  - path: patches/approval_annotation_in_hvpas.yaml
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD
 #- patches/webhook_in_hvpas.yaml
