@@ -19,15 +19,16 @@ package controllers
 import (
 	"context"
 	"fmt"
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 )
 
 var _ = Describe("#Adopt HPA", func() {

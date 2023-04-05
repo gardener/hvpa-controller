@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -29,7 +29,8 @@ import (
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/retry"
 	kubernetesinternalautoscaling "k8s.io/kubernetes/pkg/apis/autoscaling"
-	"reflect"
+
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 )
 
 // TODO: use client library instead when it starts to support update retries

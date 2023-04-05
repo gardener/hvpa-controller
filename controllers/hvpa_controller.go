@@ -26,9 +26,6 @@ import (
 	"sync"
 	"time"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
-	validation "github.com/gardener/hvpa-controller/internal/api/validation"
-	"github.com/gardener/hvpa-controller/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	autoscalingv2beta1 "k8s.io/api/autoscaling/v2beta1"
@@ -52,6 +49,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	validation "github.com/gardener/hvpa-controller/internal/api/validation"
+	"github.com/gardener/hvpa-controller/utils"
 )
 
 var controllerKindHvpa = autoscalingv1alpha1.SchemeGroupVersionHvpa.WithKind("Hvpa")

@@ -19,21 +19,22 @@ package controllers
 import (
 	"context"
 	"fmt"
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"time"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
-	"github.com/gardener/hvpa-controller/utils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/ginkgo/extensions/table"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	"github.com/gardener/hvpa-controller/utils"
 )
 
 const timeout = time.Second * 5
