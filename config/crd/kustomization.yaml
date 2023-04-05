@@ -6,6 +6,13 @@ resources:
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
+  # This gets added automatically as `creationTimestamp: null` by controller-gen and is converted to `creationTimestamp: "null"` by kustomize
+  # see https://github.com/kubernetes-sigs/controller-tools/issues/402
+  - path: patches/remove_creationTimestamp.yaml
+    target:
+      kind: CustomResourceDefinition
+      name: hvpas.autoscaling.k8s.io
+
   - path: patches/approval_annotation_in_hvpas.yaml
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
 # patches here are for enabling the conversion webhook for each CRD

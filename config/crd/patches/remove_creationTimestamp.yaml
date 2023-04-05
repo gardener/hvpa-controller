@@ -1,0 +1,3 @@
+# see https://github.com/kubernetes-sigs/controller-tools/issues/402
+- path: /metadata/creationTimestamp
+  op: remove
