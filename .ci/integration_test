@@ -45,10 +45,8 @@ function setup_ginkgo(){
 }
 
 function setup_env(){
-    echo "Downloading and installing kubebuilder..."
-    go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-    echo "Successfully installed kubebuilder."
-    setup-envtest use -p env 1.25.0
+    echo "Downloading and installing setup-envtest..."
+    go install sigs.k8s.io/controller-runtime/tools/setup-envtest
 }
 
 function get_test_id() {
@@ -71,7 +69,7 @@ setup_test_cluster
 echo "Starting integration tests..."
 
 set +e
-ginkgo -r -cover utils internal controllers
+source <(setup-envtest use -p env 1.25.0); ginkgo -r -cover utils internal controllers
 TEST_RESULT=$?
 set -e
 

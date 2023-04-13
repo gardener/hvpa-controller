@@ -107,6 +107,7 @@ var _ = Describe("#Adopt HPA", func() {
 				Expect(err).NotTo(HaveOccurred())
 			} else {
 				v2NewHpa, err := reconciler.Convert_v2beta1_HPA_to_v2(newHpa)
+				Expect(err).NotTo(HaveOccurred())
 				err = c.Create(context.TODO(), v2NewHpa)
 				Expect(err).NotTo(HaveOccurred())
 			}

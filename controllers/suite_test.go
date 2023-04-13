@@ -111,6 +111,7 @@ var _ = BeforeSuite(func() {
 		for _, apiVersion := range apiVersions {
 			if apiVersion == "autoscaling/v2" {
 				foundAutoscalingV2 = true
+				break
 			}
 		}
 

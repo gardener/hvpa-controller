@@ -1439,17 +1439,13 @@ func (r *HvpaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	log.V(1).Info("Reconciling", "hvpa", instance.GetName(), "hvpa", instance.Namespace+"/"+instance.Name)
-	r.ManageCache(instance, req.NamespacedName, true)
-
-	return r.reconcile(ctx, instance)
-}
-
-func (r *HvpaReconciler) reconcile(ctx context.Context, instance *autoscalingv1alpha1.Hvpa) (ctrl.Result, error) {
 	validationerr := validation.ValidateHvpa(instance)
 	if validationerr.ToAggregate() != nil && len(validationerr.ToAggregate().Errors()) > 0 {
 		log.Error(fmt.Errorf(validationerr.ToAggregate().Error()), "Validation of HVPA failed", "HVPA", instance.Name)
 		return ctrl.Result{}, nil
 	}
+
+	r.ManageCache(instance, req.NamespacedName, true)
 
 	// Default duration after which the object should be requeued
 	requeAfter, _ := time.ParseDuration("1m")
@@ -1476,7 +1472,7 @@ func (r *HvpaReconciler) reconcile(ctx context.Context, instance *autoscalingv1a
 		return ctrl.Result{}, nil
 	}
 
-	err := r.Get(ctx, types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, obj)
+	err = r.Get(ctx, types.NamespacedName{Name: instance.Spec.TargetRef.Name, Namespace: instance.Namespace}, obj)
 	if err != nil {
 		log.Error(err, "Error getting", "kind", instance.Spec.TargetRef.Kind, "name", instance.Spec.TargetRef.Name, "namespace", instance.Namespace)
 		return ctrl.Result{}, err
@@ -1490,9 +1486,7 @@ func (r *HvpaReconciler) reconcile(ctx context.Context, instance *autoscalingv1a
 		return ctrl.Result{}, err
 	}
 
-	hpaStatus := &autoscalingv2beta1.HorizontalPodAutoscalerStatus{}
-
-	hpaStatus, err = r.reconcileHpa(instance)
+	hpaStatus, err := r.reconcileHpa(instance)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1730,21 +1724,17 @@ func (r *HvpaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	podSource := source.Kind{Type: &corev1.Pod{}}
+	var hpa client.Object
 	if !r.IsAutoscalingV2Enabled {
-		return ctrl.NewControllerManagedBy(mgr).
-			For(&autoscalingv1alpha1.Hvpa{}).
-			Owns(&autoscalingv2beta1.HorizontalPodAutoscaler{}).
-			Owns(&vpa_api.VerticalPodAutoscaler{}).
-			Watches(&podSource, podEventHandler).
-			WithEventFilter(pred).
-			Complete(r)
+		hpa = &autoscalingv2beta1.HorizontalPodAutoscaler{}
 	} else {
-		return ctrl.NewControllerManagedBy(mgr).
-			For(&autoscalingv1alpha1.Hvpa{}).
-			Owns(&autoscalingv2.HorizontalPodAutoscaler{}).
-			Owns(&vpa_api.VerticalPodAutoscaler{}).
-			Watches(&podSource, podEventHandler).
-			WithEventFilter(pred).
-			Complete(r)
+		hpa = &autoscalingv2.HorizontalPodAutoscaler{}
 	}
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&autoscalingv1alpha1.Hvpa{}).
+		Owns(hpa).
+		Owns(&vpa_api.VerticalPodAutoscaler{}).
+		Watches(&podSource, podEventHandler).
+		WithEventFilter(pred).
+		Complete(r)
 }
