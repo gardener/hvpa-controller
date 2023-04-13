@@ -15,6 +15,7 @@ require (
 	k8s.io/klog/v2 v2.80.1
 	k8s.io/kubernetes v1.25.4
 	sigs.k8s.io/controller-runtime v0.13.1
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20230412185432-fbd6b944a634
 	sigs.k8s.io/controller-tools v0.10.0
 )
 
@@ -59,6 +60,7 @@ require (
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
+	github.com/spf13/afero v1.6.0 // indirect
 	github.com/spf13/cobra v1.4.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
