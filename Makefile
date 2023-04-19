@@ -57,7 +57,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 test: envtest manifests generate fmt vet ## Run tests.
-	source <($(LOCALBIN)/setup-envtest use -p env 1.24.2); go test ./internal/... ./controllers/... ./utils/... -coverprofile cover.out
+	source <($(LOCALBIN)/setup-envtest use -p env 1.25.0); go test ./internal/... ./controllers/... ./utils/... -coverprofile cover.out
 
 # Build manager binary
 manager: generate fmt vet
@@ -69,7 +69,7 @@ run: generate fmt vet
 
 # Install CRDs into a cluster
 install: manifests
-	kubectl apply -f config/crd/bases
+	kubectl apply -f config/crd/output/crds.yaml
 
 .PHONY: check
 check: $(GOLANGCI_LINT)
@@ -80,7 +80,7 @@ check: $(GOLANGCI_LINT)
 
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 deploy: manifests
-	kubectl apply -f config/crd/bases
+	kubectl apply -f config/crd/output/crds.yaml
 	kustomize build config/default | kubectl apply -f -
 
 # Generate manifests e.g. CRD, RBAC etc.

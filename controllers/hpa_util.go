@@ -21,19 +21,107 @@ import (
 	"fmt"
 	"reflect"
 
-	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/retry"
+	kubernetesinternalautoscaling "k8s.io/kubernetes/pkg/apis/autoscaling"
+
+	autoscalingv1alpha1 "github.com/gardener/hvpa-controller/api/v1alpha1"
 )
 
 // TODO: use client library instead when it starts to support update retries
 //
 //	see https://github.com/kubernetes/kubernetes/issues/21479
 type updateHpaFunc func(hpa *autoscaling.HorizontalPodAutoscaler)
+type updateHpaV2Func func(hpa *autoscalingv2.HorizontalPodAutoscaler)
+
+func (r *HvpaReconciler) Convert_v2beta1_HorizontalPodAutoscalerList_To_v2(in *autoscaling.HorizontalPodAutoscalerList) (*autoscalingv2.HorizontalPodAutoscalerList, error) {
+	out := &autoscalingv2.HorizontalPodAutoscalerList{}
+	internalHpas := &kubernetesinternalautoscaling.HorizontalPodAutoscalerList{}
+	err := r.Scheme.Convert(in, internalHpas, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	err = r.Scheme.Convert(internalHpas, out, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *HvpaReconciler) Convert_v2_HorizontalPodAutoscalerList_To_v2beta1(in *autoscalingv2.HorizontalPodAutoscalerList) (*autoscaling.HorizontalPodAutoscalerList, error) {
+	out := &autoscaling.HorizontalPodAutoscalerList{}
+	internalHpas := &kubernetesinternalautoscaling.HorizontalPodAutoscalerList{}
+	err := r.Scheme.Convert(in, internalHpas, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	err = r.Scheme.Convert(internalHpas, out, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *HvpaReconciler) Convert_v2beta1_HPA_to_v2(in *autoscaling.HorizontalPodAutoscaler) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+	out := &autoscalingv2.HorizontalPodAutoscaler{}
+	internal := &kubernetesinternalautoscaling.HorizontalPodAutoscaler{}
+	err := r.Scheme.Convert(in, internal, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	err = r.Scheme.Convert(internal, out, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *HvpaReconciler) Convert_v2_HPA_to_v2beta1(in *autoscalingv2.HorizontalPodAutoscaler) (*autoscaling.HorizontalPodAutoscaler, error) {
+	out := &autoscaling.HorizontalPodAutoscaler{}
+	internal := &kubernetesinternalautoscaling.HorizontalPodAutoscaler{}
+	err := r.Scheme.Convert(in, internal, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	err = r.Scheme.Convert(internal, out, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *HvpaReconciler) Convert_v2beta1_MetricSpec_to_v2(err error, in autoscaling.MetricSpec) (*autoscalingv2.MetricSpec, error) {
+	out := &autoscalingv2.MetricSpec{}
+	internalHpaMetricSpec := &kubernetesinternalautoscaling.MetricSpec{}
+	err = r.Scheme.Convert(in, internalHpaMetricSpec, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	err = r.Scheme.Convert(internalHpaMetricSpec, out, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *HvpaReconciler) Convert_v2beta1_TargetRef_to_v2(err error, in *autoscaling.CrossVersionObjectReference) (*autoscalingv2.CrossVersionObjectReference, error) {
+	out := &autoscalingv2.CrossVersionObjectReference{}
+	internalCrossVersionObjectReference := &kubernetesinternalautoscaling.CrossVersionObjectReference{}
+	err = r.Scheme.Convert(in, internalCrossVersionObjectReference, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	err = r.Scheme.Convert(internalCrossVersionObjectReference, out, context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 func (r *HvpaReconciler) claimHpas(hvpa *autoscalingv1alpha1.Hvpa, selector labels.Selector, hpas *autoscaling.HorizontalPodAutoscalerList) ([]*autoscaling.HorizontalPodAutoscaler, error) {
 	// If any adoptions are attempted, we should first recheck for deletion with
@@ -85,21 +173,80 @@ func (r *HvpaReconciler) UpdateHpaWithRetries(namespace, name string, applyUpdat
 
 	return hpa, retryErr
 }
+func (r *HvpaReconciler) UpdateHpaV2WithRetries(namespace, name string, applyUpdate updateHpaV2Func) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{}
+
+	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		var err error
+		if err = r.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, hpa); err != nil {
+			return err
+		}
+		hpa = hpa.DeepCopy()
+		// Apply the update, then attempt to push it to the apiserver.
+		applyUpdate(hpa)
+		return r.Update(context.TODO(), hpa)
+	})
+
+	// Ignore the precondition violated error, this machine is already updated
+	// with the desired label.
+	if retryErr == errorsutil.ErrPreconditionViolated {
+		log.V(4).Info("Hpa %s precondition doesn't hold, skip updating it.", namespace+"/"+name)
+		retryErr = nil
+	}
+
+	return hpa, retryErr
+}
 
 func (r *HvpaReconciler) syncHpaSpec(hpaList []*autoscaling.HorizontalPodAutoscaler, hvpa *autoscalingv1alpha1.Hvpa) error {
 	for _, hpa := range hpaList {
 		if hpaChanged := hpaSpecNeedChange(hvpa, hpa); hpaChanged {
-			_, err := r.UpdateHpaWithRetries(hpa.Namespace, hpa.Name,
-				func(hpaToUpdate *autoscaling.HorizontalPodAutoscaler) {
-					hpaToUpdate.Spec.MinReplicas = hvpa.Spec.Hpa.Template.Spec.MinReplicas
-					hpaToUpdate.Spec.MaxReplicas = hvpa.Spec.Hpa.Template.Spec.MaxReplicas
-					hpaToUpdate.Spec.Metrics = hvpa.Spec.Hpa.Template.Spec.Metrics
-					hpaToUpdate.Spec.ScaleTargetRef = *hvpa.Spec.TargetRef
-				})
-			if err != nil {
-				return fmt.Errorf("error in updating hpaTemplateSpec to hpa %q: %v", hpa.Name, err)
+			if !r.IsAutoscalingV2Enabled {
+				_, err := r.UpdateHpaWithRetries(hpa.Namespace, hpa.Name,
+					func(hpaToUpdate *autoscaling.HorizontalPodAutoscaler) {
+						hpaToUpdate.Spec.MinReplicas = hvpa.Spec.Hpa.Template.Spec.MinReplicas
+						hpaToUpdate.Spec.MaxReplicas = hvpa.Spec.Hpa.Template.Spec.MaxReplicas
+						hpaToUpdate.Spec.Metrics = hvpa.Spec.Hpa.Template.Spec.Metrics
+						hpaToUpdate.Spec.ScaleTargetRef = *hvpa.Spec.TargetRef
+					})
+				if err != nil {
+					return fmt.Errorf("error in updating hpaTemplateSpec to hpa %q: %v", hpa.Name, err)
+				}
+				log.V(2).Info("HPA spec sync", "HPA", hpa.Name, "HVPA", hvpa.Namespace+"/"+hvpa.Name)
+			} else {
+				// Convert the HPA which will be updated
+				v2Hpa, err := r.Convert_v2beta1_HPA_to_v2(hpa)
+				if err != nil {
+					return err
+				}
+
+				// Convert the list of metrics from the HVPA
+				v2HpaMetricSpecList := []autoscalingv2.MetricSpec{}
+				for _, metricSpec := range hvpa.Spec.Hpa.Template.Spec.Metrics {
+					v2HpaMetricSpec, err := r.Convert_v2beta1_MetricSpec_to_v2(err, metricSpec)
+					if err != nil {
+						return err
+					}
+					v2HpaMetricSpecList = append(v2HpaMetricSpecList, *v2HpaMetricSpec)
+				}
+
+				// Convert TargetRef from the HVPA
+				v2CrossVersionObjectReference, err := r.Convert_v2beta1_TargetRef_to_v2(err, hvpa.Spec.TargetRef)
+				if err != nil {
+					return err
+				}
+
+				_, err = r.UpdateHpaV2WithRetries(v2Hpa.Namespace, v2Hpa.Name,
+					func(hpaToUpdate *autoscalingv2.HorizontalPodAutoscaler) {
+						hpaToUpdate.Spec.MinReplicas = hvpa.Spec.Hpa.Template.Spec.MinReplicas
+						hpaToUpdate.Spec.MaxReplicas = hvpa.Spec.Hpa.Template.Spec.MaxReplicas
+						hpaToUpdate.Spec.Metrics = v2HpaMetricSpecList
+						hpaToUpdate.Spec.ScaleTargetRef = *v2CrossVersionObjectReference
+					})
+				if err != nil {
+					return fmt.Errorf("error in updating hpaTemplateSpec to hpa %q: %v", hpa.Name, err)
+				}
+				log.V(2).Info("HPA spec sync", "HPA", hpa.Name, "HVPA", hvpa.Namespace+"/"+hvpa.Name)
 			}
-			log.V(2).Info("HPA spec sync", "HPA", hpa.Name, "HVPA", hvpa.Namespace+"/"+hvpa.Name)
 		}
 	}
 	return nil
