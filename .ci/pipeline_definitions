@@ -22,9 +22,9 @@ hvpa-controller:
                 source: ~
     steps:
       check:
-        image: 'golang:1.19.7'
+        image: 'golang:1.19.9'
       integration_test:
-        image: 'golang:1.19.7'
+        image: 'golang:1.19.9'
 
   jobs:
     head-update:
