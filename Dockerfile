@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.19.7 as builder
+FROM golang:1.19.9 as builder
 
 WORKDIR /go/src/github.com/gardener/hvpa-controller
 # Copy the Go Modules manifests
