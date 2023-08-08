@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"k8s.io/utils/pointer"
 	"time"
 
 	. "github.com/onsi/ginkgo"
@@ -189,6 +190,24 @@ var _ = Describe("#TestReconcile", func() {
 					return nil
 				}
 				return fmt.Errorf("Error: Expected 1 HPA; found %v", len(hpaList.Items))
+			}, timeout).Should(Succeed())
+
+			// Update the HPA spec and expect the change to be reconciled
+			hvpa := &autoscalingv1alpha1.Hvpa{}
+			c.Get(context.TODO(), types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, hvpa)
+			hvpa.Spec.Hpa.Template.Spec.MinReplicas = pointer.Int32(3)
+			err = c.Update(context.TODO(), hvpa)
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func() error {
+				var actualMinReplicas int32
+				c.List(context.TODO(), hpaList)
+				for _, hpa := range hpaList.Items {
+					actualMinReplicas = *hpa.Spec.MinReplicas
+				}
+				if actualMinReplicas != 3 {
+					return fmt.Errorf("Expected minReplicas 3, got %v", actualMinReplicas)
+				}
+				return nil
 			}, timeout).Should(Succeed())
 
 			// Create a pod for the target deployment, and update status to "OOMKilled".
