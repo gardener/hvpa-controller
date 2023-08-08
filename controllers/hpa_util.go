@@ -98,7 +98,7 @@ func (r *HvpaReconciler) Convert_v2_HPA_to_v2beta1(in *autoscalingv2.HorizontalP
 func (r *HvpaReconciler) Convert_v2beta1_MetricSpec_to_v2(err error, in autoscaling.MetricSpec) (*autoscalingv2.MetricSpec, error) {
 	out := &autoscalingv2.MetricSpec{}
 	internalHpaMetricSpec := &kubernetesinternalautoscaling.MetricSpec{}
-	err = r.Scheme.Convert(in, internalHpaMetricSpec, context.TODO())
+	err = r.Scheme.Convert(&in, internalHpaMetricSpec, context.TODO())
 	if err != nil {
 		return nil, err
 	}
