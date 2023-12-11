@@ -1,12 +1,11 @@
 hvpa-controller:
-  template: 'default'
   base_definition:
-    repo: ~
     traits:
       version:
         preprocess:
           'inject-commit-hash'
         inject_effective_version: true
+      component_descriptor: ~
       publish:
         oci-builder: docker-buildx
         platforms:
@@ -14,7 +13,6 @@ hvpa-controller:
         - linux/arm64
         dockerimages:
           hvpa-controller:
-            registry: 'gcr-readwrite'
             image: 'eu.gcr.io/gardener-project/gardener/hvpa-controller'
             dockerfile: 'Dockerfile'
             inputs:
@@ -49,4 +47,3 @@ hvpa-controller:
             internal_scp_workspace:
               channel_name: 'C017KSLTF4H' # gardener-autoscaling
               slack_cfg_name: 'scp_workspace'
-        component_descriptor: ~
