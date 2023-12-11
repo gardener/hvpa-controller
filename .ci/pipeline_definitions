@@ -5,7 +5,8 @@ hvpa-controller:
         preprocess:
           'inject-commit-hash'
         inject_effective_version: true
-      component_descriptor: ~
+      component_descriptor:
+        ocm_repository: europe-docker.pkg.dev/gardener-project/snapshots
       publish:
         oci-builder: docker-buildx
         platforms:
@@ -13,7 +14,7 @@ hvpa-controller:
         - linux/arm64
         dockerimages:
           hvpa-controller:
-            image: 'eu.gcr.io/gardener-project/gardener/hvpa-controller'
+            image: europe-docker.pkg.dev/gardener-project/snapshots/gardener/hvpa-controller
             dockerfile: 'Dockerfile'
             inputs:
               repos:
@@ -27,7 +28,9 @@ hvpa-controller:
   jobs:
     head-update:
       traits:
-        component_descriptor: ~
+        component_descriptor:
+          ocm_repository_mappings:
+            - repository: europe-docker.pkg.dev/gardener-project/releases
         draft_release: ~
     pull-request:
       traits:
@@ -36,6 +39,12 @@ hvpa-controller:
       traits:
         version:
           preprocess: 'finalize'
+        component_descriptor:
+          ocm_repository: europe-docker.pkg.dev/gardener-project/releases
+        publish:
+          dockerimages:
+            hvpa-controller:
+              image: europe-docker.pkg.dev/gardener-project/releases/gardener/hvpa-controller
         release:
           nextversion: 'bump_minor'
           git_tags:

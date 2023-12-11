@@ -14,10 +14,10 @@
 
 VERSION             := $(shell cat VERSION)
 PACKAGES            :="$(go list -e ./... | grep -vE '/tmp/|/vendor/')"
-REGISTRY            := eu.gcr.io/gardener-project/gardener
+REGISTRY            := europe-docker.pkg.dev/gardener-project/public
 REPO_ROOT           := $(shell dirname "$(realpath $(lastword $(MAKEFILE_LIST)))")
 
-IMAGE_REPOSITORY    := $(REGISTRY)/hvpa-controller
+IMAGE_REPOSITORY    := $(REGISTRY)/gardener/hvpa-controller
 IMAGE_TAG           := $(VERSION)
 
 # Image URL to use all building/pushing image targets
