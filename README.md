@@ -1,5 +1,6 @@
 # hvpa-controller
 
+[![REUSE status](https://api.reuse.software/badge/github.com/gardener/hvpa-controller)](https://api.reuse.software/info/github.com/gardener/hvpa-controller)
 [![CI Build status](https://concourse.ci.gardener.cloud/api/v1/teams/gardener/pipelines/hvpa-controller-master/jobs/master-head-update-job/badge)](https://concourse.ci.gardener.cloud/teams/gardener/pipelines/hvpa-controller-master/jobs/master-head-update-job)
 [![Go Report Card](https://goreportcard.com/badge/github.com/gardener/hvpa-controller)](https://goreportcard.com/report/github.com/gardener/hvpa-controller)
 
