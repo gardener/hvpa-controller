@@ -1,6 +1,8 @@
 module github.com/gardener/hvpa-controller
 
-go 1.21
+go 1.23
+
+toolchain go1.23.1
 
 require (
 	github.com/gardener/hvpa-controller/api v0.0.0
