@@ -1,7 +1,7 @@
 # Deprecation Notice
 
 The hvpa-controller is deprecated. It will be no longer maintained by the Gardener team.
-This document describes describes the alternatives for existing features in HVPA.
+This document describes the alternatives for existing features in HVPA.
 
 ### Known Issues
 
@@ -39,7 +39,7 @@ The alternative for "Disable scaling down outside of maintenance window." is to 
 
 There is no direct alternative for "Disable scaling down for a period of time after the last scaling happened.". However, it can be implemented externally using the VPA's eviction requirements in a similar way how [gardenlet's `VPAEvictionRequirements` controller](https://github.com/gardener/gardener/blob/master/docs/concepts/gardenlet.md#vpaevictionrequirements-controller) is implemented.
 
-There is no direct alternative for "Disable scaling down if a minimum difference in absolute/percentage hasn't been reached.". However, this functionality can lead to cases where the configured `minChange` value hasn't been reached but the affected component is being for example CPU throttled due to 100% CPU usage on the Node.
+There is no direct alternative for "Disable scaling down if a minimum difference in absolute/percentage hasn't been reached.". However, this functionality can lead to cases where the configured `minChange` value hasn't been reached but the affected component is being, for example, CPU throttled due to 100% CPU usage on the Node.
 
 ##### Alternative for combining HPA and VPA
 
