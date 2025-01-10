@@ -1,0 +1,20 @@
+kind: TestDefinition
+metadata:
+  name: hvpa-controller-test
+spec:
+  owner: gaurav.gupta07@sap.com
+  description: Tests Hvpa controller
+
+  activeDeadlineSeconds: 900
+  labels: ["hvpa-controller", "beta"]
+
+  config:
+  - name: GO111MODULE
+    value: "off"
+    type: env
+
+  command: [bash, -c]
+  args:
+  - >-
+    ./.ci/integration_test
+  image: golang:1.13
