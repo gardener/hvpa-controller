@@ -1,5 +1,11 @@
 # hvpa-controller
 
+📌 **Deprecation Notice**
+
+This repository is deprecated. Learn about the existing [known issues](docs/KnownIssues.md) with HVPA. Checkout the [deprecation notice](DEPRECATED.md) to learn about the alternatives for existing HVPA functionality.
+
+---
+
 [![REUSE status](https://api.reuse.software/badge/github.com/gardener/hvpa-controller)](https://api.reuse.software/info/github.com/gardener/hvpa-controller)
 [![CI Build status](https://concourse.ci.gardener.cloud/api/v1/teams/gardener/pipelines/hvpa-controller-master/jobs/master-head-update-job/badge)](https://concourse.ci.gardener.cloud/teams/gardener/pipelines/hvpa-controller-master/jobs/master-head-update-job)
 [![Go Report Card](https://goreportcard.com/badge/github.com/gardener/hvpa-controller)](https://goreportcard.com/report/github.com/gardener/hvpa-controller)
